@@ -191,4 +191,46 @@ describe("MedicalCaseRepo", () => {
       updatedAt: 1300,
     });
   });
+
+  it("upserts detected nodules by study and index", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-NOD", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-NOD", now: 1100 });
+    const image = repo.addImage({
+      studyId: study.id,
+      fileUri: "artifact://raw/ACC-NOD/IMG-NOD.png",
+      fileType: "png",
+      now: 1200,
+    });
+
+    const first = repo.upsertNodule({
+      studyId: study.id,
+      imageId: image.id,
+      noduleIndex: 1,
+      bbox: [10, 20, 30, 40],
+      detectionConfidence: 0.82,
+      now: 1300,
+    });
+    const second = repo.upsertNodule({
+      studyId: study.id,
+      imageId: image.id,
+      noduleIndex: 1,
+      bbox: [11, 21, 31, 41],
+      detectionConfidence: 0.91,
+      now: 1400,
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(repo.listNodulesByStudy(study.id)).toMatchObject([
+      {
+        id: first.id,
+        noduleIndex: 1,
+        bbox: [11, 21, 31, 41],
+        detectionConfidence: 0.91,
+        source: "ai",
+        status: "detected",
+        updatedAt: 1400,
+      },
+    ]);
+  });
 });

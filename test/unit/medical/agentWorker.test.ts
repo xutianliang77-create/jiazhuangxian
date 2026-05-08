@@ -54,11 +54,39 @@ describe("medical agent worker", () => {
       `UPDATE model_job
        SET status = 'succeeded', output_json = ?, completed_at = ?, updated_at = ?
        WHERE id = ?`
-    ).run(JSON.stringify({ nodules: [{ id: "N1", confidence: 0.91 }] }), 2200, 2200, second.modelJobId);
+    ).run(
+      JSON.stringify({ nodules: [{ nodule_index: 1, bbox: [10, 20, 30, 40], confidence: 0.91 }] }),
+      2200,
+      2200,
+      second.modelJobId
+    );
 
     const third = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 2300 });
-    expect(third).toMatchObject({ status: "succeeded", claimed: true, taskType: "detect_nodules" });
+    expect(third).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "detect_nodules",
+      output: {
+        persisted_nodules: [
+          {
+            nodule_index: 1,
+            bbox: [10, 20, 30, 40],
+            detection_confidence: 0.91,
+            source: "ai",
+          },
+        ],
+      },
+    });
     expect(repo.getAgentTask(tasks[1].id)?.status).toBe("succeeded");
+    expect(repo.listNodulesByStudy(String(tasks[1].input.study_id))).toMatchObject([
+      {
+        noduleIndex: 1,
+        imageId: String(tasks[1].input.image_id),
+        bbox: [10, 20, 30, 40],
+        detectionConfidence: 0.91,
+        source: "ai",
+      },
+    ]);
 
     const fourth = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 2400 });
     expect(fourth).toMatchObject({ status: "succeeded", claimed: true, taskType: "classify_tirads_features" });

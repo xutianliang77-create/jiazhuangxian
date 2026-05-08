@@ -153,7 +153,7 @@ JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1
 3. `medical-agent-worker` 消费 `agent_task`；`image_qc` 会调用 `image-worker` 的 `/image/v1/image-quality-check`，并将成功返回的 `image_quality`/`quality_score` 写回 `image` 表。
 4. `detect_nodules` 任务会进入 `waiting_model`，并创建 `model_job`。
 5. `model-worker` 消费 `model_job`；当前没有真实权重时会写入 `detector_not_configured`。
-6. `medical-agent-worker` 再次同步 `waiting_model`，将检测任务标记为失败并阻断下游任务；接入真实权重后会继续推进下游任务。
+6. `medical-agent-worker` 再次同步 `waiting_model`；如果检测成功，会把模型返回的结节框写入 `nodule` 表并继续推进下游任务；如果检测失败，会将检测任务标记为失败并阻断下游任务。
 
 如果 `image-worker` 未启动，`image_qc` 不会阻断验证链路；任务会以 `validation_mode=true` 成功完成，并在输出中写入 `image_worker_qc_unavailable` 与具体错误码，便于本地分步验证。
 

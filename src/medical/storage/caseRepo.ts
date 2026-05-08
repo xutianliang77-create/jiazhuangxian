@@ -211,6 +211,35 @@ export interface ModelJobRecord {
   completedAt: number | null;
 }
 
+export interface NoduleInput {
+  id?: string;
+  studyId: string;
+  imageId?: string | null;
+  noduleIndex: number;
+  location?: string;
+  bbox?: unknown;
+  maskUri?: string;
+  detectionConfidence?: number;
+  source?: string;
+  status?: string;
+  now?: number;
+}
+
+export interface NoduleRecord {
+  id: string;
+  studyId: string;
+  imageId: string | null;
+  noduleIndex: number;
+  location: string | null;
+  bbox: unknown;
+  maskUri: string | null;
+  detectionConfidence: number | null;
+  source: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface StudyBundle {
   patient: PatientRecord | null;
   study: StudyRecord;
@@ -320,6 +349,21 @@ interface ModelJobRow {
   updated_at: number;
   started_at: number | null;
   completed_at: number | null;
+}
+
+interface NoduleRow {
+  id: string;
+  study_id: string;
+  image_id: string | null;
+  nodule_index: number;
+  location: string | null;
+  bbox: string | null;
+  mask_uri: string | null;
+  detection_confidence: number | null;
+  source: string;
+  status: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export class MedicalCaseRepo {
@@ -511,6 +555,42 @@ export class MedicalCaseRepo {
     return this.getModelJob(id)!;
   }
 
+  upsertNodule(input: NoduleInput): NoduleRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO nodule(
+           id, study_id, image_id, nodule_index, location, bbox, mask_uri,
+           detection_confidence, source, status, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(study_id, nodule_index) DO UPDATE SET
+           image_id = excluded.image_id,
+           location = excluded.location,
+           bbox = excluded.bbox,
+           mask_uri = excluded.mask_uri,
+           detection_confidence = excluded.detection_confidence,
+           source = excluded.source,
+           status = excluded.status,
+           updated_at = excluded.updated_at`
+      )
+      .run(
+        id,
+        input.studyId,
+        input.imageId ?? null,
+        input.noduleIndex,
+        input.location ?? null,
+        stringifyJsonValue(input.bbox ?? null),
+        input.maskUri ?? null,
+        input.detectionConfidence ?? null,
+        input.source ?? "ai",
+        input.status ?? "detected",
+        now,
+        now
+      );
+    return this.getNoduleByStudyIndex(input.studyId, input.noduleIndex)!;
+  }
+
   getPatient(id: string): PatientRecord | null {
     const row = this.db.prepare<[string], PatientRow>("SELECT * FROM patient WHERE id = ?").get(id);
     return row ? mapPatient(row) : null;
@@ -566,6 +646,24 @@ export class MedicalCaseRepo {
       .prepare<[string], ModelJobRow>("SELECT * FROM model_job WHERE id = ?")
       .get(id);
     return row ? mapModelJob(row) : null;
+  }
+
+  getNoduleByStudyIndex(studyId: string, noduleIndex: number): NoduleRecord | null {
+    const row = this.db
+      .prepare<[string, number], NoduleRow>(
+        "SELECT * FROM nodule WHERE study_id = ? AND nodule_index = ?"
+      )
+      .get(studyId, noduleIndex);
+    return row ? mapNodule(row) : null;
+  }
+
+  listNodulesByStudy(studyId: string): NoduleRecord[] {
+    return this.db
+      .prepare<[string], NoduleRow>(
+        "SELECT * FROM nodule WHERE study_id = ? ORDER BY nodule_index ASC, created_at ASC"
+      )
+      .all(studyId)
+      .map(mapNodule);
   }
 
   findModelJobByAgentTask(agentTaskId: string, jobType?: string): ModelJobRecord | null {
@@ -926,7 +1024,28 @@ function mapModelJob(row: ModelJobRow): ModelJobRecord {
   };
 }
 
+function mapNodule(row: NoduleRow): NoduleRecord {
+  return {
+    id: row.id,
+    studyId: row.study_id,
+    imageId: row.image_id,
+    noduleIndex: row.nodule_index,
+    location: row.location,
+    bbox: parseJsonValue(row.bbox),
+    maskUri: row.mask_uri,
+    detectionConfidence: row.detection_confidence,
+    source: row.source,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function stringifyJson(value: JsonObject): string {
+  return JSON.stringify(value);
+}
+
+function stringifyJsonValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
@@ -937,6 +1056,15 @@ function parseJson(value: string | null | undefined, fallback: JsonObject): Json
     return isJsonObject(parsed) ? parsed : fallback;
   } catch {
     return fallback;
+  }
+}
+
+function parseJsonValue(value: string | null | undefined): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
   }
 }
 

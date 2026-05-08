@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff plus detector result persistence.
 
 ### Completed
 
@@ -123,6 +123,8 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `medical-agent-worker` now calls `/image/v1/image-quality-check` for `image_qc`, writes successful quality metadata back to the `image` row, and returns a structured non-blocking warning when image-worker is unavailable.
 - Updated `scripts/medical-agent-worker.ts` to use the async worker and accept `--image-worker-url` / `JZX_IMAGE_WORKER_URL`.
 - Updated local MCP setup documentation with the real `image_qc` runtime flow and image-worker fallback behavior.
+- Added `MedicalCaseRepo.upsertNodule()` and `listNodulesByStudy()` for detector result persistence.
+- When a `thyroid.detect_nodules` model job succeeds, `medical-agent-worker` now writes returned detections into the `nodule` table and includes `persisted_nodules` in the agent task output.
 
 ### Verification
 
@@ -180,6 +182,14 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after image QC handoff: 10 tests.
 - CLI smoke test passed after image QC handoff: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - `git diff --check` passed after image QC handoff.
+- Targeted medical agent worker/storage tests passed after detector persistence: `npm test -- --run test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts` with 10 tests.
+- Root `npm run typecheck` passed after detector persistence.
+- Targeted lint passed for detector persistence files.
+- `npm test` passed after detector persistence: 176 files passed, 1 skipped; 1678 tests passed, 3 skipped.
+- `python3 -m unittest discover services/image-worker/tests` passed after detector persistence: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after detector persistence: 10 tests.
+- CLI smoke test passed after detector persistence: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after detector persistence.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.

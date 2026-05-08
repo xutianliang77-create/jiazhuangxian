@@ -133,8 +133,9 @@ function syncWaitingModelTask(
     }
     if (modelJob.status === "queued" || modelJob.status === "running") continue;
     if (modelJob.status === "succeeded") {
-      const output = detectorSuccessOutput(modelJob, workerId);
-      repo.completeAgentTask(task.id, output, now());
+      const completedAt = now();
+      const output = detectorSuccessOutput(repo, modelJob, workerId, completedAt);
+      repo.completeAgentTask(task.id, output, completedAt);
       return {
         status: "succeeded",
         claimed: true,
@@ -469,7 +470,13 @@ function buildSynchronousTaskOutput(
   }
 }
 
-function detectorSuccessOutput(modelJob: ModelJobRecord, workerId: string): JsonObject {
+function detectorSuccessOutput(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  workerId: string,
+  now: number
+): JsonObject {
+  const persistedNodules = persistDetectorNodules(repo, modelJob, now);
   return {
     status: "ok",
     worker_id: workerId,
@@ -477,6 +484,7 @@ function detectorSuccessOutput(modelJob: ModelJobRecord, workerId: string): Json
     job_type: modelJob.jobType,
     result: modelJob.output ?? {},
     artifact_uri: modelJob.artifactUri,
+    persisted_nodules: persistedNodules,
   };
 }
 
@@ -492,6 +500,10 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
 function optionalBoolean(value: unknown): boolean | undefined {
@@ -525,4 +537,40 @@ function isWorkerResponse(value: unknown): value is WorkerResponse {
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))];
+}
+
+function persistDetectorNodules(repo: MedicalCaseRepo, modelJob: ModelJobRecord, now: number): JsonObject[] {
+  if (!modelJob.studyId) return [];
+  const detections = asRecordArray(modelJob.output?.nodules ?? modelJob.output?.detections);
+  return detections.map((detection, index) => {
+    const noduleIndex = optionalInteger(detection.nodule_index) ?? index + 1;
+    const nodule = repo.upsertNodule({
+      studyId: modelJob.studyId!,
+      imageId: modelJob.imageId,
+      noduleIndex,
+      bbox: optionalNumberArray(detection.bbox) ?? null,
+      detectionConfidence: optionalNumber(detection.confidence),
+      source: optionalString(detection.source) ?? "ai",
+      now,
+    });
+    return {
+      nodule_id: nodule.id,
+      nodule_index: nodule.noduleIndex,
+      bbox: nodule.bbox,
+      detection_confidence: nodule.detectionConfidence,
+      source: nodule.source,
+    };
+  });
+}
+
+function asRecordArray(value: unknown): JsonObject[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is JsonObject => typeof item === "object" && item !== null && !Array.isArray(item))
+    : [];
+}
+
+function optionalNumberArray(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const numbers = value.map(optionalNumber);
+  return numbers.every((item): item is number => item !== undefined) ? numbers : undefined;
 }

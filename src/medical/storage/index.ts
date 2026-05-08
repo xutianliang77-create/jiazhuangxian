@@ -8,6 +8,8 @@ export type {
   ImageRecord,
   ModelJobInput,
   ModelJobRecord,
+  NoduleInput,
+  NoduleRecord,
   PatientInput,
   PatientRecord,
   StudyBundle,
