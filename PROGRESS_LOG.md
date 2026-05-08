@@ -80,6 +80,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - RF-DETR adapter boundary is reserved with `JZX_RFDETR_WEIGHTS`; runtime implementation remains explicit pending package selection.
 - Unconfigured detector jobs still fail clearly with `detector_not_configured`, now including selected adapter, model family, model name/version, and missing environment variables.
 - Updated model-gateway documentation with detector adapter configuration examples.
+- Added `npm run medical:init-db` for project-local validation storage initialization.
+- `medical:init-db` creates/migrates a local SQLite `data.db`, initializes a CodeClaw RAG DB, reports seed counts, and can import the checked-in sample medical knowledge manifest with `--ingest-sample-knowledge`.
+- Added tests for default init-db paths and sample-knowledge initialization.
+- Updated the medical knowledge ingestion guide with the init-db command.
 
 ### Verification
 
@@ -92,6 +96,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Targeted medical Web/API tests passed after write routes: `npm test -- --run test/unit/channels/web/server.test.ts` with 40 tests.
 - Targeted lint for the Web/API write files passed: `npx eslint src/channels/web/medicalHandlers.ts src/channels/web/server.ts test/unit/channels/web/server.test.ts`.
 - `python3 -m unittest discover services/model-gateway/tests` passed after detector adapter boundary work: 7 tests.
+- Targeted init-db tests passed: `npm test -- --run test/unit/medical/initDbCli.test.ts test/unit/medical/knowledgeIngestion.test.ts`.
+- Targeted lint for init-db files passed: `npx eslint scripts/medical-init-db.ts test/unit/medical/initDbCli.test.ts`.
+- CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:init-db -- --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge`.
+- `npm test` passed after init-db work: 174 files passed, 1 skipped; 1669 tests passed, 3 skipped.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -124,10 +132,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
-2. Add Web UI forms for the manual patient/study/image registration APIs.
-3. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
-4. Add detector artifact output conventions for overlays and model comparison once weights are available.
+1. Add Web UI forms for the manual patient/study/image registration APIs.
+2. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
+3. Add detector artifact output conventions for overlays and model comparison once weights are available.
+4. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist

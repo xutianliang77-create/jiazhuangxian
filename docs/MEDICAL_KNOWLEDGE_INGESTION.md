@@ -22,6 +22,20 @@ examples/medical-knowledge/acr-tirads-validation.manifest.json
 
 ## 运行命令
 
+初始化验证版项目本地数据库和 RAG 库：
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm run medical:init-db
+```
+
+初始化并导入示例知识：
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm run medical:init-db -- --ingest-sample-knowledge
+```
+
 使用默认 `~/.codeclaw/data.db` 和当前 workspace 对应的 CodeClaw RAG 库：
 
 ```bash
