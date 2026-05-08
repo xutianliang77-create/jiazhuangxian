@@ -53,6 +53,30 @@ cd /Users/xutianliang/Downloads/jiazhuangxian
 npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.md
 ```
 
+## Embedding 回填
+
+导入会先建立 `rag_chunks` 和 `rag_terms`，embedding 走单独命令回填，避免导入过程依赖模型服务：
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm run medical:embed -- \
+  --data-db data/artifacts/medical-validation/data.db \
+  --rag-db data/artifacts/medical-validation/rag.db \
+  --base-url http://127.0.0.1:8000/v1 \
+  --model Qwen3-Embedding-0.6B \
+  --max-chunks 100
+```
+
+也可以用环境变量：
+
+```bash
+JZX_EMBED_BASE_URL=http://127.0.0.1:8000/v1 \
+JZX_EMBED_MODEL=Qwen3-Embedding-0.6B \
+npm run medical:embed -- --data-db data/artifacts/medical-validation/data.db --rag-db data/artifacts/medical-validation/rag.db
+```
+
+`medical:embed` 只回填 `medical_chunk_metadata.review_status = approved` 对应的医学 RAG chunk，不会批量修改普通 CodeClaw 工作区 chunk。
+
 使用验证版本地数据库：
 
 ```bash
@@ -75,5 +99,5 @@ npm run medical:ingest -- \
 ## 后续扩展点
 
 - PDF 解析：在 manifest 前增加解析器，最终仍输出同一 manifest 结构。
-- Embedding：基于现有 `rag_chunks.embedding` 批处理补齐，不放在 manifest 导入同步路径里。
+- Embedding：通过 `medical:embed` 基于现有 `rag_chunks.embedding` 批处理补齐，不放在 manifest 导入同步路径里。
 - 医生审核发布：manifest 生成前走人工审核，导入入口只接受已审核内容。

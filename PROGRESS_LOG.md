@@ -93,6 +93,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Markdown knowledge ingestion now reads `document`, optional `chunk_defaults`, and optional `report_templates` from front matter, then chunks the Markdown body by headings.
 - Added `examples/medical-knowledge/acr-tirads-validation.md` as the first Markdown medical knowledge sample.
 - Updated the knowledge ingestion guide with Markdown import usage.
+- Added medical knowledge embedding backfill service under `src/medical/knowledge/embeddingBackfill.ts`.
+- Added `npm run medical:embed` to backfill embeddings for approved medical RAG chunks only.
+- `medical:embed` uses the existing CodeClaw OpenAI-compatible embedding client and writes vectors to `rag_chunks.embedding`.
+- Added embedding backfill tests using a fake embedding endpoint, including a guard that non-medical RAG chunks are not touched.
+- Updated the knowledge ingestion guide with embedding backfill usage and environment variables.
 
 ### Verification
 
@@ -118,6 +123,8 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Targeted lint for knowledge ingestion passed after Markdown support: `npx eslint src/medical/knowledge/ingestion.ts test/unit/medical/knowledgeIngestion.test.ts scripts/medical-ingest.ts scripts/medical-init-db.ts`.
 - CLI smoke test passed for Markdown ingestion with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.md --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
 - `npm test` passed after Markdown ingestion support: 174 files passed, 1 skipped; 1670 tests passed, 3 skipped.
+- Targeted embedding backfill tests passed: `npm test -- --run test/unit/medical/embeddingBackfill.test.ts test/unit/medical/knowledgeIngestion.test.ts`.
+- `npm test` passed after embedding backfill command: 175 files passed, 1 skipped; 1671 tests passed, 3 skipped.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -150,11 +157,11 @@ None.
 
 ### Next Session Priorities
 
-1. Add embedding backfill command for medical RAG chunks once the embedding endpoint is configured.
-2. Add detector artifact output conventions for overlays and model comparison once weights are available.
-3. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
-4. Add a study detail view that can launch analysis sessions from the registered image rows.
-5. Add PDF-to-manifest parsing when representative guideline PDFs are available.
+1. Add detector artifact output conventions for overlays and model comparison once weights are available.
+2. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
+3. Add a study detail view that can launch analysis sessions from the registered image rows.
+4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
+5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
 
