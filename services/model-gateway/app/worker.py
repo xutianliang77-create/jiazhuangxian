@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .detectors import DetectorAdapterError, run_detector_job
 from .store import ModelJobStore, default_db_path
 
 
@@ -15,7 +16,56 @@ def run_once(store: ModelJobStore, *, worker_id: str = "model-worker") -> dict[s
     if not job:
         return {"status": "idle", "claimed": False, "worker_id": worker_id}
 
-    error = build_failure(job, worker_id)
+    if job["job_type"] == "thyroid.detect_nodules":
+        return run_detector_once(store, job, worker_id=worker_id)
+
+    return fail_claimed_job(store, job, build_failure(job, worker_id), worker_id=worker_id)
+
+
+def run_detector_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: str) -> dict[str, Any]:
+    try:
+        output = run_detector_job(job)
+        completed = store.complete_job(str(job["id"]), output)
+        return {
+            "status": "succeeded" if completed else "error",
+            "claimed": True,
+            "worker_id": worker_id,
+            "job_id": job["id"],
+            "job_type": job["job_type"],
+            "output": output,
+        }
+    except DetectorAdapterError as exc:
+        return fail_claimed_job(store, job, exc.to_error(worker_id=worker_id), worker_id=worker_id)
+    except Exception as exc:
+        error = {
+            "code": "detector_worker_error",
+            "message": str(exc),
+            "detail": {
+                "worker_id": worker_id,
+                "job_type": job["job_type"],
+            },
+        }
+        return fail_claimed_job(store, job, error, worker_id=worker_id)
+
+
+def build_failure(job: dict[str, Any], worker_id: str) -> dict[str, Any]:
+    return {
+        "code": "unsupported_job_type",
+        "message": "model worker does not support this job type",
+        "detail": {
+            "worker_id": worker_id,
+            "job_type": job["job_type"],
+        },
+    }
+
+
+def fail_claimed_job(
+    store: ModelJobStore,
+    job: dict[str, Any],
+    error: dict[str, Any],
+    *,
+    worker_id: str,
+) -> dict[str, Any]:
     failed = store.fail_job(str(job["id"]), error)
     return {
         "status": "failed" if failed else "error",
@@ -24,28 +74,6 @@ def run_once(store: ModelJobStore, *, worker_id: str = "model-worker") -> dict[s
         "job_id": job["id"],
         "job_type": job["job_type"],
         "error": error,
-    }
-
-
-def build_failure(job: dict[str, Any], worker_id: str) -> dict[str, Any]:
-    if job["job_type"] == "thyroid.detect_nodules":
-        return {
-            "code": "detector_not_configured",
-            "message": "thyroid nodule detector is not configured in the validation worker",
-            "detail": {
-                "worker_id": worker_id,
-                "model_name": job["model_name"],
-                "model_version": job["model_version"],
-                "expected_worker": "YOLOv11 or RT-DETR detector adapter",
-            },
-        }
-    return {
-        "code": "unsupported_job_type",
-        "message": "model worker does not support this job type",
-        "detail": {
-            "worker_id": worker_id,
-            "job_type": job["job_type"],
-        },
     }
 
 

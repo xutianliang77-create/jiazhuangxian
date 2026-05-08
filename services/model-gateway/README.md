@@ -21,8 +21,11 @@ Python 模型服务入口，负责模型路由、SQLite `model_job` 队列和本
 
 - `python3 -m app.worker --once`：claim 一条 `queued` 任务并退出。
 - `python3 -m app.worker`：循环消费队列，空闲时按 `JZX_MODEL_WORKER_INTERVAL_MS` 休眠。
-- 验证版尚不加载真实检测模型；`thyroid.detect_nodules` 会被标记为 `failed`，错误码为 `detector_not_configured`。
-- 后续接入 YOLOv11 / RT-DETR 时替换 worker 的任务处理分支，HTTP 入队接口和 SQLite 队列表保持不变。
+- `thyroid.detect_nodules` 会根据 `model_name` 选择检测 adapter，HTTP 入队接口和 SQLite 队列表保持不变。
+- 默认主模型 adapter：YOLOv11 / Ultralytics YOLO，权重路径通过 `JZX_YOLOV11_WEIGHTS` 配置。
+- Transformer 对照 adapter：RT-DETR / Ultralytics RTDETR，权重路径通过 `JZX_RTDETR_WEIGHTS` 配置。
+- RF-DETR adapter 边界已保留，权重路径为 `JZX_RFDETR_WEIGHTS`，运行时包接入后补齐执行逻辑。
+- 未配置权重时任务会被标记为 `failed`，错误码为 `detector_not_configured`，并返回缺失的环境变量。
 
 计划能力：
 
@@ -45,6 +48,26 @@ JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db python3 -m app
 ```bash
 cd services/model-gateway
 JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db python3 -m app.worker --once
+```
+
+配置 YOLOv11 检测 adapter：
+
+```bash
+cd services/model-gateway
+JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db \
+JZX_ARTIFACT_ROOT=../../data/artifacts \
+JZX_YOLOV11_WEIGHTS=/absolute/path/to/yolov11-thyroid.pt \
+python3 -m app.worker --once
+```
+
+配置 RT-DETR 对照 adapter：
+
+```bash
+cd services/model-gateway
+JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db \
+JZX_ARTIFACT_ROOT=../../data/artifacts \
+JZX_RTDETR_WEIGHTS=/absolute/path/to/rtdetr-thyroid.pt \
+python3 -m app.worker --once
 ```
 
 默认监听：

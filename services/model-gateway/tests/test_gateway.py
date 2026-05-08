@@ -14,6 +14,7 @@ from pathlib import Path
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
 
+from app.detectors import build_detector_request, select_detector_adapter  # noqa: E402
 from app.schemas import DetectNodulesRequest  # noqa: E402
 from app.server import create_server  # noqa: E402
 from app.store import ModelJobStore  # noqa: E402
@@ -134,11 +135,48 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertIsNotNone(failed["completed_at"])
             error = json.loads(failed["error_json"])
             self.assertEqual(error["detail"]["worker_id"], "worker-test")
-            self.assertEqual(error["detail"]["expected_worker"], "YOLOv11 or RT-DETR detector adapter")
+            self.assertEqual(error["detail"]["adapter"], "yolov11-ultralytics")
+            self.assertEqual(error["detail"]["model_family"], "yolov11")
+            self.assertEqual(error["detail"]["required_env"], ["JZX_YOLOV11_WEIGHTS"])
 
             idle = run_once(store, worker_id="worker-test")
             self.assertEqual(idle["status"], "idle")
             self.assertFalse(idle["claimed"])
+
+    def test_detector_adapter_selection_supports_yolo_and_transformer_detectors(self) -> None:
+        yolo = select_detector_adapter({"model_name": "yolov11-thyroid-detector"}, env={})
+        self.assertEqual(yolo.adapter_name, "yolov11-ultralytics")
+        self.assertEqual(yolo.model_family, "yolov11")
+
+        rtdetr = select_detector_adapter({"model_name": "rt-detr-thyroid-detector"}, env={})
+        self.assertEqual(rtdetr.adapter_name, "rtdetr-ultralytics")
+        self.assertEqual(rtdetr.model_family, "rt-detr")
+
+        rfdetr = select_detector_adapter({"model_name": "rf-detr-thyroid-detector"}, env={})
+        self.assertEqual(rfdetr.adapter_name, "rf-detr")
+        self.assertEqual(rfdetr.model_family, "rf-detr")
+
+    def test_detector_request_is_built_from_model_job_input_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ModelJobStore(Path(tmp) / "model.db")
+            queued = store.enqueue_detect_nodules(
+                DetectNodulesRequest(
+                    study_id="S1",
+                    image_id="IMG1",
+                    image_uri="artifact://model-ready/S1/IMG1.png",
+                    return_overlay=False,
+                    metadata={"frame": 1},
+                    trace_id="TRACE1",
+                )
+            )
+
+            request = build_detector_request(queued)
+            self.assertEqual(request.study_id, "S1")
+            self.assertEqual(request.image_id, "IMG1")
+            self.assertEqual(request.image_uri, "artifact://model-ready/S1/IMG1.png")
+            self.assertFalse(request.return_overlay)
+            self.assertEqual(request.metadata, {"frame": 1})
+            self.assertEqual(request.trace_id, "TRACE1")
 
 
 def get_json(url: str) -> dict[str, object]:

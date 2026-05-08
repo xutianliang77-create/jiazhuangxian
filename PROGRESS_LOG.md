@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API read/write slice.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API read/write slice.
 
 ### Completed
 
@@ -73,6 +73,13 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Medical write APIs derive `study.createdBy` from the authenticated Web user by default.
 - Medical write APIs return structured errors for disabled medical storage, invalid request bodies, bad foreign-key references, and duplicate SQLite records.
 - Added Web server tests for manual patient/study/image registration and invalid image study references.
+- Added `services/model-gateway/app/detectors.py` as the first detector adapter boundary.
+- Detector worker now selects YOLOv11, RT-DETR, or RF-DETR adapters by `model_name` without changing the HTTP enqueue API or SQLite `model_job` contract.
+- YOLOv11 adapter is wired for Ultralytics YOLO with weights from `JZX_YOLOV11_WEIGHTS`.
+- RT-DETR adapter is wired for Ultralytics RTDETR with weights from `JZX_RTDETR_WEIGHTS`.
+- RF-DETR adapter boundary is reserved with `JZX_RFDETR_WEIGHTS`; runtime implementation remains explicit pending package selection.
+- Unconfigured detector jobs still fail clearly with `detector_not_configured`, now including selected adapter, model family, model name/version, and missing environment variables.
+- Updated model-gateway documentation with detector adapter configuration examples.
 
 ### Verification
 
@@ -84,6 +91,7 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `npm test` passed after the medical Web/API write slice: 173 files passed, 1 skipped; 1667 tests passed, 3 skipped.
 - Targeted medical Web/API tests passed after write routes: `npm test -- --run test/unit/channels/web/server.test.ts` with 40 tests.
 - Targeted lint for the Web/API write files passed: `npx eslint src/channels/web/medicalHandlers.ts src/channels/web/server.ts test/unit/channels/web/server.test.ts`.
+- `python3 -m unittest discover services/model-gateway/tests` passed after detector adapter boundary work: 7 tests.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -116,10 +124,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
-2. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
+1. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
+2. Add Web UI forms for the manual patient/study/image registration APIs.
 3. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
-4. Add Web UI forms for the manual patient/study/image registration APIs.
+4. Add detector artifact output conventions for overlays and model comparison once weights are available.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
