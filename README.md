@@ -34,6 +34,7 @@ data/artifacts/          本地验证版图像与 AI 产物目录
 - [开发规范、测试方案与任务拆解](docs/DEVELOPMENT_PLAN.md)
 - [UI 设计补充](docs/UI_DESIGN.md)
 - [CodeClaw 复用开发基线](docs/CODECLAW_REUSE_BASELINE.md)
+- [医学 MCP 本地验证配置](docs/MEDICAL_MCP_SETUP.md)
 - [进度日志](PROGRESS_LOG.md)
 
 ## 当前阶段

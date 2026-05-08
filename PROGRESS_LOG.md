@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, and seeded medical knowledge.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, and local MCP configuration examples.
 
 ### Completed
 
@@ -49,11 +49,16 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added root scripts `npm run model-worker` and `npm run model-worker:once`.
 - Current validation worker does not load YOLOv11/RT-DETR weights yet; it consumes `thyroid.detect_nodules` jobs and marks them `failed` with `detector_not_configured`, preserving the queue contract for the future GPU detector adapter.
 - Added model-gateway worker tests for queue claim, completion, unconfigured detector failure, and idle behavior.
+- Added `examples/mcp.medical.validation.json` as a project-level CodeClaw MCP config sample for the `medical` MCP server.
+- Added `docs/MEDICAL_MCP_SETUP.md` documenting the local validation startup order, `.mcp.json` usage, `image-worker`/`model-gateway` dependency boundary, sample `/mcp call` checks, and common troubleshooting cases.
+- Linked the medical MCP setup guide from `README.md`.
+- Added a unit test ensuring the MCP config example remains parseable by the existing CodeClaw MCP config loader.
 
 ### Verification
 
 - `npm run typecheck` passed.
-- `npm test` passed after the model-gateway worker change: 171 files passed, 1 skipped; 1656 tests passed, 3 skipped.
+- `npm test` passed after the medical MCP setup example change: 172 files passed, 1 skipped; 1658 tests passed, 3 skipped.
+- Targeted MCP config example tests passed: `npm test -- --run test/unit/medical/mcp-config-example.test.ts test/unit/mcp/config.test.ts test/unit/medical/mcp-server.test.ts`.
 - Targeted storage tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts`.
 - Targeted medical MCP tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/caseRepo.test.ts`.
 - Targeted medical knowledge tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/seed-data.test.ts`.
@@ -78,10 +83,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add MCP configuration examples for running `medical:mcp` with CodeClaw.
-2. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
-3. Add knowledge ingestion skeleton for approved guideline/template files.
-4. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
+1. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
+2. Add knowledge ingestion skeleton for approved guideline/template files.
+3. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
+4. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
