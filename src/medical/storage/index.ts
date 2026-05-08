@@ -6,6 +6,8 @@ export type {
   AnalysisSessionRecord,
   ImageInput,
   ImageRecord,
+  ModelJobInput,
+  ModelJobRecord,
   PatientInput,
   PatientRecord,
   StudyBundle,

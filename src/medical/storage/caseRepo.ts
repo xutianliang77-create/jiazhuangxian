@@ -158,6 +158,51 @@ export interface AgentTaskRecord {
   updatedAt: number;
 }
 
+export interface ModelJobInput {
+  id?: string;
+  studyId?: string;
+  imageId?: string;
+  agentTaskId?: string;
+  jobType: string;
+  status?: string;
+  priority?: number;
+  attempts?: number;
+  maxAttempts?: number;
+  input?: JsonObject;
+  output?: JsonObject;
+  error?: JsonObject;
+  modelName?: string;
+  modelVersion?: string;
+  weightsHash?: string;
+  artifactUri?: string;
+  startedAt?: number;
+  completedAt?: number;
+  now?: number;
+}
+
+export interface ModelJobRecord {
+  id: string;
+  studyId: string | null;
+  imageId: string | null;
+  agentTaskId: string | null;
+  jobType: string;
+  status: string;
+  priority: number;
+  attempts: number;
+  maxAttempts: number;
+  input: JsonObject;
+  output: JsonObject | null;
+  error: JsonObject | null;
+  modelName: string | null;
+  modelVersion: string | null;
+  weightsHash: string | null;
+  artifactUri: string | null;
+  createdAt: number;
+  updatedAt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+}
+
 export interface StudyBundle {
   patient: PatientRecord | null;
   study: StudyRecord;
@@ -244,6 +289,29 @@ interface AgentTaskRow {
   completed_at: number | null;
   created_at: number;
   updated_at: number;
+}
+
+interface ModelJobRow {
+  id: string;
+  study_id: string | null;
+  image_id: string | null;
+  agent_task_id: string | null;
+  job_type: string;
+  status: string;
+  priority: number;
+  attempts: number;
+  max_attempts: number;
+  input_json: string;
+  output_json: string | null;
+  error_json: string | null;
+  model_name: string | null;
+  model_version: string | null;
+  weights_hash: string | null;
+  artifact_uri: string | null;
+  created_at: number;
+  updated_at: number;
+  started_at: number | null;
+  completed_at: number | null;
 }
 
 export class MedicalCaseRepo {
@@ -399,6 +467,42 @@ export class MedicalCaseRepo {
     return this.getAgentTask(id)!;
   }
 
+  createModelJob(input: ModelJobInput): ModelJobRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO model_job(
+           id, study_id, image_id, agent_task_id, job_type, status, priority,
+           attempts, max_attempts, input_json, output_json, error_json, model_name,
+           model_version, weights_hash, artifact_uri, created_at, updated_at, started_at, completed_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.studyId ?? null,
+        input.imageId ?? null,
+        input.agentTaskId ?? null,
+        input.jobType,
+        input.status ?? "queued",
+        input.priority ?? 100,
+        input.attempts ?? 0,
+        input.maxAttempts ?? 1,
+        stringifyJson(input.input ?? {}),
+        input.output ? stringifyJson(input.output) : null,
+        input.error ? stringifyJson(input.error) : null,
+        input.modelName ?? null,
+        input.modelVersion ?? null,
+        input.weightsHash ?? null,
+        input.artifactUri ?? null,
+        now,
+        now,
+        input.startedAt ?? null,
+        input.completedAt ?? null
+      );
+    return this.getModelJob(id)!;
+  }
+
   getPatient(id: string): PatientRecord | null {
     const row = this.db.prepare<[string], PatientRow>("SELECT * FROM patient WHERE id = ?").get(id);
     return row ? mapPatient(row) : null;
@@ -428,6 +532,164 @@ export class MedicalCaseRepo {
     return row ? mapAgentTask(row) : null;
   }
 
+  getModelJob(id: string): ModelJobRecord | null {
+    const row = this.db
+      .prepare<[string], ModelJobRow>("SELECT * FROM model_job WHERE id = ?")
+      .get(id);
+    return row ? mapModelJob(row) : null;
+  }
+
+  findModelJobByAgentTask(agentTaskId: string, jobType?: string): ModelJobRecord | null {
+    const row = jobType
+      ? this.db
+          .prepare<[string, string], ModelJobRow>(
+            `SELECT *
+             FROM model_job
+             WHERE agent_task_id = ? AND job_type = ?
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1`
+          )
+          .get(agentTaskId, jobType)
+      : this.db
+          .prepare<[string], ModelJobRow>(
+            `SELECT *
+             FROM model_job
+             WHERE agent_task_id = ?
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1`
+          )
+          .get(agentTaskId);
+    return row ? mapModelJob(row) : null;
+  }
+
+  claimNextAgentTask(now = Date.now()): AgentTaskRecord | null {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db
+        .prepare<[], { id: string }>(
+          `SELECT t.id
+           FROM agent_task t
+           LEFT JOIN agent_task parent ON parent.id = t.parent_task_id
+           WHERE t.status = 'queued'
+             AND (t.parent_task_id IS NULL OR parent.status = 'succeeded')
+           ORDER BY t.created_at ASC, t.id ASC
+           LIMIT 1`
+        )
+        .get();
+      if (!row) {
+        this.db.exec("COMMIT");
+        return null;
+      }
+
+      const updated = this.db
+        .prepare<[number, number, string]>(
+          `UPDATE agent_task
+           SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ?, error_json = NULL
+           WHERE id = ? AND status = 'queued'`
+        )
+        .run(now, now, row.id);
+      if (updated.changes !== 1) {
+        this.db.exec("ROLLBACK");
+        return null;
+      }
+
+      const task = this.getAgentTask(row.id);
+      if (task) this.markSessionRunning(task.analysisSessionId, now);
+      this.db.exec("COMMIT");
+      return task;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  listWaitingModelAgentTasks(limit = 20): AgentTaskRecord[] {
+    return this.db
+      .prepare<[number], AgentTaskRow>(
+        `SELECT *
+         FROM agent_task
+         WHERE status = 'waiting_model'
+         ORDER BY updated_at ASC, created_at ASC, id ASC
+         LIMIT ?`
+      )
+      .all(limit)
+      .map(mapAgentTask);
+  }
+
+  markAgentTaskWaitingModel(taskId: string, output: JsonObject, now = Date.now()): AgentTaskRecord | null {
+    const row = this.db
+      .prepare<[string], { analysis_session_id: string }>(
+        "SELECT analysis_session_id FROM agent_task WHERE id = ?"
+      )
+      .get(taskId);
+    const updated = this.db
+      .prepare<[string, number, string]>(
+        `UPDATE agent_task
+         SET status = 'waiting_model', output_json = ?, error_json = NULL, updated_at = ?
+         WHERE id = ? AND status = 'running'`
+      )
+      .run(stringifyJson(output), now, taskId);
+    if (updated.changes !== 1) return null;
+    if (row) this.markSessionRunning(row.analysis_session_id, now);
+    return this.getAgentTask(taskId);
+  }
+
+  completeAgentTask(taskId: string, output: JsonObject, now = Date.now()): AgentTaskRecord | null {
+    const row = this.db
+      .prepare<[string], { analysis_session_id: string }>(
+        "SELECT analysis_session_id FROM agent_task WHERE id = ?"
+      )
+      .get(taskId);
+    const updated = this.db
+      .prepare<[string, number, number, string]>(
+        `UPDATE agent_task
+         SET status = 'succeeded', output_json = ?, error_json = NULL, completed_at = ?, updated_at = ?
+         WHERE id = ? AND status IN ('running', 'waiting_model')`
+      )
+      .run(stringifyJson(output), now, now, taskId);
+    if (updated.changes !== 1) return null;
+    if (row) this.refreshAnalysisSessionStatus(row.analysis_session_id, now);
+    return this.getAgentTask(taskId);
+  }
+
+  failAgentTask(taskId: string, error: JsonObject, now = Date.now()): AgentTaskRecord | null {
+    const row = this.db
+      .prepare<[string], { analysis_session_id: string }>(
+        "SELECT analysis_session_id FROM agent_task WHERE id = ?"
+      )
+      .get(taskId);
+    const updated = this.db
+      .prepare<[string, number, number, string]>(
+        `UPDATE agent_task
+         SET status = 'failed', error_json = ?, completed_at = ?, updated_at = ?
+         WHERE id = ? AND status IN ('running', 'waiting_model')`
+      )
+      .run(stringifyJson(error), now, now, taskId);
+    if (updated.changes !== 1) return null;
+    if (row) {
+      const blockedError = stringifyJson({
+        code: "parent_task_failed",
+        message: "An upstream medical agent task failed.",
+        detail: { failed_task_id: taskId },
+      });
+      this.db
+        .prepare<[string, number, number, string]>(
+          `UPDATE agent_task
+           SET status = 'blocked', error_json = ?, completed_at = ?, updated_at = ?
+           WHERE analysis_session_id = ? AND status = 'queued'`
+        )
+        .run(blockedError, now, now, row.analysis_session_id);
+      this.db
+        .prepare<[string, number, number, string]>(
+          `UPDATE analysis_session
+           SET status = 'failed', error_json = ?, completed_at = ?, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(stringifyJson(error), now, now, row.analysis_session_id);
+    }
+    return this.getAgentTask(taskId);
+  }
+
   getStudyBundle(studyId: string): StudyBundle | null {
     const study = this.getStudy(studyId);
     if (!study) return null;
@@ -455,6 +717,46 @@ export class MedicalCaseRepo {
       .all(studyId)
       .map(mapAgentTask);
     return { patient, study, images, analysisSessions, agentTasks };
+  }
+
+  private markSessionRunning(analysisSessionId: string, now: number): void {
+    this.db
+      .prepare<[number, number, string]>(
+        `UPDATE analysis_session
+         SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ?
+         WHERE id = ? AND status IN ('created', 'queued')`
+      )
+      .run(now, now, analysisSessionId);
+  }
+
+  private refreshAnalysisSessionStatus(analysisSessionId: string, now: number): void {
+    const row = this.db
+      .prepare<[string], { open_count: number; failed_count: number }>(
+        `SELECT
+           COALESCE(SUM(CASE WHEN status IN ('queued', 'running', 'waiting_model') THEN 1 ELSE 0 END), 0) AS open_count,
+           COALESCE(SUM(CASE WHEN status IN ('failed', 'blocked') THEN 1 ELSE 0 END), 0) AS failed_count
+         FROM agent_task
+         WHERE analysis_session_id = ?`
+      )
+      .get(analysisSessionId);
+    if (!row || row.open_count > 0) return;
+    if (row.failed_count > 0) {
+      this.db
+        .prepare<[number, number, string]>(
+          `UPDATE analysis_session
+           SET status = 'failed', completed_at = COALESCE(completed_at, ?), updated_at = ?
+           WHERE id = ?`
+        )
+        .run(now, now, analysisSessionId);
+      return;
+    }
+    this.db
+      .prepare<[number, number, string]>(
+        `UPDATE analysis_session
+         SET status = 'succeeded', completed_at = COALESCE(completed_at, ?), updated_at = ?
+         WHERE id = ?`
+      )
+      .run(now, now, analysisSessionId);
   }
 
   private updatePatient(id: string, input: PatientInput): PatientRecord {
@@ -567,6 +869,31 @@ function mapAgentTask(row: AgentTaskRow): AgentTaskRecord {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapModelJob(row: ModelJobRow): ModelJobRecord {
+  return {
+    id: row.id,
+    studyId: row.study_id,
+    imageId: row.image_id,
+    agentTaskId: row.agent_task_id,
+    jobType: row.job_type,
+    status: row.status,
+    priority: row.priority,
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    input: parseJson(row.input_json, {}),
+    output: row.output_json ? parseJson(row.output_json, {}) : null,
+    error: row.error_json ? parseJson(row.error_json, {}) : null,
+    modelName: row.model_name,
+    modelVersion: row.model_version,
+    weightsHash: row.weights_hash,
+    artifactUri: row.artifact_uri,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
   };
 }
 

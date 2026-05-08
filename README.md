@@ -40,4 +40,4 @@ data/artifacts/          本地验证版图像与 AI 产物目录
 
 ## 当前阶段
 
-P0 工程基线与 CodeClaw 源码基线同步。
+P0 医疗验证闭环开发中：已完成 CodeClaw 源码基线、SQLite 医疗 schema、医学知识库导入、MCP 工具、图像/模型 worker 骨架、医生工作台手工登记、病例详情、分析启动，以及验证版 `medical-agent-worker` 任务推进链路。

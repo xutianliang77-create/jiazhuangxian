@@ -10,6 +10,7 @@
 | `image-worker` | 单独 HTTP 服务 | DICOM 解析、脱敏、预览、预处理、图像质量检查 |
 | `model-gateway` | 单独 HTTP 服务 | 接收检测请求并写入 `model_job` 队列 |
 | `model-worker` | 单独后台进程 | 消费 `model_job`；当前验证版只写结构化未配置错误 |
+| `medical-agent-worker` | 单独后台进程 | 消费 `agent_task`；推进图像质控、检测排队、TI-RADS、报告草稿与安全审核任务链 |
 
 `.mcp.json` 只负责启动 MCP server，不负责拉起长期运行的 HTTP 后台服务。
 
@@ -61,6 +62,14 @@ CodeClaw 的 MCP 配置优先级是 `<workspace>/.mcp.json` 高于 `~/.codeclaw/
 
 ## 启动顺序
 
+先初始化验证数据库。Web、medical-agent-worker、model-gateway 和 model-worker 应指向同一个 `JZX_DATA_DB`，这样医生工作台才能看到同一批病例、agent task 和 model job 状态。
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm run medical:init-db -- --data-db data/artifacts/medical/data.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge
+export JZX_DATA_DB=/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/data.db
+```
+
 终端 1：启动图像服务。
 
 ```bash
@@ -72,17 +81,30 @@ JZX_ARTIFACT_ROOT=data/artifacts npm run image-worker
 
 ```bash
 cd /Users/xutianliang/Downloads/jiazhuangxian
-JZX_DATA_DB=data/artifacts/model-gateway/model-gateway.db npm run model-gateway
+JZX_DATA_DB=data/artifacts/medical/data.db npm run model-gateway
 ```
 
 终端 3：启动验证 worker。
 
 ```bash
 cd /Users/xutianliang/Downloads/jiazhuangxian
-JZX_DATA_DB=data/artifacts/model-gateway/model-gateway.db npm run model-worker
+JZX_DATA_DB=data/artifacts/medical/data.db npm run model-worker
 ```
 
-终端 4：启动 CodeClaw，并通过 `/mcp` 检查工具。
+终端 4：启动医疗 Agent worker。医生工作台点击 `启动分析` 后会创建 `agent_task`，该 worker 负责 claim 任务并推进状态；结节检测任务会写入 `model_job`，再交给 `model-worker`。
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+JZX_DATA_DB=data/artifacts/medical/data.db npm run medical-agent-worker
+```
+
+也可以单步消费一条任务，便于调试：
+
+```bash
+JZX_DATA_DB=data/artifacts/medical/data.db npm run medical-agent-worker:once
+```
+
+终端 5：启动 CodeClaw，并通过 `/mcp` 检查工具。
 
 ```text
 /mcp
@@ -111,6 +133,15 @@ JZX_DATA_DB=data/artifacts/model-gateway/model-gateway.db npm run model-worker
 /mcp call medical thyroid.DetectNodules {"study_id":"S1","image_id":"IMG1","image_uri":"artifact://model-ready/S1/IMG1.png","trace_id":"TRACE1"}
 ```
 
+医生工作台的完整验证链路是：
+
+1. 手工登记患者、检查和图像。
+2. 打开病例详情，点击图像行的 `启动分析`。
+3. `medical-agent-worker` 消费 `agent_task`，同步任务会直接完成。
+4. `detect_nodules` 任务会进入 `waiting_model`，并创建 `model_job`。
+5. `model-worker` 消费 `model_job`；当前没有真实权重时会写入 `detector_not_configured`。
+6. `medical-agent-worker` 再次同步 `waiting_model`，将检测任务标记为失败并阻断下游任务；接入真实权重后会继续推进下游任务。
+
 ## 常见问题
 
 | 现象 | 原因 | 处理 |
@@ -120,3 +151,5 @@ JZX_DATA_DB=data/artifacts/model-gateway/model-gateway.db npm run model-worker
 | `model_gateway_unreachable` | model-gateway 未启动 | 检查 `JZX_MODEL_GATEWAY_URL` 和 `npm run model-gateway` |
 | `knowledge_db_unavailable` | `JZX_DATA_DB` 指向的 SQLite 不存在或未迁移 | 使用默认 `~/.codeclaw/data.db`，或先初始化带医学迁移的验证数据库 |
 | `detector_not_configured` | 当前验证 worker 尚未接真实 YOLOv11/RT-DETR 权重 | 这是当前预期行为；后续替换 detector adapter |
+| `agent_task` 长时间 `queued` | `medical-agent-worker` 未启动，或父任务未完成 | 先运行 `npm run medical-agent-worker:once` 查看 JSON 输出 |
+| `detect_nodules` 长时间 `waiting_model` | `model-worker` 未启动，或 `JZX_DATA_DB` 不是同一个 SQLite 文件 | 确认 model-gateway、model-worker、medical-agent-worker 使用同一个 `JZX_DATA_DB` |

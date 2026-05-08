@@ -32,6 +32,8 @@
     "medical:ingest": "tsx scripts/medical-ingest.ts",
     "medical:init-db": "tsx scripts/medical-init-db.ts",
     "medical:embed": "tsx scripts/medical-embed.ts",
+    "medical-agent-worker": "tsx scripts/medical-agent-worker.ts",
+    "medical-agent-worker:once": "tsx scripts/medical-agent-worker.ts --once",
     "image-worker": "cd services/image-worker && python3 -m app",
     "model-gateway": "cd services/model-gateway && python3 -m app",
     "model-worker": "cd services/model-gateway && python3 -m app.worker",

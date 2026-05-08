@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API + UI case workflow slice.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker.
 
 ### Completed
 
@@ -104,6 +104,13 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Extended `MedicalCaseRepo.getStudyBundle()` so UI and API callers can read the study's queued/running/completed agent tasks with the rest of the case context.
 - Extended the React `MedicalPanel` with selectable recent studies, a compact study detail view, image rows, and a per-image `启动分析` action.
 - Added frontend endpoint types and API helpers for study detail bundles, analysis sessions, and agent task records.
+- Added `src/medical/agentWorker.ts` as the validation medical agent task worker.
+- Added root scripts `npm run medical-agent-worker` and `npm run medical-agent-worker:once`.
+- Added `MedicalCaseRepo` support for claiming queued agent tasks, moving tasks to `waiting_model`, completing/failing tasks, blocking downstream queued tasks, and refreshing analysis session status.
+- Added `MedicalCaseRepo` support for creating and reading `model_job` rows from the same validation SQLite database.
+- The validation medical agent worker now runs synchronous placeholder tasks for image QC, TI-RADS feature classification, TI-RADS calculation, report draft, and safety review.
+- `detect_nodules` agent tasks now create a `thyroid.detect_nodules` `model_job`, move to `waiting_model`, and later sync model success/failure back into the agent task chain.
+- Updated local MCP setup documentation so Web, medical-agent-worker, model-gateway, and model-worker use the same `JZX_DATA_DB`.
 
 ### Verification
 
@@ -140,6 +147,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `npm run build:web` passed after study detail/analysis UI; Vite still reports the existing Monaco chunk-size warning.
 - `npm test` passed after study detail/analysis UI: 175 files passed, 1 skipped; 1672 tests passed, 3 skipped.
 - `git diff --check` passed after study detail/analysis UI.
+- Targeted medical agent worker tests passed: `npm test -- --run test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts` with 6 tests.
+- Targeted lint passed for medical agent worker, storage repo, CLI script, and worker tests.
+- Root `npm run typecheck` passed after medical agent worker implementation.
+- CLI smoke test passed: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -172,9 +183,9 @@ None.
 
 ### Next Session Priorities
 
-1. Add detector artifact output conventions for overlays and model comparison once weights are available.
-2. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
-3. Connect queued medical `agent_task` rows to the CodeClaw team/orchestration execution path or a validation worker.
+1. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
+2. Add detector artifact output conventions for overlays, bounding boxes, and model comparison once weights are available.
+3. Replace validation placeholder outputs with real image-worker/MCP calls where dependencies are configured.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
