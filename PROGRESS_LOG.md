@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway, medical MCP wrappers, and seeded medical rules/templates.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway, medical MCP wrappers, and seeded medical knowledge.
 
 ### Completed
 
@@ -40,13 +40,18 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added root scripts `npm run image-worker` and `npm run model-gateway`.
 - Wired `thyroid.DetectNodules` in `packages/medical-mcp` to call model-gateway and create queued `model_job` records; unreachable gateway errors return structured JSON.
 - Added model-gateway unittest coverage for service startup, job enqueue, job query, and queue reopen.
+- Added `008_medical_terms_seed.sql` with validation terminology for thyroid nodules, TI-RADS features, FNA, and follow-up.
+- Added medical knowledge MCP tools: `medical.GetTiradsRule`, `medical.GetReportTemplate`, and `medical.NormalizeTerm`.
+- Added `MedicalKnowledgeStore` for read-only SQLite access to `tirads_rules`, `report_templates`, and `medical_terms`, defaulting to `JZX_DATA_DB` or CodeClaw `~/.codeclaw/data.db`.
+- Added tests for knowledge tool happy paths and missing-database structured errors.
 
 ### Verification
 
 - `npm run typecheck` passed.
-- `npm test` passed after the model-gateway change: 171 files passed, 1 skipped; 1652 tests passed, 3 skipped.
+- `npm test` passed after the medical knowledge MCP change: 171 files passed, 1 skipped; 1656 tests passed, 3 skipped.
 - Targeted storage tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts`.
 - Targeted medical MCP tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/caseRepo.test.ts`.
+- Targeted medical knowledge tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/seed-data.test.ts`.
 - Targeted seed tests passed: `npm test -- --run test/unit/medical/seed-data.test.ts test/unit/medical/mcp-server.test.ts test/unit/storage/migrate.test.ts`.
 - `python3 -m unittest discover services/image-worker/tests` passed: 3 tests.
 - `python3 -m unittest discover services/model-gateway/tests` passed: 3 tests.
@@ -66,10 +71,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add medical knowledge MCP tools: `medical.GetTiradsRule`, `medical.GetReportTemplate`, and `medical.NormalizeTerm`.
-2. Add model-gateway worker loop skeleton for consuming queued `model_job` records.
+1. Add model-gateway worker loop skeleton for consuming queued `model_job` records.
+2. Add MCP configuration examples for running `medical:mcp` with CodeClaw.
 3. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
-4. Add MCP configuration examples for running `medical:mcp` with CodeClaw.
+4. Add knowledge ingestion skeleton for approved guideline/template files.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist

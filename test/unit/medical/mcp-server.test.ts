@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import path from "node:path";
+import os from "node:os";
 
+import { MedicalKnowledgeStore } from "../../../packages/medical-mcp/src/knowledgeStore";
 import { MedicalMcpServer } from "../../../packages/medical-mcp/src/server";
 import { calculateAcrTirads } from "../../../packages/medical-mcp/src/tirads";
+import { migrateIfNeeded } from "../../../src/storage/migrate";
 
 describe("medical MCP tool surface", () => {
   it("lists image-worker wrappers and thyroid tools", () => {
@@ -18,6 +24,9 @@ describe("medical MCP tool surface", () => {
       "thyroid.DetectNodules",
       "thyroid.ClassifyTiradsFeatures",
       "thyroid.CalculateTirads",
+      "medical.GetTiradsRule",
+      "medical.GetReportTemplate",
+      "medical.NormalizeTerm",
     ]));
   });
 
@@ -149,6 +158,85 @@ describe("medical MCP tool surface", () => {
   });
 });
 
+describe("medical knowledge MCP tools", () => {
+  it("returns seeded TI-RADS rules with version and evidence metadata", async () => {
+    await withKnowledgeServer(async (server) => {
+      const result = await server.callTool("medical.GetTiradsRule", {
+        rule_code: "ACR_2017_composition_solid",
+      });
+
+      expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+        status: "ok",
+        result: {
+          count: 1,
+          system_name: "ACR_TI_RADS",
+          system_version: "2017",
+          rules: [
+            {
+              rule_code: "ACR_2017_composition_solid",
+              feature_group: "composition",
+              feature_name: "solid",
+              points: 2,
+              evidence_document_id: "doc-acr-tirads-2017",
+            },
+          ],
+        },
+      });
+    });
+  });
+
+  it("returns active report templates by scene", async () => {
+    await withKnowledgeServer(async (server) => {
+      const result = await server.callTool("medical.GetReportTemplate", {
+        scene: "thyroid_ultrasound_report",
+      });
+
+      expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+        status: "ok",
+        result: {
+          template: {
+            id: "tpl-thyroid-ultrasound-draft-v1",
+            scene: "thyroid_ultrasound_report",
+            version: "v1",
+            required_fields: [
+              "thyroid_description",
+              "nodule_descriptions",
+              "tirads_summary",
+              "recommendation",
+              "evidence_summary",
+            ],
+          },
+        },
+      });
+    });
+  });
+
+  it("normalizes Chinese free text to seeded medical terms", async () => {
+    await withKnowledgeServer(async (server) => {
+      const result = await server.callTool("medical.NormalizeTerm", {
+        text: "甲状腺结节呈低回声实性，建议细针穿刺",
+      });
+      const names = JSON.parse(result.content[0]!.text).result.normalized_terms.map(
+        (term: { canonical_name: string }) => term.canonical_name
+      );
+
+      expect(names).toEqual(expect.arrayContaining(["thyroid_nodule", "hypoechoic", "solid", "fna"]));
+    });
+  });
+
+  it("returns a structured error when the knowledge database is missing", async () => {
+    const server = new MedicalMcpServer({ knowledgeDbPath: "/definitely/missing/jiazhuangxian.db" });
+    const result = await server.callTool("medical.GetTiradsRule", {
+      rule_code: "ACR_2017_composition_solid",
+    });
+
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      status: "error",
+      error: { code: "knowledge_db_unavailable" },
+    });
+  });
+});
+
 describe("thyroid.CalculateTirads", () => {
   it("calculates ACR TI-RADS 2017 score and recommendation", async () => {
     const server = new MedicalMcpServer();
@@ -190,4 +278,20 @@ function jsonResponse(payload: unknown): Response {
     status: 200,
     headers: { "content-type": "application/json" },
   });
+}
+
+async function withKnowledgeServer(callback: (server: MedicalMcpServer) => void | Promise<void>): Promise<void> {
+  const tmpRoot = mkdtempSync(path.join(os.tmpdir(), "jzx-mcp-knowledge-"));
+  const db = new Database(path.join(tmpRoot, "data.db"));
+  try {
+    db.pragma("foreign_keys = ON");
+    migrateIfNeeded(db, "data");
+    const server = new MedicalMcpServer({
+      knowledgeStore: new MedicalKnowledgeStore({ db }),
+    });
+    await callback(server);
+  } finally {
+    db.close();
+    rmSync(tmpRoot, { recursive: true, force: true });
+  }
 }

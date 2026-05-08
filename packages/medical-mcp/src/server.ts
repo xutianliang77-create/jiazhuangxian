@@ -1,4 +1,5 @@
 import { ImageWorkerClient, type ImageWorkerClientOptions } from "./imageWorkerClient";
+import { MedicalKnowledgeStore, type MedicalKnowledgeStoreOptions } from "./knowledgeStore";
 import { ModelGatewayClient, type ModelGatewayClientOptions } from "./modelGatewayClient";
 import { calculateAcrTirads } from "./tirads";
 import type { FetchLike, ToolCallResult, ToolDescriptor } from "./types";
@@ -144,18 +145,66 @@ const TOOLS: ToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "medical.GetTiradsRule",
+    description: "Read active TI-RADS rules from the medical SQLite knowledge tables.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        system_name: { type: "string" },
+        system_version: { type: "string" },
+        rule_code: { type: "string" },
+        feature_group: { type: "string" },
+        feature_name: { type: "string" },
+        category: { type: "string" },
+        limit: { type: "number", minimum: 1, maximum: 100 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "medical.GetReportTemplate",
+    description: "Read an active report template from the medical SQLite knowledge tables.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scene: { type: "string" },
+        category: { type: "string" },
+        tirads_category: { type: "string" },
+        version: { type: "string" },
+      },
+      required: ["scene"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "medical.NormalizeTerm",
+    description: "Normalize free text to seeded medical terminology entries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string" },
+        category: { type: "string" },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export interface MedicalMcpServerOptions {
   baseUrl?: string;
   imageWorkerUrl?: string;
   modelGatewayUrl?: string;
+  knowledgeDbPath?: string;
+  knowledgeStore?: MedicalKnowledgeStore;
   fetchImpl?: FetchLike;
 }
 
 export class MedicalMcpServer {
   private readonly imageWorker: ImageWorkerClient;
   private readonly modelGateway: ModelGatewayClient;
+  private readonly knowledgeStore: MedicalKnowledgeStore;
 
   constructor(options: MedicalMcpServerOptions = {}) {
     const fetchImpl = options.fetchImpl;
@@ -167,8 +216,12 @@ export class MedicalMcpServer {
       baseUrl: options.modelGatewayUrl,
       fetchImpl,
     };
+    const knowledgeOptions: MedicalKnowledgeStoreOptions = {
+      dbPath: options.knowledgeDbPath,
+    };
     this.imageWorker = new ImageWorkerClient(imageOptions);
     this.modelGateway = new ModelGatewayClient(modelOptions);
+    this.knowledgeStore = options.knowledgeStore ?? new MedicalKnowledgeStore(knowledgeOptions);
   }
 
   listTools(): ToolDescriptor[] {
@@ -198,6 +251,12 @@ export class MedicalMcpServer {
           return json(notConfigured("model_gateway_not_configured", "TI-RADS feature classification model gateway is not wired yet."));
         case "thyroid.CalculateTirads":
           return json(calculateAcrTirads(asTiradsInput(input)));
+        case "medical.GetTiradsRule":
+          return json(this.knowledgeStore.getTiradsRule(input));
+        case "medical.GetReportTemplate":
+          return json(this.knowledgeStore.getReportTemplate(input));
+        case "medical.NormalizeTerm":
+          return json(this.knowledgeStore.normalizeTerm(input));
         default:
           return text(`unknown tool: ${name}`, true);
       }

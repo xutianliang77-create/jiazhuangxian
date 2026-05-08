@@ -81,6 +81,9 @@ describe("medical seed data migration", () => {
       "PHI_NOT_ALLOWED_IN_MODEL_LOG",
       "REQUIRE_MANUAL_CALIBRATION_FOR_MM",
     ]);
+
+    const termCount = db.prepare("SELECT COUNT(*) AS count FROM medical_terms").get() as { count: number };
+    expect(termCount.count).toBe(10);
   });
 
   it("keeps static calculator evidence rule codes backed by DB rows", () => {
@@ -107,7 +110,7 @@ describe("medical seed data migration", () => {
 
   it("does not duplicate seed rows on a second migration run", () => {
     migrateIfNeeded(db, "data");
-    const tables = ["medical_documents", "tirads_rules", "report_templates", "safety_rules"];
+    const tables = ["medical_documents", "tirads_rules", "report_templates", "safety_rules", "medical_terms"];
     const counts = Object.fromEntries(
       tables.map((table) => [
         table,
@@ -119,6 +122,7 @@ describe("medical seed data migration", () => {
       tirads_rules: 36,
       report_templates: 3,
       safety_rules: 5,
+      medical_terms: 10,
     });
   });
 });
