@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -9,6 +10,7 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest.mock import patch
 
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -184,6 +186,67 @@ class ModelGatewayTest(unittest.TestCase):
             idle = run_once(store, worker_id="worker-test")
             self.assertEqual(idle["status"], "idle")
             self.assertFalse(idle["claimed"])
+
+    def test_worker_writes_standard_detector_artifact_on_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            store = ModelJobStore(Path(tmp) / "model.db")
+            queued = store.enqueue_detect_nodules(
+                DetectNodulesRequest(
+                    study_id="S1",
+                    image_id="IMG1",
+                    image_uri="artifact://model-ready/S1/IMG1.png",
+                )
+            )
+            detector_output = {
+                "nodules": [
+                    {
+                        "nodule_index": 1,
+                        "bbox": [10, 20, 30, 40],
+                        "confidence": 0.91,
+                        "class_id": 0,
+                        "source": "ai",
+                        "model_name": "yolov11-thyroid-detector",
+                        "model_version": "test",
+                    }
+                ],
+                "model": {
+                    "adapter": "yolov11-ultralytics",
+                    "family": "yolov11",
+                    "name": "yolov11-thyroid-detector",
+                    "version": "test",
+                    "weights_hash": "sha256:test",
+                },
+                "warnings": [],
+            }
+
+            with patch.dict(os.environ, {"JZX_ARTIFACT_ROOT": str(root)}, clear=False):
+                with patch("app.worker.run_detector_job", return_value=detector_output):
+                    result = run_once(store, worker_id="worker-test")
+
+            self.assertEqual(result["status"], "succeeded")
+            artifact_uri = result["artifact_uri"]
+            self.assertTrue(artifact_uri.startswith("artifact://model-output/thyroid-detect-nodules/S1/IMG1/"))
+            artifact_path = root / artifact_uri.removeprefix("artifact://")
+            self.assertTrue(artifact_path.is_file())
+
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+            self.assertEqual(artifact["schema_version"], "thyroid.detector.output.v1")
+            self.assertEqual(artifact["artifact_kind"], "thyroid_nodule_detection")
+            self.assertEqual(artifact["model_job_id"], queued["id"])
+            self.assertEqual(artifact["source_image_uri"], "artifact://model-ready/S1/IMG1.png")
+            self.assertEqual(artifact["coordinate_system"]["type"], "pixel_xyxy")
+            self.assertEqual(artifact["detections"][0]["bbox"], [10.0, 20.0, 30.0, 40.0])
+            self.assertEqual(artifact["detectors"]["consensus"]["status"], "single_model_only")
+            self.assertEqual(artifact["artifacts"]["detections_json"], artifact_uri)
+
+            completed = store.get_job(queued["id"])
+            self.assertIsNotNone(completed)
+            assert completed is not None
+            self.assertEqual(completed["status"], "succeeded")
+            self.assertEqual(completed["artifact_uri"], artifact_uri)
+            stored_output = json.loads(completed["output_json"])
+            self.assertEqual(stored_output["artifacts"]["detections_json"], artifact_uri)
 
     def test_detector_adapter_selection_supports_yolo_and_transformer_detectors(self) -> None:
         yolo = select_detector_adapter({"model_name": "yolov11-thyroid-detector"}, env={})

@@ -36,6 +36,7 @@ data/artifacts/          本地验证版图像与 AI 产物目录
 - [CodeClaw 复用开发基线](docs/CODECLAW_REUSE_BASELINE.md)
 - [医学 MCP 本地验证配置](docs/MEDICAL_MCP_SETUP.md)
 - [医学知识库导入验证流程](docs/MEDICAL_KNOWLEDGE_INGESTION.md)
+- [模型产物规范](docs/MODEL_ARTIFACT_CONVENTIONS.md)
 - [进度日志](PROGRESS_LOG.md)
 
 ## 当前阶段

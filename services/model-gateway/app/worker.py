@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .artifacts import write_detector_artifact
 from .detectors import DetectorAdapterError, run_detector_job
 from .store import ModelJobStore, default_db_path
 
@@ -25,14 +26,24 @@ def run_once(store: ModelJobStore, *, worker_id: str = "model-worker") -> dict[s
 def run_detector_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: str) -> dict[str, Any]:
     try:
         output = run_detector_job(job)
-        completed = store.complete_job(str(job["id"]), output)
+        artifact_result = write_detector_artifact(job, output, worker_id=worker_id)
+        enriched_output = {
+            **output,
+            "artifacts": {
+                "detections_json": artifact_result["artifact_uri"],
+                "overlay_image": output.get("overlay_uri"),
+                "model_comparison_json": None,
+            },
+        }
+        completed = store.complete_job(str(job["id"]), enriched_output, artifact_uri=artifact_result["artifact_uri"])
         return {
             "status": "succeeded" if completed else "error",
             "claimed": True,
             "worker_id": worker_id,
             "job_id": job["id"],
             "job_type": job["job_type"],
-            "output": output,
+            "artifact_uri": artifact_result["artifact_uri"],
+            "output": enriched_output,
         }
     except DetectorAdapterError as exc:
         return fail_claimed_job(store, job, exc.to_error(worker_id=worker_id), worker_id=worker_id)

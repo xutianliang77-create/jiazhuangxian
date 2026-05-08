@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries and config checks, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker.
 
 ### Completed
 
@@ -115,6 +115,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `GET /model/v1/config/check` to the model-gateway HTTP API.
 - Added root script `npm run model-gateway:check`.
 - Updated model-gateway and MCP setup docs with configuration check usage.
+- Added `services/model-gateway/app/artifacts.py` for standardized detector output artifact writing.
+- Successful `thyroid.detect_nodules` model-worker runs now write `artifact://model-output/thyroid-detect-nodules/<study>/<image>/<job>/detections.json` and persist the URI to `model_job.artifact_uri`.
+- Detection artifact JSON now standardizes schema version, pixel `xyxy` coordinate system, model provenance, detections, warnings, raw output, overlay URI slot, and future model-comparison slots.
+- Added `docs/MODEL_ARTIFACT_CONVENTIONS.md` and linked it from `README.md`.
 
 ### Verification
 
@@ -160,6 +164,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Root `npm run typecheck` passed after model-gateway config check.
 - `npm test` passed after model-gateway config check: 176 files passed, 1 skipped; 1674 tests passed, 3 skipped.
 - `git diff --check` passed after model-gateway config check.
+- `python3 -m unittest discover services/model-gateway/tests` passed after detector artifact conventions: 10 tests.
+- Root `npm run typecheck` passed after detector artifact conventions.
+- `npm test` passed after detector artifact conventions: 176 files passed, 1 skipped; 1674 tests passed, 3 skipped.
+- `git diff --check` passed after detector artifact conventions.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -192,9 +200,9 @@ None.
 
 ### Next Session Priorities
 
-1. Add detector artifact output conventions for overlays, bounding boxes, and model comparison once weights are available.
-2. Replace validation placeholder outputs with real image-worker/MCP calls where dependencies are configured.
-3. Add UI/API visibility for model-gateway config check results in the Medical workstation.
+1. Replace validation placeholder outputs with real image-worker/MCP calls where dependencies are configured.
+2. Add UI/API visibility for model-gateway config check results and detector artifacts in the Medical workstation.
+3. Add overlay image generation for detector bbox results.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
