@@ -29,6 +29,7 @@
     "beelink:mcp": "tsx packages/beelink-mcp/src/index.ts",
     "dicom:mcp": "tsx packages/dicom-mcp/src/index.ts",
     "medical:mcp": "tsx packages/medical-mcp/src/index.ts",
+    "medical:ingest": "tsx scripts/medical-ingest.ts",
     "image-worker": "cd services/image-worker && python3 -m app",
     "model-gateway": "cd services/model-gateway && python3 -m app",
     "model-worker": "cd services/model-gateway && python3 -m app.worker",

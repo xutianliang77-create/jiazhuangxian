@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, local MCP configuration examples, and the first medical Web/API slice.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API slice.
 
 ### Completed
 
@@ -59,11 +59,25 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added frontend endpoint types for `MedicalSummary` and `MedicalRecentStudy`.
 - Added medical Web/API tests covering disabled storage, authenticated summary responses, wrong-token handling, and MedicalPanel rendering/error states.
 - Added a small web-react test setup storage shim so the full frontend test suite has a complete `localStorage` implementation in the current happy-dom environment.
+- Added the medical knowledge ingestion service under `src/medical/knowledge`.
+- Knowledge ingestion currently accepts approved JSON manifest files, requires `review_status = approved` and `approved_by`, and records failed ingestion jobs for invalid manifests.
+- Knowledge ingestion writes document provenance to `medical_documents`, chunk provenance to `medical_chunk_metadata`, optional templates to `report_templates`, and job state to `knowledge_ingestion_job`.
+- Knowledge ingestion syncs approved chunks into the existing CodeClaw RAG store via `rag_chunks` and `rag_terms`; it does not create a second RAG implementation.
+- Added stale chunk cleanup when a document manifest is re-ingested with fewer chunks.
+- Added the root CLI script `npm run medical:ingest`.
+- Added `examples/medical-knowledge/acr-tirads-validation.manifest.json` as the first validation manifest sample.
+- Added `docs/MEDICAL_KNOWLEDGE_INGESTION.md` and linked it from `README.md`.
+- Added unit tests covering successful ingestion, re-ingestion cleanup, rejection of draft documents, failed job tracking, and loading the checked-in manifest.
 
 ### Verification
 
 - `npm run typecheck` passed.
+- `npm run typecheck` passed after the medical knowledge ingestion slice.
 - `npm test` passed after the medical Web/API slice: 172 files passed, 1 skipped; 1661 tests passed, 3 skipped.
+- `npm test` passed after the medical knowledge ingestion slice: 173 files passed, 1 skipped; 1665 tests passed, 3 skipped.
+- Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
+- Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
+- CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
 - Targeted MCP config example tests passed: `npm test -- --run test/unit/medical/mcp-config-example.test.ts test/unit/mcp/config.test.ts test/unit/medical/mcp-server.test.ts`.
 - Targeted medical Web API tests passed: `npm test -- --run test/unit/channels/web/server.test.ts`.
 - Targeted MedicalPanel tests passed: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx`.
@@ -93,10 +107,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add knowledge ingestion skeleton for approved guideline/template files.
-2. Add medical Web/API write routes for manual validation patient/study/image registration.
-3. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
-4. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
+1. Add medical Web/API write routes for manual validation patient/study/image registration.
+2. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
+3. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
+4. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
@@ -108,6 +122,7 @@ find src packages web-react docs services data -maxdepth 3 -type f | sort
 npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts
 npm test -- --run test/unit/medical/mcp-server.test.ts
 npm test -- --run test/unit/medical/seed-data.test.ts
+npm test -- --run test/unit/medical/knowledgeIngestion.test.ts
 python3 -m unittest discover services/image-worker/tests
 python3 -m unittest discover services/model-gateway/tests
 ```
