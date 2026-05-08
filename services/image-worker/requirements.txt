@@ -1,0 +1,5 @@
+pydantic>=2.0,<3.0
+pillow>=10.0
+numpy>=1.26
+pydicom>=2.4
+opencv-python-headless>=4.9
