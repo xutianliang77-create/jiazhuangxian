@@ -280,6 +280,50 @@ export interface MedicalSummary {
   warnings: string[];
 }
 
+export interface MedicalPatient {
+  id: string;
+  externalPatientId: string | null;
+  nameHash: string | null;
+  sex: string | null;
+  birthYear: number | null;
+  deidentified: boolean;
+  meta: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MedicalStudy {
+  id: string;
+  patientId: string | null;
+  accessionNo: string | null;
+  studyInstanceUid: string | null;
+  modality: string;
+  bodyPart: string;
+  studyTime: number | null;
+  status: string;
+  clinicalContext: string | null;
+  sourceType: string;
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MedicalImage {
+  id: string;
+  studyId: string;
+  fileUri: string;
+  previewUri: string | null;
+  modelReadyUri: string | null;
+  fileType: string;
+  width: number | null;
+  height: number | null;
+  imageQuality: string | null;
+  qualityScore: number | null;
+  processingStatus: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ===== sessions =====
 
 export const listSessions = () => api<{ sessions: SessionMeta[] }>("GET", "/v1/web/sessions");
@@ -450,6 +494,30 @@ export const validateDashboard = (dashboardId: string) =>
 
 export const getMedicalSummary = (limit = 12) =>
   api<MedicalSummary>("GET", `/v1/web/medical/summary?limit=${encodeURIComponent(String(limit))}`);
+
+export const createMedicalPatient = (input: {
+  externalPatientId?: string;
+  nameHash?: string;
+  sex?: string;
+  birthYear?: number;
+  meta?: Record<string, unknown>;
+}) => api<{ patient: MedicalPatient }>("POST", "/v1/web/medical/patients", input);
+
+export const createMedicalStudy = (input: {
+  patientId?: string;
+  accessionNo?: string;
+  clinicalContext?: string;
+  sourceType?: string;
+}) => api<{ study: MedicalStudy }>("POST", "/v1/web/medical/studies", input);
+
+export const createMedicalImage = (input: {
+  studyId: string;
+  fileUri: string;
+  fileType?: string;
+  width?: number;
+  height?: number;
+  pixelSpacing?: Record<string, unknown>;
+}) => api<{ image: MedicalImage }>("POST", "/v1/web/medical/images", input);
 
 // ===== Cron #116 =====
 

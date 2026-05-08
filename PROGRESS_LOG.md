@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API read/write slice.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API + UI read/write slice.
 
 ### Completed
 
@@ -84,6 +84,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `medical:init-db` creates/migrates a local SQLite `data.db`, initializes a CodeClaw RAG DB, reports seed counts, and can import the checked-in sample medical knowledge manifest with `--ingest-sample-knowledge`.
 - Added tests for default init-db paths and sample-knowledge initialization.
 - Updated the medical knowledge ingestion guide with the init-db command.
+- Added typed frontend endpoints for `createMedicalPatient`, `createMedicalStudy`, and `createMedicalImage`.
+- Added a compact `Manual Case` registration form to the React `MedicalPanel`.
+- Manual case registration now creates patient, study, and image records in sequence, then refreshes the medical summary and recent studies list.
+- Manual case UI captures validation fields for external patient id, accession number, artifact/file URI, sex, birth year, clinical context, file type, width, and height.
+- Added MedicalPanel tests for successful manual registration and registration error handling.
 
 ### Verification
 
@@ -100,6 +105,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Targeted lint for init-db files passed: `npx eslint scripts/medical-init-db.ts test/unit/medical/initDbCli.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:init-db -- --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge`.
 - `npm test` passed after init-db work: 174 files passed, 1 skipped; 1669 tests passed, 3 skipped.
+- Targeted MedicalPanel tests passed after manual case UI: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 5 tests.
+- Frontend typecheck passed after manual case UI: `cd web-react && npm run typecheck`.
+- Full web-react tests passed after manual case UI: `cd web-react && npm test` with 11 files passed and 38 tests passed.
+- `npm run build:web` passed after manual case UI; Vite still reports the existing Monaco chunk-size warning.
+- Root `npm run typecheck` passed after manual case UI.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -132,10 +142,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add Web UI forms for the manual patient/study/image registration APIs.
-2. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
-3. Add detector artifact output conventions for overlays and model comparison once weights are available.
-4. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
+1. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
+2. Add detector artifact output conventions for overlays and model comparison once weights are available.
+3. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
+4. Add a study detail view that can launch analysis sessions from the registered image rows.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
