@@ -1,6 +1,7 @@
 import { ImageWorkerClient, type ImageWorkerClientOptions } from "./imageWorkerClient";
+import { ModelGatewayClient, type ModelGatewayClientOptions } from "./modelGatewayClient";
 import { calculateAcrTirads } from "./tirads";
-import type { ToolCallResult, ToolDescriptor } from "./types";
+import type { FetchLike, ToolCallResult, ToolDescriptor } from "./types";
 
 const IMAGE_REQUEST_SCHEMA = {
   type: "object",
@@ -75,8 +76,20 @@ const TOOLS: ToolDescriptor[] = [
   },
   {
     name: "thyroid.DetectNodules",
-    description: "Placeholder for the nodule detector MCP tool; returns a clear not-configured response until model-gateway is wired.",
-    inputSchema: IMAGE_REQUEST_SCHEMA,
+    description: "Create a thyroid nodule detection model_job through the model-gateway.",
+    inputSchema: {
+      ...IMAGE_REQUEST_SCHEMA,
+      properties: {
+        ...IMAGE_REQUEST_SCHEMA.properties,
+        agent_task_id: { type: "string" },
+        model: { type: "string" },
+        model_version: { type: "string" },
+        weights_hash: { type: "string" },
+        return_overlay: { type: "boolean" },
+        priority: { type: "number", minimum: 0, maximum: 1000 },
+        max_attempts: { type: "number", minimum: 1, maximum: 5 },
+      },
+    },
   },
   {
     name: "thyroid.ClassifyTiradsFeatures",
@@ -133,13 +146,29 @@ const TOOLS: ToolDescriptor[] = [
   },
 ];
 
-export type MedicalMcpServerOptions = ImageWorkerClientOptions;
+export interface MedicalMcpServerOptions {
+  baseUrl?: string;
+  imageWorkerUrl?: string;
+  modelGatewayUrl?: string;
+  fetchImpl?: FetchLike;
+}
 
 export class MedicalMcpServer {
   private readonly imageWorker: ImageWorkerClient;
+  private readonly modelGateway: ModelGatewayClient;
 
   constructor(options: MedicalMcpServerOptions = {}) {
-    this.imageWorker = new ImageWorkerClient(options);
+    const fetchImpl = options.fetchImpl;
+    const imageOptions: ImageWorkerClientOptions = {
+      baseUrl: options.imageWorkerUrl ?? options.baseUrl,
+      fetchImpl,
+    };
+    const modelOptions: ModelGatewayClientOptions = {
+      baseUrl: options.modelGatewayUrl,
+      fetchImpl,
+    };
+    this.imageWorker = new ImageWorkerClient(imageOptions);
+    this.modelGateway = new ModelGatewayClient(modelOptions);
   }
 
   listTools(): ToolDescriptor[] {
@@ -164,7 +193,7 @@ export class MedicalMcpServer {
         case "thyroid.ImageQC":
           return json(await this.imageWorker.call("/image/v1/image-quality-check", input));
         case "thyroid.DetectNodules":
-          return json(notConfigured("model_gateway_not_configured", "Nodule detection model gateway is not wired yet."));
+          return json(await this.modelGateway.call("/model/v1/infer/thyroid/detect-nodules", input));
         case "thyroid.ClassifyTiradsFeatures":
           return json(notConfigured("model_gateway_not_configured", "TI-RADS feature classification model gateway is not wired yet."));
         case "thyroid.CalculateTirads":

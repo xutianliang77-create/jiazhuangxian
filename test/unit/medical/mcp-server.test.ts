@@ -87,16 +87,64 @@ describe("medical MCP tool surface", () => {
     });
   });
 
-  it("returns explicit not-configured responses for model-gateway tools", async () => {
-    const server = new MedicalMcpServer();
+  it("forwards thyroid.DetectNodules to the model-gateway HTTP endpoint", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const server = new MedicalMcpServer({
+      modelGatewayUrl: "http://model.test",
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as unknown });
+        return jsonResponse({
+          status: "ok",
+          result: {
+            job_id: "mj_1",
+            status: "queued",
+            job_type: "thyroid.detect_nodules",
+            model: { name: "yolov11-thyroid-detector", version: "validation-placeholder" },
+          },
+          warnings: ["detector worker is not configured yet; job is queued for validation flow only"],
+        });
+      },
+    });
+    const result = await server.callTool("thyroid.DetectNodules", {
+      study_id: "S1",
+      image_id: "IMG1",
+      image_uri: "artifact://raw/S1/IMG1.png",
+      trace_id: "T1",
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "http://model.test/model/v1/infer/thyroid/detect-nodules",
+        body: {
+          study_id: "S1",
+          image_id: "IMG1",
+          image_uri: "artifact://raw/S1/IMG1.png",
+          trace_id: "T1",
+        },
+      },
+    ]);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      status: "ok",
+      result: { job_id: "mj_1", status: "queued", job_type: "thyroid.detect_nodules" },
+    });
+  });
+
+  it("returns a structured model-gateway error when detection gateway is unreachable", async () => {
+    const server = new MedicalMcpServer({
+      modelGatewayUrl: "http://model.test",
+      fetchImpl: async () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+    });
     const result = await server.callTool("thyroid.DetectNodules", {
       study_id: "S1",
       image_id: "IMG1",
       image_uri: "artifact://raw/S1/IMG1.png",
     });
+
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({
       status: "error",
-      error: { code: "model_gateway_not_configured" },
+      error: { code: "model_gateway_unreachable" },
     });
   });
 });
