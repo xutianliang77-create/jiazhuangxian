@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage plus Python image-worker skeleton.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, and medical MCP wrappers.
 
 ### Completed
 
@@ -25,20 +25,27 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage plus P
 - Added initial image-worker endpoints: `/health`, `/image/v1/parse-dicom`, `/image/v1/deidentify-dicom`, `/image/v1/render-preview`, `/image/v1/preprocess-ultrasound`, `/image/v1/extract-calibration`, `/image/v1/image-quality-check`, and `/image/v1/copy-input`.
 - Added artifact URI resolution for `artifact://` paths and structured dependency-missing errors when `pydicom`/Pillow/OpenCV dependencies are unavailable.
 - Added image-worker unittest coverage that starts the service, checks artifact path safety, and runs a raster image quality check.
+- Added `packages/medical-mcp` as the CodeClaw MCP wrapper package for the medical platform.
+- Added MCP tools for `image.ParseDicom`, `image.DeidentifyDicom`, `image.RenderPreview`, `image.PreprocessUltrasound`, `image.ExtractCalibration`, `image.ImageQualityCheck`, `thyroid.ImageQC`, `thyroid.DetectNodules`, `thyroid.ClassifyTiradsFeatures`, and `thyroid.CalculateTirads`.
+- Wired `image.*` and `thyroid.ImageQC` to the Python image-worker over HTTP with `JZX_IMAGE_WORKER_URL`.
+- Added ACR TI-RADS 2017 rule calculation for `thyroid.CalculateTirads`; detector and feature-classifier tools currently return explicit `model_gateway_not_configured` responses until model-gateway is implemented.
+- Added root `npm run medical:mcp` script.
 
 ### Verification
 
 - `npm run typecheck` passed.
-- `npm test` passed after the medical storage change: 169 files passed, 1 skipped; 1642 tests passed, 3 skipped.
+- `npm test` passed after the medical MCP change: 170 files passed, 1 skipped; 1648 tests passed, 3 skipped.
 - Targeted storage tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts`.
+- Targeted medical MCP tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/caseRepo.test.ts`.
 - `python3 -m unittest discover services/image-worker/tests` passed: 3 tests.
+- `npx eslint packages/medical-mcp test/unit/medical/mcp-server.test.ts` passed.
 - `web-react`: `npm run typecheck` passed.
 - `git diff --cached --check` passed.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.
   - `test/golden/runner/meta-router.ts`: unnecessary escaped `\-`.
-- GitHub push is currently blocked by network timeout to `https://github.com`; `gh auth status` is valid, but `curl -I --max-time 15 https://github.com` timed out. Local commits are ahead of `origin/main`.
+- GitHub push now works with `git -c http.version=HTTP/1.1 push origin main` when the default HTTP path is slow.
 
 ### Background Tasks
 
@@ -46,10 +53,10 @@ None.
 
 ### Next Session Priorities
 
-1. Retry `git push origin main` when GitHub network connectivity returns.
-2. Add MCP package shells for `image.*`, `thyroid.ImageQC`, `thyroid.DetectNodules`, `thyroid.ClassifyTiradsFeatures`, and `thyroid.CalculateTirads`.
-3. Add seed data for `tirads_rules`, `report_templates`, and safety rules.
-4. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
+1. Add seed data for `tirads_rules`, `report_templates`, and safety rules.
+2. Implement model-gateway skeleton and SQLite `model_job` queue so `thyroid.DetectNodules` can leave placeholder status.
+3. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
+4. Add MCP configuration examples for running `medical:mcp` with CodeClaw.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
@@ -59,5 +66,6 @@ cd /Users/xutianliang/Downloads/jiazhuangxian
 git status --short --branch
 find src packages web-react docs services data -maxdepth 3 -type f | sort
 npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts
+npm test -- --run test/unit/medical/mcp-server.test.ts
 python3 -m unittest discover services/image-worker/tests
 ```
