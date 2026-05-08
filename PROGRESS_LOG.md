@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, and local MCP configuration examples.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, local MCP configuration examples, and the first medical Web/API slice.
 
 ### Completed
 
@@ -53,12 +53,21 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `docs/MEDICAL_MCP_SETUP.md` documenting the local validation startup order, `.mcp.json` usage, `image-worker`/`model-gateway` dependency boundary, sample `/mcp call` checks, and common troubleshooting cases.
 - Linked the medical MCP setup guide from `README.md`.
 - Added a unit test ensuring the MCP config example remains parseable by the existing CodeClaw MCP config loader.
+- Added the first medical Web API endpoint: `GET /v1/web/medical/summary`.
+- The medical summary API returns storage enabled state, patient/study/image/analysis/nodule/report counts, pending review count, model job status counts, agent task status counts, and recent study rows.
+- Added the React `Medical` tab and `MedicalPanel` doctor-workstation skeleton with counts, queue state, recent studies, disabled-storage state, refresh, and retryable error handling.
+- Added frontend endpoint types for `MedicalSummary` and `MedicalRecentStudy`.
+- Added medical Web/API tests covering disabled storage, authenticated summary responses, wrong-token handling, and MedicalPanel rendering/error states.
+- Added a small web-react test setup storage shim so the full frontend test suite has a complete `localStorage` implementation in the current happy-dom environment.
 
 ### Verification
 
 - `npm run typecheck` passed.
-- `npm test` passed after the medical MCP setup example change: 172 files passed, 1 skipped; 1658 tests passed, 3 skipped.
+- `npm test` passed after the medical Web/API slice: 172 files passed, 1 skipped; 1661 tests passed, 3 skipped.
 - Targeted MCP config example tests passed: `npm test -- --run test/unit/medical/mcp-config-example.test.ts test/unit/mcp/config.test.ts test/unit/medical/mcp-server.test.ts`.
+- Targeted medical Web API tests passed: `npm test -- --run test/unit/channels/web/server.test.ts`.
+- Targeted MedicalPanel tests passed: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx`.
+- Full web-react tests passed: `cd web-react && npm test` with 11 files passed and 36 tests passed.
 - Targeted storage tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts`.
 - Targeted medical MCP tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/caseRepo.test.ts`.
 - Targeted medical knowledge tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/seed-data.test.ts`.
@@ -70,6 +79,7 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `npx eslint test/unit/medical/seed-data.test.ts packages/medical-mcp` passed.
 - `npx eslint packages/medical-mcp test/unit/medical/mcp-server.test.ts` passed.
 - `web-react`: `npm run typecheck` passed.
+- `npm run build:web` passed.
 - `git diff --cached --check` passed.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
@@ -83,8 +93,8 @@ None.
 
 ### Next Session Priorities
 
-1. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
-2. Add knowledge ingestion skeleton for approved guideline/template files.
+1. Add knowledge ingestion skeleton for approved guideline/template files.
+2. Add medical Web/API write routes for manual validation patient/study/image registration.
 3. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
 4. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.

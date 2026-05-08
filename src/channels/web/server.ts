@@ -82,6 +82,7 @@ import {
   handleReadReportHtml,
   handleUpgradeReportToDashboard,
 } from "./reportHandlers";
+import { handleMedicalSummary } from "./medicalHandlers";
 import { SessionStore } from "./sessionStore";
 import type { QueryEngineOptions } from "../../agent/types";
 import { createQueryEngine } from "../../agent/queryEngine";
@@ -391,6 +392,11 @@ async function dispatch(
   const cronTaskMatch = /^\/v1\/web\/cron\/tasks\/([^/]+)$/.exec(url.pathname);
   if (cronTaskMatch && method === "DELETE") {
     return handleCronRemove(req, res, deps, decodeURIComponent(cronTaskMatch[1]));
+  }
+
+  // ===== Medical validation HTTP API =====
+  if (url.pathname === "/v1/web/medical/summary" && method === "GET") {
+    return handleMedicalSummary(req, res, deps, url);
   }
 
   // ===== CodeClaw Reports HTTP API =====

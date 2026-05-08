@@ -241,6 +241,45 @@ export interface DashboardSpec {
   lifecycle: { version: number; publishedAt?: string };
 }
 
+export interface MedicalRecentStudy {
+  id: string;
+  patientId: string | null;
+  externalPatientId: string | null;
+  accessionNo: string | null;
+  modality: string;
+  bodyPart: string;
+  studyTime: number | null;
+  status: string;
+  sourceType: string;
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+  imageCount: number;
+  noduleCount: number;
+  latestAnalysisStatus: string | null;
+  latestReportStatus: string | null;
+}
+
+export interface MedicalSummary {
+  enabled: boolean;
+  message?: string;
+  counts: {
+    patients: number;
+    studies: number;
+    images: number;
+    analysisSessions: number;
+    nodules: number;
+    reports: number;
+    pendingReviews: number;
+  };
+  queues: {
+    modelJobs: Record<string, number>;
+    agentTasks: Record<string, number>;
+  };
+  recentStudies: MedicalRecentStudy[];
+  warnings: string[];
+}
+
 // ===== sessions =====
 
 export const listSessions = () => api<{ sessions: SessionMeta[] }>("GET", "/v1/web/sessions");
@@ -406,6 +445,11 @@ export const validateDashboard = (dashboardId: string) =>
     "POST",
     `/v1/web/dashboards/${encodeURIComponent(dashboardId)}/validate`
   );
+
+// ===== Medical =====
+
+export const getMedicalSummary = (limit = 12) =>
+  api<MedicalSummary>("GET", `/v1/web/medical/summary?limit=${encodeURIComponent(String(limit))}`);
 
 // ===== Cron #116 =====
 

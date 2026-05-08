@@ -13,9 +13,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import type { WebServerHandle } from "../../../../src/channels/web/server";
 import { startWebServer } from "../../../../src/channels/web/server";
 import type { McpManager } from "../../../../src/mcp/manager";
+import { closeDataDb } from "../../../../src/storage/db";
 
 const TOKEN = "test-token-aaaa1111";
 
@@ -39,6 +41,11 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await handle.close();
+  try {
+    closeDataDb();
+  } catch {
+    // noop
+  }
 });
 
 function authHeaders(token = TOKEN): Record<string, string> {
@@ -574,5 +581,101 @@ describe("Web server · 路由 misc", () => {
         },
       })
     ).rejects.toThrow(/CODECLAW_WEB_TOKEN/);
+  });
+});
+
+describe("Web server · medical API", () => {
+  it("GET /v1/web/medical/summary without dataDb → enabled=false", async () => {
+    const r = await fetch(`${baseUrl}/v1/web/medical/summary`, { headers: authHeaders() });
+    expect(r.status).toBe(200);
+    const body = await r.json() as { enabled: boolean; warnings: string[]; recentStudies: unknown[] };
+    expect(body.enabled).toBe(false);
+    expect(body.warnings).toContain("data_db_not_configured");
+    expect(body.recentStudies).toEqual([]);
+  });
+
+  it("GET /v1/web/medical/summary returns counts, queue status, and recent studies", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const db = new Database(dbPath);
+      try {
+        const now = Date.now();
+        db.exec(`
+          INSERT INTO patient(id, external_patient_id, deidentified, meta_json, created_at, updated_at)
+          VALUES ('P1', 'EXT-P1', 1, '{}', ${now}, ${now});
+          INSERT INTO study(id, patient_id, modality, body_part, status, source_type, created_at, updated_at)
+          VALUES ('S1', 'P1', 'US', 'thyroid', 'created', 'manual', ${now}, ${now});
+          INSERT INTO image(id, study_id, file_uri, file_type, dicom_metadata, processing_status, created_at, updated_at)
+          VALUES ('IMG1', 'S1', 'artifact://raw/S1/IMG1.png', 'png', '{}', 'uploaded', ${now}, ${now});
+          INSERT INTO analysis_session(id, study_id, status, trigger_source, summary_json, created_at, updated_at)
+          VALUES ('AS1', 'S1', 'running', 'manual', '{}', ${now}, ${now});
+          INSERT INTO agent_task(id, analysis_session_id, agent_name, task_type, status, input_json, created_at, updated_at)
+          VALUES ('AT1', 'AS1', 'NoduleDetectionAgent', 'detect_nodules', 'queued', '{}', ${now}, ${now});
+          INSERT INTO model_job(id, study_id, image_id, job_type, status, input_json, created_at, updated_at)
+          VALUES ('MJ1', 'S1', 'IMG1', 'thyroid.detect_nodules', 'queued', '{}', ${now}, ${now});
+          INSERT INTO nodule(id, study_id, image_id, nodule_index, source, created_at, updated_at)
+          VALUES ('N1', 'S1', 'IMG1', 1, 'ai', ${now}, ${now});
+          INSERT INTO report(id, study_id, analysis_session_id, report_type, status, structured_json, evidence_json, created_at, updated_at)
+          VALUES ('R1', 'S1', 'AS1', 'thyroid_ultrasound', 'draft', '{}', '[]', ${now}, ${now});
+        `);
+      } finally {
+        db.close();
+      }
+
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const r = await fetch(`${medicalBaseUrl}/v1/web/medical/summary?limit=5`, { headers: authHeaders() });
+      expect(r.status).toBe(200);
+      const body = await r.json() as {
+        enabled: boolean;
+        counts: Record<string, number>;
+        queues: Record<string, Record<string, number>>;
+        recentStudies: Array<Record<string, unknown>>;
+      };
+      expect(body.enabled).toBe(true);
+      expect(body.counts).toMatchObject({
+        patients: 1,
+        studies: 1,
+        images: 1,
+        analysisSessions: 1,
+        nodules: 1,
+        reports: 1,
+        pendingReviews: 1,
+      });
+      expect(body.queues.modelJobs.queued).toBe(1);
+      expect(body.queues.agentTasks.queued).toBe(1);
+      expect(body.recentStudies[0]).toMatchObject({
+        id: "S1",
+        externalPatientId: "EXT-P1",
+        accessionNo: null,
+        imageCount: 1,
+        noduleCount: 1,
+        latestAnalysisStatus: "running",
+        latestReportStatus: "draft",
+      });
+    } finally {
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("GET /v1/web/medical/summary wrong token → 401", async () => {
+    const r = await fetch(`${baseUrl}/v1/web/medical/summary`, {
+      headers: { Authorization: "Bearer wrong" },
+    });
+    expect(r.status).toBe(401);
   });
 });

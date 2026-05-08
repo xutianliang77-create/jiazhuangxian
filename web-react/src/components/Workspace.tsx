@@ -17,13 +17,15 @@ import CronPanel from "./panels/CronPanel";
 import ReportsPanel from "./panels/ReportsPanel";
 import DashboardsPanel from "./panels/DashboardsPanel";
 import TeamPanel from "./panels/TeamPanel";
+import MedicalPanel from "./panels/MedicalPanel";
 import { useSessionsStore } from "@/store/sessions";
 
-type TabId = "chat" | "reports" | "dashboards" | "rag" | "graph" | "mcp" | "hooks" | "subagents" | "team" | "cron";
+type TabId = "chat" | "medical" | "reports" | "dashboards" | "rag" | "graph" | "mcp" | "hooks" | "subagents" | "team" | "cron";
 
 // Tab labels：英文为主（短、对齐），中文 tooltip 通过 title 暴露
 const TABS: { id: TabId; label: string; titleZh: string }[] = [
   { id: "chat", label: "Chat", titleZh: "对话" },
+  { id: "medical", label: "Medical", titleZh: "医生工作台" },
   { id: "reports", label: "Reports", titleZh: "报表" },
   { id: "dashboards", label: "Dashboards", titleZh: "看板" },
   { id: "rag", label: "RAG", titleZh: "检索" },
@@ -74,6 +76,7 @@ export default function Workspace({ onError }: Props) {
         <SessionsList onError={onError} />
         <main className="border border-border rounded-lg bg-bg/40 overflow-hidden flex flex-col min-h-0">
           {tab === "chat" && <ChatPane key={activeId ?? "no-session"} onError={onError} />}
+          {tab === "medical" && <MedicalPanel onError={onError} />}
           {tab === "reports" && (
             <ReportsPanel onError={onError} onOpenDashboards={() => setTab("dashboards")} />
           )}
