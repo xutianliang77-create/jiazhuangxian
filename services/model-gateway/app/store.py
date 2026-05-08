@@ -94,6 +94,87 @@ class ModelJobStore:
             row = conn.execute("SELECT * FROM model_job WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
 
+    def claim_next_job(self, job_type: str | None = None) -> dict[str, Any] | None:
+        now = current_ms()
+        filters = ["status = ?", "attempts < max_attempts"]
+        params: list[Any] = ["queued"]
+        if job_type:
+            filters.append("job_type = ?")
+            params.append(job_type)
+
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                f"""
+                SELECT id
+                FROM model_job
+                WHERE {' AND '.join(filters)}
+                ORDER BY priority ASC, created_at ASC, id ASC
+                LIMIT 1
+                """,
+                tuple(params),
+            ).fetchone()
+            if not row:
+                conn.commit()
+                return None
+
+            cursor = conn.execute(
+                """
+                UPDATE model_job
+                SET status = ?, attempts = attempts + 1, started_at = ?, updated_at = ?, error_json = NULL
+                WHERE id = ? AND status = ?
+                """,
+                ("running", now, now, row["id"], "queued"),
+            )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return None
+
+            claimed = conn.execute("SELECT * FROM model_job WHERE id = ?", (row["id"],)).fetchone()
+            conn.commit()
+            return dict(claimed) if claimed else None
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def complete_job(
+        self,
+        job_id: str,
+        output: dict[str, Any],
+        *,
+        artifact_uri: str | None = None,
+    ) -> dict[str, Any] | None:
+        now = current_ms()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE model_job
+                SET status = ?, output_json = ?, error_json = NULL, artifact_uri = ?,
+                    completed_at = ?, updated_at = ?
+                WHERE id = ? AND status = ?
+                """,
+                ("succeeded", json.dumps(output, ensure_ascii=False), artifact_uri, now, now, job_id, "running"),
+            )
+            conn.commit()
+        return self.get_job(job_id) if cursor.rowcount == 1 else None
+
+    def fail_job(self, job_id: str, error: dict[str, Any]) -> dict[str, Any] | None:
+        now = current_ms()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE model_job
+                SET status = ?, error_json = ?, completed_at = ?, updated_at = ?
+                WHERE id = ? AND status = ?
+                """,
+                ("failed", json.dumps(error, ensure_ascii=False), now, now, job_id, "running"),
+            )
+            conn.commit()
+        return self.get_job(job_id) if cursor.rowcount == 1 else None
+
     def _ensure_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(MODEL_JOB_SCHEMA)

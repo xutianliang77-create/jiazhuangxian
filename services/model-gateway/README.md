@@ -17,6 +17,13 @@ Python 模型服务入口，负责模型路由、SQLite `model_job` 队列和本
 | `POST` | `/model/v1/infer/thyroid/detect-nodules` | 创建甲状腺结节检测任务 |
 | `GET` | `/model/v1/jobs/{job_id}` | 查询模型任务 |
 
+当前 worker：
+
+- `python3 -m app.worker --once`：claim 一条 `queued` 任务并退出。
+- `python3 -m app.worker`：循环消费队列，空闲时按 `JZX_MODEL_WORKER_INTERVAL_MS` 休眠。
+- 验证版尚不加载真实检测模型；`thyroid.detect_nodules` 会被标记为 `failed`，错误码为 `detector_not_configured`。
+- 后续接入 YOLOv11 / RT-DETR 时替换 worker 的任务处理分支，HTTP 入队接口和 SQLite 队列表保持不变。
+
 计划能力：
 
 - 甲状腺结节检测：YOLOv11 主模型，RT-DETR/RF-DETR 对照
@@ -31,6 +38,13 @@ Python 模型服务入口，负责模型路由、SQLite `model_job` 队列和本
 cd services/model-gateway
 python3 -m pip install -r requirements.txt
 JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db python3 -m app
+```
+
+处理一条队列任务：
+
+```bash
+cd services/model-gateway
+JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db python3 -m app.worker --once
 ```
 
 默认监听：

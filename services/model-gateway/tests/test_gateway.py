@@ -14,8 +14,10 @@ from pathlib import Path
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
 
+from app.schemas import DetectNodulesRequest  # noqa: E402
 from app.server import create_server  # noqa: E402
 from app.store import ModelJobStore  # noqa: E402
+from app.worker import run_once  # noqa: E402
 
 
 class ModelGatewayTest(unittest.TestCase):
@@ -78,6 +80,65 @@ class ModelGatewayTest(unittest.TestCase):
             second = ModelJobStore(db_path)
             self.assertTrue(first.db_path.exists())
             self.assertTrue(second.db_path.exists())
+
+    def test_store_claims_and_completes_next_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ModelJobStore(Path(tmp) / "model.db")
+            queued = store.enqueue_detect_nodules(
+                DetectNodulesRequest(
+                    study_id="S1",
+                    image_id="IMG1",
+                    image_uri="artifact://model-ready/S1/IMG1.png",
+                    priority=5,
+                )
+            )
+
+            claimed = store.claim_next_job()
+            self.assertIsNotNone(claimed)
+            assert claimed is not None
+            self.assertEqual(claimed["id"], queued["id"])
+            self.assertEqual(claimed["status"], "running")
+            self.assertEqual(claimed["attempts"], 1)
+            self.assertIsNotNone(claimed["started_at"])
+            self.assertIsNone(store.claim_next_job())
+
+            completed = store.complete_job(claimed["id"], {"nodules": []}, artifact_uri="artifact://model-output/S1.json")
+            self.assertIsNotNone(completed)
+            assert completed is not None
+            self.assertEqual(completed["status"], "succeeded")
+            self.assertEqual(json.loads(completed["output_json"]), {"nodules": []})
+            self.assertEqual(completed["artifact_uri"], "artifact://model-output/S1.json")
+
+    def test_worker_marks_unconfigured_detector_job_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ModelJobStore(Path(tmp) / "model.db")
+            queued = store.enqueue_detect_nodules(
+                DetectNodulesRequest(
+                    study_id="S1",
+                    image_id="IMG1",
+                    image_uri="artifact://model-ready/S1/IMG1.png",
+                )
+            )
+
+            result = run_once(store, worker_id="worker-test")
+            self.assertEqual(result["status"], "failed")
+            self.assertTrue(result["claimed"])
+            self.assertEqual(result["job_id"], queued["id"])
+            self.assertEqual(result["error"]["code"], "detector_not_configured")
+
+            failed = store.get_job(queued["id"])
+            self.assertIsNotNone(failed)
+            assert failed is not None
+            self.assertEqual(failed["status"], "failed")
+            self.assertEqual(failed["attempts"], 1)
+            self.assertIsNotNone(failed["completed_at"])
+            error = json.loads(failed["error_json"])
+            self.assertEqual(error["detail"]["worker_id"], "worker-test")
+            self.assertEqual(error["detail"]["expected_worker"], "YOLOv11 or RT-DETR detector adapter")
+
+            idle = run_once(store, worker_id="worker-test")
+            self.assertEqual(idle["status"], "idle")
+            self.assertFalse(idle["claimed"])
 
 
 def get_json(url: str) -> dict[str, object]:

@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway, medical MCP wrappers, and seeded medical knowledge.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, and seeded medical knowledge.
 
 ### Completed
 
@@ -44,17 +44,24 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added medical knowledge MCP tools: `medical.GetTiradsRule`, `medical.GetReportTemplate`, and `medical.NormalizeTerm`.
 - Added `MedicalKnowledgeStore` for read-only SQLite access to `tirads_rules`, `report_templates`, and `medical_terms`, defaulting to `JZX_DATA_DB` or CodeClaw `~/.codeclaw/data.db`.
 - Added tests for knowledge tool happy paths and missing-database structured errors.
+- Added model-gateway queue state transitions: claim next queued job, mark running, complete succeeded jobs, and fail running jobs with structured error JSON.
+- Added the model-gateway validation worker loop under `services/model-gateway/app/worker.py`.
+- Added root scripts `npm run model-worker` and `npm run model-worker:once`.
+- Current validation worker does not load YOLOv11/RT-DETR weights yet; it consumes `thyroid.detect_nodules` jobs and marks them `failed` with `detector_not_configured`, preserving the queue contract for the future GPU detector adapter.
+- Added model-gateway worker tests for queue claim, completion, unconfigured detector failure, and idle behavior.
 
 ### Verification
 
 - `npm run typecheck` passed.
-- `npm test` passed after the medical knowledge MCP change: 171 files passed, 1 skipped; 1656 tests passed, 3 skipped.
+- `npm test` passed after the model-gateway worker change: 171 files passed, 1 skipped; 1656 tests passed, 3 skipped.
 - Targeted storage tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts`.
 - Targeted medical MCP tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/caseRepo.test.ts`.
 - Targeted medical knowledge tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/seed-data.test.ts`.
 - Targeted seed tests passed: `npm test -- --run test/unit/medical/seed-data.test.ts test/unit/medical/mcp-server.test.ts test/unit/storage/migrate.test.ts`.
 - `python3 -m unittest discover services/image-worker/tests` passed: 3 tests.
-- `python3 -m unittest discover services/model-gateway/tests` passed: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed: 5 tests.
+- `npm run model-worker:once` passed against an empty temporary queue and returned idle status.
+- `git diff --check` passed.
 - `npx eslint test/unit/medical/seed-data.test.ts packages/medical-mcp` passed.
 - `npx eslint packages/medical-mcp test/unit/medical/mcp-server.test.ts` passed.
 - `web-react`: `npm run typecheck` passed.
@@ -71,10 +78,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add model-gateway worker loop skeleton for consuming queued `model_job` records.
-2. Add MCP configuration examples for running `medical:mcp` with CodeClaw.
-3. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
-4. Add knowledge ingestion skeleton for approved guideline/template files.
+1. Add MCP configuration examples for running `medical:mcp` with CodeClaw.
+2. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
+3. Add knowledge ingestion skeleton for approved guideline/template files.
+4. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist

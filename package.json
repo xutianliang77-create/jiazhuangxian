@@ -31,6 +31,8 @@
     "medical:mcp": "tsx packages/medical-mcp/src/index.ts",
     "image-worker": "cd services/image-worker && python3 -m app",
     "model-gateway": "cd services/model-gateway && python3 -m app",
+    "model-worker": "cd services/model-gateway && python3 -m app.worker",
+    "model-worker:once": "cd services/model-gateway && python3 -m app.worker --once",
     "setup:lsp": "bash ./scripts/setup-lsp.sh",
     "setup:hooks": "git config core.hooksPath scripts/git-hooks && echo 'pre-push gate enabled (scripts/git-hooks/pre-push)'",
     "nightly": "node scripts/nightly.mjs",
