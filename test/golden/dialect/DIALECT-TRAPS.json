@@ -1,0 +1,1141 @@
+{
+  "version": "v2_v50_trimmed",
+  "created": "2026-04-29",
+  "exported_at": "2026-05-06",
+  "source_file": "tools/smartquery_bench/dremio_dialect_traps_v50.json",
+  "data_source": "mysql.wenshu_demo · 6 张表（sales_orders / regions / categories / channels / users / inventory）",
+  "total": 61,
+  "categories": {
+    "C1": "标识符与字面量",
+    "C2": "集合操作",
+    "C3": "日期函数",
+    "C4": "数学函数",
+    "C5": "字符串与 CONVERT",
+    "C6": "聚合与窗口",
+    "C7": "数组 / MAP / FLATTEN",
+    "C8": "NULL 语义",
+    "C9": "类型转换",
+    "C10": "Dremio 方言关键能力（多陷阱组合）"
+  },
+  "schema": {
+    "id": "题号 · cq* 沿用旧编号 / dq* 新题",
+    "category": "10 大类 C1-C10",
+    "dialect_trap_id": "对应方言陷阱 T1-T12",
+    "question": "中文自然语言问题（用户视角 · 题面含方言诱导）",
+    "expected_must_contain": "【答案核心】实测 SQL 必须含的关键 token（小写不敏感 · 即标准答案的关键特征）",
+    "expected_must_not_contain": "【答案核心】实测 SQL 严禁含的方言陷阱 token（即 LLM 易踩的反例）",
+    "expected_outcome": "可选 · sql_failed = 预期 dialect trap 命中 Dremio 硬限制题（dq41/dq42/dq56）· 实测失败时跳过严格率分母",
+    "difficulty": "easy / medium / hard",
+    "notes": "考点 + 陷阱诱导设计意图（题目立意说明）"
+  },
+  "note_on_answer_format": "本题集为 token-match 评估范式 · 不存在唯一标准 SQL 答案 · 「答案」由 expected_must_contain（必含 token）+ expected_must_not_contain（禁忌 token）+ notes（考点解释）三者共同表达。LLM 生成的 SQL 只要满足必含 token 且不含禁忌 token 即视为通过。",
+  "items": [
+    {
+      "id": "cq04",
+      "category": "C10-方言关键能力",
+      "dialect_trap_id": [
+        "T8"
+      ],
+      "question": "按区域和品类两个维度统计销量，GROUP BY 用列序号 1, 2",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "group by 1",
+        "sum"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "Dremio Conformance isGroupByOrdinal=true · 列序号 GROUP BY 必须支持"
+    },
+    {
+      "id": "dq01",
+      "category": "C1-标识符与字面量",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "查询 customer_name 等于 '王伟' 的所有订单的金额和数量",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "customer_name",
+        "'王伟'"
+      ],
+      "expected_must_not_contain": [
+        "`",
+        "\"王伟\""
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "测试字符串字面量用单引号 + 严禁反引号"
+    },
+    {
+      "id": "dq02",
+      "category": "C1-标识符与字面量",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "按 order_date 列分组统计每天的订单数，把订单数列别名命名为 order（保留字）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "\"order\"",
+        "group by"
+      ],
+      "expected_must_not_contain": [
+        "as order ",
+        "as order\n",
+        "`order`"
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "保留字 order 作别名必须双引号包裹 · 诱导 LLM 裸用 AS order"
+    },
+    {
+      "id": "dq03",
+      "category": "C1-标识符与字面量",
+      "dialect_trap_id": [
+        "T12"
+      ],
+      "question": "把 sales_orders 表的所有订单和 inventory 表的所有库存按 category_id 关联，列出区域名、品类名、库存数量",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "mysql.wenshu_demo.inventory",
+        "mysql.wenshu_demo.regions",
+        "mysql.wenshu_demo.categories",
+        "join"
+      ],
+      "expected_must_not_contain": [
+        "dremio.mysql",
+        "wenshu_demo.sales_orders\n",
+        "from sales_orders "
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "强制三段路径 source.schema.table · 不允许写四段或省略 source"
+    },
+    {
+      "id": "dq04",
+      "category": "C1-标识符与字面量",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "把销售总额这一列的别名取 period",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "sum(amount)"
+      ],
+      "expected_must_not_contain": [
+        "as period ",
+        "as period\n",
+        "as period,",
+        "as period)"
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "period 是保留字 · 应该用 _period 后缀（如 sales_period_total）或 \"period\""
+    },
+    {
+      "id": "dq05",
+      "category": "C1-标识符与字面量",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "查询客户名称中含有空格的订单（提示：单引号字符串里有空格）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "like|position(' '|locate(' '"
+      ],
+      "expected_must_not_contain": [
+        "\" \"",
+        "`name`"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "字符串字面量含空格也用单引号 · v1 放宽接受 LIKE '% %' / POSITION(' ', ...) / LOCATE(' ', ...) 多种实现"
+    },
+    {
+      "id": "dq06",
+      "category": "C1-标识符与字面量",
+      "dialect_trap_id": [
+        "T11",
+        "T12"
+      ],
+      "question": "对 sales_orders 和 regions 做内连接，计算每个区域的订单数，区域名列别名取 region_name",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "mysql.wenshu_demo.regions",
+        "join",
+        "region_name"
+      ],
+      "expected_must_not_contain": [
+        "`region`",
+        "as region "
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "推荐别名后缀 _name · 而不是裸 region（保留字）"
+    },
+    {
+      "id": "dq07",
+      "category": "C2-集合操作",
+      "dialect_trap_id": [
+        "T4"
+      ],
+      "question": "找出有订单记录但没有库存信息的商品分类（用集合差集）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "mysql.wenshu_demo.inventory"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "mysql 源不下推 EXCEPT · 推荐 NOT EXISTS / NOT IN 但 EXCEPT 也接受（dremio 内部计算）"
+    },
+    {
+      "id": "dq08",
+      "category": "C2-集合操作",
+      "dialect_trap_id": [
+        "T4"
+      ],
+      "question": "把华东和华北区域的订单合并查询，并去除重复",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "union",
+        "'华东'",
+        "'华北'"
+      ],
+      "expected_must_not_contain": [
+        "union all"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "去重 UNION · 不是 UNION ALL"
+    },
+    {
+      "id": "dq09",
+      "category": "C2-集合操作",
+      "dialect_trap_id": [
+        "T4"
+      ],
+      "question": "把华东和华北区域的订单全部合并查询（保留所有重复行）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "union all",
+        "'华东'",
+        "'华北'"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "保留重复 UNION ALL"
+    },
+    {
+      "id": "dq10",
+      "category": "C2-集合操作",
+      "dialect_trap_id": [
+        "T4"
+      ],
+      "question": "找出在订单表和库存表中都出现的商品分类 ID（取交集）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "mysql.wenshu_demo.inventory",
+        "intersect"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "INTERSECT 集合操作"
+    },
+    {
+      "id": "dq11",
+      "category": "C2-集合操作",
+      "dialect_trap_id": [
+        "T4"
+      ],
+      "question": "用 MINUS 操作找出订单表中存在但库存表中不存在的 category_id",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "mysql.wenshu_demo.inventory"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "Dremio Conformance isMinusAllowed=true · MINUS 与 EXCEPT 等价 · 必须支持"
+    },
+    {
+      "id": "dq12",
+      "category": "C2-集合操作",
+      "dialect_trap_id": [
+        "T4"
+      ],
+      "question": "查询并返回 5 个区域名（'华东'、'华北'、'华南'、'西南'、'西北'）。提示：Dremio 不支持字面量 SELECT/VALUES 子句，请用 SELECT FROM mysql.wenshu_demo.regions WHERE name IN(...) 过滤现有表",
+      "expected_must_contain": [
+        "values|in (",
+        "mysql.wenshu_demo.regions",
+        "'华东'",
+        "'华北'"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "v44 题集陷阱本意改：从「用 VALUES 子句」转为「识别 Dremio 字面量限制 · 用现有表 WHERE IN 过滤替代」· v43 实测 Dremio /api/v3/sql 不接受 7 种字面量 SELECT 写法（与 dq42 MAP_CONSTRUCT expects literals 同源）· 题面加提示让 LLM 知道用 IN 替代 · must_contain 保留 values 通过（万一 LLM 真写 VALUES 跑通也算）· 同时接受 'in (' 现有表过滤（多数 LLM 路径）"
+    },
+    {
+      "id": "dq13",
+      "category": "C3-日期函数",
+      "dialect_trap_id": [
+        "T3",
+        "T6"
+      ],
+      "question": "提取每个订单的下单年份和月份，统计每年每月的订单数",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "extract(year from",
+        "extract(month from"
+      ],
+      "expected_must_not_contain": [
+        "date_part(year",
+        "year(",
+        "month("
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "诱导 LLM 用 DATE_PART 或 MySQL 的 YEAR()/MONTH() · 应该用 EXTRACT"
+    },
+    {
+      "id": "dq14",
+      "category": "C3-日期函数",
+      "dialect_trap_id": [
+        "T6"
+      ],
+      "question": "按季度统计今年每个区域的销售总额",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "date_trunc_quarter"
+      ],
+      "expected_must_not_contain": [
+        "date_trunc('quarter'",
+        "quarter("
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "Dremio 独有 date_trunc_quarter · 不要写 DATE_TRUNC('QUARTER', col) Calcite 风味"
+    },
+    {
+      "id": "dq15",
+      "category": "C3-日期函数",
+      "dialect_trap_id": [
+        "T6"
+      ],
+      "question": "查询过去 7 天的订单总额",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "current_date",
+        "interval"
+      ],
+      "expected_must_not_contain": [
+        "date_sub(",
+        "now()",
+        "curdate("
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "诱导 LLM 用 MySQL DATE_SUB · 应该用 CURRENT_DATE - INTERVAL '7' DAY"
+    },
+    {
+      "id": "dq16",
+      "category": "C3-日期函数",
+      "dialect_trap_id": [
+        "T6"
+      ],
+      "question": "查询每天的订单数（按日期截断分组）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "date_trunc_day"
+      ],
+      "expected_must_not_contain": [
+        "date(order_date)",
+        "cast(order_date as date)"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "date_trunc_day 是 Dremio 标准方言 10 种粒度之一"
+    },
+    {
+      "id": "dq17",
+      "category": "C3-日期函数",
+      "dialect_trap_id": [
+        "T6"
+      ],
+      "question": "查询每个区域当天最后一个订单的金额",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "max(order_date)|row_number"
+      ],
+      "expected_must_not_contain": [
+        "last_day(",
+        "sysdate",
+        "now()"
+      ],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "诱导 LLM 用 Oracle LAST_DAY 或 MySQL NOW() · 应该用 MAX(order_date) + 当前日期 · v1 放宽接受 ROW_NUMBER 子查询写法"
+    },
+    {
+      "id": "dq18",
+      "category": "C3-日期函数",
+      "dialect_trap_id": [
+        "T6"
+      ],
+      "question": "查询当前时间戳和当前日期，列出当前小时数",
+      "expected_must_contain": [
+        "current_timestamp",
+        "current_date",
+        "extract(hour from"
+      ],
+      "expected_must_not_contain": [
+        "now()",
+        "sysdate",
+        "getdate()",
+        "date_part(hour"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "CURRENT_TIMESTAMP 不用 NOW()/SYSDATE/GETDATE() · EXTRACT(HOUR ...) 不用 DATE_PART"
+    },
+    {
+      "id": "dq19",
+      "category": "C4-数学函数",
+      "dialect_trap_id": [
+        "T9"
+      ],
+      "question": "计算每笔订单的金额对 100 取模",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "amount"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "% 和 MOD() 都支持 · 任选其一"
+    },
+    {
+      "id": "dq20",
+      "category": "C4-数学函数",
+      "dialect_trap_id": [
+        "T6"
+      ],
+      "question": "计算每个订单数量的平方根",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "sqrt(quantity)"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "sqrt 在 dremio 标准方言 ARP yaml 注册（实测 grep 计数 1）· 可以下推"
+    },
+    {
+      "id": "dq21",
+      "category": "C4-数学函数",
+      "dialect_trap_id": [
+        "T2"
+      ],
+      "question": "计算每个订单金额取自然对数（ln）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "amount"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "ln/log 不在 dremio 标准方言 · LLM 仍可写 LN(amount) · 但 ARP 不下推"
+    },
+    {
+      "id": "dq22",
+      "category": "C4-数学函数",
+      "dialect_trap_id": [
+        "T10"
+      ],
+      "question": "计算每笔订单 amount 除以 quantity 的平均值",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "amount",
+        "quantity"
+      ],
+      "expected_must_not_contain": [
+        "nullif(quantity",
+        "case when quantity = 0"
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "Dremio IEEE754 浮点除以零返 Infinity · 不需要 NULLIF/CASE 防御"
+    },
+    {
+      "id": "dq23",
+      "category": "C4-数学函数",
+      "dialect_trap_id": [
+        "T7",
+        "T9"
+      ],
+      "question": "查询所有订单数量不等于 1 的记录（任选 != 或 <> 写法）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "quantity"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "Dremio Conformance isBangEqualAllowed=true · != 和 <> 都行"
+    },
+    {
+      "id": "dq24",
+      "category": "C4-数学函数",
+      "dialect_trap_id": [
+        "T6"
+      ],
+      "question": "计算每笔订单金额的 1.1 倍（含 10% 税）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "amount",
+        "1.1"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "DECIMAL 算术保精度 · 1.1 是 DECIMAL · amount * 1.1 结果仍是 DECIMAL"
+    },
+    {
+      "id": "dq25",
+      "category": "C5-字符串与CONVERT",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "查询客户名前 3 个字符是 '李四' 的订单",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "customer_name"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "SUBSTRING 或 SUBSTR 都支持（substring 在 dremio 47 主名清单 / substr 在 mysql 独有但 dremio 也接受）"
+    },
+    {
+      "id": "dq26",
+      "category": "C5-字符串与CONVERT",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "找出所有客户名长度大于 5 的订单",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "customer_name"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "LENGTH / CHAR_LENGTH / CHARACTER_LENGTH 都支持（实测 dremio 47 主名清单含 length）"
+    },
+    {
+      "id": "dq27",
+      "category": "C5-字符串与CONVERT",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "查询客户名包含 '商' 字的订单（不区分大小写）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "customer_name"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "ILIKE 不区分大小写（dremio 标准方言 47 主名清单含 ilike）"
+    },
+    {
+      "id": "dq28",
+      "category": "C5-字符串与CONVERT",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "把客户名和订单 ID 拼接成一个字符串展示",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "customer_name"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "CONCAT 变长（DremioSqlOperatorTable.java:185 ANY_VARIADIC）或 || 都支持"
+    },
+    {
+      "id": "dq29",
+      "category": "C5-字符串与CONVERT",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "查询客户名匹配正则模式 '^[李王张]' 的订单（姓李、王、张的客户）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "customer_name",
+        "regexp_like"
+      ],
+      "expected_must_not_contain": [
+        "~",
+        "rlike"
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "REGEXP_LIKE · 不写 PG 的 ~ 风味或 Hive 的 RLIKE"
+    },
+    {
+      "id": "dq30",
+      "category": "C5-字符串与CONVERT",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "查询客户名转大写后等于 'ZHANG WEI' 的订单",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "upper(customer_name)",
+        "'ZHANG WEI'"
+      ],
+      "expected_must_not_contain": [
+        "ucase("
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "UPPER / UCASE 都支持 · 推荐 UPPER（更通用）"
+    },
+    {
+      "id": "dq31",
+      "category": "C6-聚合与窗口",
+      "dialect_trap_id": [
+        "T8"
+      ],
+      "question": "统计每个区域不重复客户数",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "count(distinct",
+        "customer_name"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "COUNT(DISTINCT) 标准聚合"
+    },
+    {
+      "id": "dq32",
+      "category": "C6-聚合与窗口",
+      "dialect_trap_id": [],
+      "question": "对每个区域按订单金额从大到小排名，给出每个订单的排名",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "row_number|rank(|dense_rank",
+        "over"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "窗口函数 ROW_NUMBER/RANK/DENSE_RANK OVER (PARTITION BY ...) · v1 放宽接受三种排名函数"
+    },
+    {
+      "id": "dq33",
+      "category": "C6-聚合与窗口",
+      "dialect_trap_id": [],
+      "question": "对每个客户的所有订单金额按时间排序，计算累计金额（运行总和）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "sum(amount)",
+        "over"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "窗口聚合 SUM(amount) OVER (PARTITION BY customer_name ORDER BY ...)"
+    },
+    {
+      "id": "dq34",
+      "category": "C6-聚合与窗口",
+      "dialect_trap_id": [],
+      "question": "用 HLL 近似算法计算每个区域的不重复客户数（节省内存场景）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "hll|ndv|approx_count_distinct",
+        "customer_name"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "Dremio 独有 HLL HyperLogLog 聚合（DremioSqlOperatorTable.java:71-77）· v1 放宽接受 NDV / APPROX_COUNT_DISTINCT 等价别名"
+    },
+    {
+      "id": "dq35",
+      "category": "C6-聚合与窗口",
+      "dialect_trap_id": [],
+      "question": "计算每个区域订单金额的近似 50 百分位（中位数）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "approx_percentile"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "Dremio 独有 APPROX_PERCENTILE TDigest 近似（DremioSqlOperatorTable.java:1548）"
+    },
+    {
+      "id": "dq36",
+      "category": "C6-聚合与窗口",
+      "dialect_trap_id": [],
+      "question": "对每个区域的订单按金额排序，给出当前订单与前一个订单的金额差",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "lag",
+        "amount"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "LAG 窗口函数 · 标准 Calcite 函数 Dremio 也支持"
+    },
+    {
+      "id": "dq37",
+      "category": "C7-数组/MAP/FLATTEN",
+      "dialect_trap_id": [
+        "T1"
+      ],
+      "question": "把每个区域的所有客户名收集成一个数组",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.customers|mysql.wenshu_demo.regions|mysql.wenshu_demo.sales_orders",
+        "array_agg"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "ARRAY_AGG（DremioSqlOperatorTable.java:776）支持 WITHIN GROUP / OVER · v40 修：放宽 schema 名为 customers|regions|sales_orders 任一（LLM 选 customers JOIN regions 直接关联是合理判断 · 不需要 sales_orders）"
+    },
+    {
+      "id": "dq38",
+      "category": "C7-数组/MAP/FLATTEN",
+      "dialect_trap_id": [
+        "T1"
+      ],
+      "question": "把每个客户的所有订单 amount 收集成数组，然后求该数组的总和",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "array_agg|sum("
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "ARRAY_AGG + ARRAY_SUM 组合（Dremio 独有 array_sum）· v1 放宽接受 SUM 直接聚合（结果等价）"
+    },
+    {
+      "id": "dq39",
+      "category": "C7-数组/MAP/FLATTEN",
+      "dialect_trap_id": [
+        "T1"
+      ],
+      "question": "先用 ARRAY_AGG 把每个区域的客户名聚合成数组，再用 Dremio 独有的扁平化函数 FLATTEN 展开成多行",
+      "expected_must_contain": [
+        "array_agg",
+        "flatten"
+      ],
+      "expected_must_not_contain": [
+        "unnest"
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "T1 核心：FLATTEN 是 Dremio 独有 · 严禁 UNNEST · v40 修：mysql.wenshu_demo 无原生数组列 · 题面明确用 ARRAY_AGG 先构造数组再 FLATTEN 演示完整链路"
+    },
+    {
+      "id": "dq40",
+      "category": "C7-数组/MAP/FLATTEN",
+      "dialect_trap_id": [
+        "T1"
+      ],
+      "question": "按区域聚合客户名数组（ARRAY_AGG），用 ARRAY_CONTAINS 查询哪些区域的客户名数组中包含 '客户_0050'",
+      "expected_must_contain": [
+        "array_agg",
+        "array_contains"
+      ],
+      "expected_must_not_contain": [
+        "in array"
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "ARRAY_CONTAINS（DremioSqlOperatorTable.java:938+）· v40 修：mysql.wenshu_demo 无原生数组列 · 题面明确用 ARRAY_AGG 先构造数组再 ARRAY_CONTAINS · 客户_0050 类似 v39 trace 取值示例（客户_0009/0109）"
+    },
+    {
+      "id": "dq41",
+      "category": "C7-数组/MAP/FLATTEN",
+      "dialect_trap_id": [
+        "T1"
+      ],
+      "question": "把每个客户的所有订单金额（amount 列）用 ARRAY_AGG 聚合成数组，去重并排序",
+      "expected_must_contain": [
+        "array_agg(distinct|array_distinct|distinct",
+        "array_sort|order by|sort"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": "sql_failed",
+      "difficulty": "hard",
+      "notes": "ARRAY_DISTINCT / ARRAY_SORT 组合 · v1 放宽接受 DISTINCT + ORDER BY 等价写法 · v40 修：题面明确用 ARRAY_AGG 先聚合（mysql.wenshu_demo.amount 是 DECIMAL · 不直接是数组列）· must_contain 加 ARRAY_AGG(DISTINCT 写法（V4 Flash 实测 ARRAY_SORT 不支持 DECIMAL ARRAY · DISTINCT 是稳妥替代）· v52 加 expected_outcome=sql_failed：v50 phase A 4 runs 一致 sql_failed（'ORDER BY unexpected' / 'ARRAY_SORT(<DECIMAL ARRAY>)' 无函数）· Dremio 引擎硬限制（ARRAY_AGG ORDER BY 不支持 + ARRAY_SORT DECIMAL ARRAY 不支持）· 标记跳过严格率分母 · 不惩罚 LLM 写不出 Dremio 不支持的语法 · v53+ 若 Dremio 升级支持可去除"
+    },
+    {
+      "id": "dq42",
+      "category": "C7-数组/MAP/FLATTEN",
+      "dialect_trap_id": [
+        "T1"
+      ],
+      "question": "用 MAP_CONSTRUCT 构造 MAP 类型 · 键为区域名（regions.name），值为该区域订单总额（SUM(sales_orders.amount)）",
+      "expected_must_contain": [
+        "map_construct"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": "sql_failed",
+      "difficulty": "hard",
+      "notes": "MAP_CONSTRUCT（DremioSqlOperatorTable.java:1529）· Dremio 独有 · v40 修：题面明确 regions JOIN sales_orders + SUM 聚合后构造 MAP（v40 timeout 真因 LLM 不熟 MAP_CONSTRUCT · 题面更明确降低 LLM 推理负担 · v41 还需 few-shot 注入治根）· v52 加 expected_outcome=sql_failed：v50 phase A 4 runs 一致 sql_failed（MAP_CONSTRUCT 'expects all arguments to be literals' · MAP_AGG 无函数）· Dremio 引擎硬限制（MAP_CONSTRUCT 仅接受字面量 · 不支持 SUM/CASE 等聚合表达式 · MAP_AGG 不存在）· 标记跳过严格率分母 · v53+ 若 Dremio 升级 MAP 类支持可去除"
+    },
+    {
+      "id": "dq43",
+      "category": "C8-NULL 语义",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "查询客户名为 NULL 的订单数",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "is null"
+      ],
+      "expected_must_not_contain": [
+        "= null",
+        "isnull("
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "IS NULL 不是 = NULL · 也不是 ISNULL（MySQL 风味）"
+    },
+    {
+      "id": "dq44",
+      "category": "C8-NULL 语义",
+      "dialect_trap_id": [
+        "T11"
+      ],
+      "question": "把所有 quantity 为 NULL 的订单的数量替换为 0 后求总和",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "coalesce",
+        "quantity"
+      ],
+      "expected_must_not_contain": [
+        "ifnull(",
+        "nvl(",
+        "isnull("
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "T11 核心：COALESCE · 严禁 IFNULL/NVL/ISNULL"
+    },
+    {
+      "id": "dq45",
+      "category": "C8-NULL 语义",
+      "dialect_trap_id": [],
+      "question": "找出 customer_name 与上一个订单的客户名相比有变化的订单（用 IS DISTINCT FROM）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "is distinct from",
+        "lag"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "IS DISTINCT FROM 在 NULL 时也判定为不等（NULL-safe）· 与 != 不同"
+    },
+    {
+      "id": "dq46",
+      "category": "C8-NULL 语义",
+      "dialect_trap_id": [],
+      "question": "统计每个区域有 customer_name 但 amount 为 NULL 的订单数",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "count",
+        "is null",
+        "is not null"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "组合 IS NULL / IS NOT NULL"
+    },
+    {
+      "id": "dq47",
+      "category": "C8-NULL 语义",
+      "dialect_trap_id": [],
+      "question": "对每个客户取金额的最大值，如果客户没有订单显示 -1",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.users|mysql.wenshu_demo.customers",
+        "coalesce",
+        "max"
+      ],
+      "expected_must_not_contain": [
+        "ifnull(",
+        "nvl("
+      ],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "COALESCE + 聚合 · v41 放宽 users→users|customers（题面\"每个客户\" customers 更直接）"
+    },
+    {
+      "id": "dq48",
+      "category": "C8-NULL 语义",
+      "dialect_trap_id": [],
+      "question": "判断 is_returned 字段不区分 NULL 是否等于 0（NULL-safe 比较）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "is_returned",
+        "is not distinct from"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "IS NOT DISTINCT FROM 是 NULL-safe 等价 · = 0 在 NULL 时返 NULL · IS NOT DISTINCT FROM 0 在 NULL 时返 false"
+    },
+    {
+      "id": "dq49",
+      "category": "C9-类型转换",
+      "dialect_trap_id": [],
+      "question": "把 amount 列转成精度 10 位、小数 2 位的 DECIMAL",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "cast",
+        "decimal(10"
+      ],
+      "expected_must_not_contain": [
+        "::decimal",
+        "::numeric"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "CAST AS DECIMAL(p,s) · 不写 PG ::decimal"
+    },
+    {
+      "id": "dq50",
+      "category": "C9-类型转换",
+      "dialect_trap_id": [],
+      "question": "把订单日期 order_date 列转成字符串",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "cast",
+        "varchar"
+      ],
+      "expected_must_not_contain": [
+        "::text",
+        "::varchar",
+        "convert(varchar"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "CAST AS VARCHAR · 不写 PG :: 或 SQL Server CONVERT"
+    },
+    {
+      "id": "dq51",
+      "category": "C9-类型转换",
+      "dialect_trap_id": [],
+      "question": "把字符串 '2025-12-31' 转成日期类型",
+      "expected_must_contain": [
+        "cast",
+        "as date",
+        "'2025-12-31'"
+      ],
+      "expected_must_not_contain": [
+        "str_to_date",
+        "to_date('2025"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "CAST AS DATE · 不写 MySQL STR_TO_DATE 或 Oracle TO_DATE"
+    },
+    {
+      "id": "dq52",
+      "category": "C9-类型转换",
+      "dialect_trap_id": [],
+      "question": "把订单数量 quantity 转成 BIGINT 类型",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "cast",
+        "as bigint"
+      ],
+      "expected_must_not_contain": [
+        "::bigint",
+        "::int8"
+      ],
+      "expected_outcome": null,
+      "difficulty": "easy",
+      "notes": "CAST AS BIGINT · 不写 PG ::bigint / ::int8"
+    },
+    {
+      "id": "dq53",
+      "category": "C9-类型转换",
+      "dialect_trap_id": [
+        "T5"
+      ],
+      "question": "计算订单 amount 列的平均值，确保结果保留 DECIMAL 精度（不退化为 DOUBLE）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "avg(amount)"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "EqualityConvertlet 保留 DECIMAL 精度 · LLM 不应主动 CAST AS DOUBLE"
+    },
+    {
+      "id": "dq54",
+      "category": "C9-类型转换",
+      "dialect_trap_id": [],
+      "question": "把 is_returned 列从 BIGINT 转成 BOOLEAN（1=true / 0=false）",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "is_returned"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "medium",
+      "notes": "BIGINT → BOOLEAN 需要 CASE WHEN · is_returned = 1 不直接是 BOOLEAN"
+    },
+    {
+      "id": "dq55",
+      "category": "C10-方言关键能力",
+      "dialect_trap_id": [
+        "T6",
+        "T8",
+        "T11"
+      ],
+      "question": "按月统计今年每个区域的销售总额，结果按销售总额降序，月份列别名取 sales_month",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "mysql.wenshu_demo.regions",
+        "date_trunc_month",
+        "sales_month"
+      ],
+      "expected_must_not_contain": [
+        "date_format",
+        "as month",
+        "as month "
+      ],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "多陷阱叠加：date_trunc_month + 别名后缀 _month → sales_month · 不要裸用 month 保留字"
+    },
+    {
+      "id": "dq56",
+      "category": "C10-方言关键能力",
+      "dialect_trap_id": [
+        "T6",
+        "T11"
+      ],
+      "question": "查询过去 30 天每天的订单总额，订单总额为 NULL 的天数显示为 0",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "current_date",
+        "interval",
+        "coalesce"
+      ],
+      "expected_must_not_contain": [
+        "ifnull(",
+        "date_sub("
+      ],
+      "expected_outcome": "sql_failed",
+      "difficulty": "hard",
+      "notes": "INTERVAL '30' DAY + COALESCE 组合 · v53 M5 加 expected_outcome=sql_failed：v50 phase A + v52 phase A 5 runs 实测 2/5 sql_failed（INTERNAL_ERROR Dremio 后端偶发错）· 1/5 sql_ok · 1/5 timeout · 1/5 sql_dubious · 与 dq41/dq42 必然 sql_failed 性质不同（INTERNAL_ERROR 是 Dremio 后端偶发错非 dialect-trap 硬限制）· rejudge 仅在 status!=COMPLETED && outcome==sql_failed 时跳分母（sql_ok/timeout/sql_dubious 仍正常计入分子分母）· 不惩罚 LLM 写正确 SQL 但被 Dremio 内部错击中的 run · v53+ Dremio 升级稳定后可去除"
+    },
+    {
+      "id": "dq57",
+      "category": "C10-方言关键能力",
+      "dialect_trap_id": [
+        "T7",
+        "T8"
+      ],
+      "question": "查询订单数量不等于 1 的客户，按 customer_name 和总订单数排序，GROUP BY 用列序号 1，ORDER BY 用 SELECT 别名 total_orders",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "group by 1",
+        "total_orders"
+      ],
+      "expected_must_not_contain": [],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "Conformance isGroupByOrdinal + isSortByAlias 双特性"
+    },
+    {
+      "id": "dq58",
+      "category": "C10-方言关键能力",
+      "dialect_trap_id": [
+        "T1",
+        "T6",
+        "T8"
+      ],
+      "question": "把每个区域所有 2025 年订单的客户名展平为多行，去重后排序",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "array_agg|distinct|group by",
+        "extract(year from|date_trunc_year"
+      ],
+      "expected_must_not_contain": [
+        "unnest"
+      ],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "ARRAY_AGG + FLATTEN + EXTRACT 三陷阱组合 · v1 放宽接受 DISTINCT 替代 ARRAY_AGG+FLATTEN（结果等价）· v41 再放宽 GROUP BY 去重（与 DISTINCT 等价）"
+    },
+    {
+      "id": "dq59",
+      "category": "C10-方言关键能力",
+      "dialect_trap_id": [
+        "T6",
+        "T8",
+        "T11"
+      ],
+      "question": "对每个客户找出 2025 年的最大订单和最小订单的差额，差额为 NULL 显示为 0",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "max(amount)",
+        "min(amount)",
+        "coalesce",
+        "extract(year from|date_trunc_year|'2025-01-01'"
+      ],
+      "expected_must_not_contain": [
+        "ifnull(",
+        "year("
+      ],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "MAX/MIN + COALESCE + EXTRACT 组合 · v41 放宽接受 DATE_TRUNC + 日期范围比较（>= '2025-01-01'）等等价写法（性能更优 · 不函数包列）"
+    },
+    {
+      "id": "dq60",
+      "category": "C10-方言关键能力",
+      "dialect_trap_id": [
+        "T2",
+        "T11",
+        "T12"
+      ],
+      "question": "对所有订单按区域分组，计算每个区域订单金额的平均值（如果区域订单数为 0 显示 NULL），结果按平均值降序前 10 名",
+      "expected_must_contain": [
+        "mysql.wenshu_demo.sales_orders",
+        "mysql.wenshu_demo.regions",
+        "avg(",
+        "order by",
+        "limit 10"
+      ],
+      "expected_must_not_contain": [
+        "ifnull(",
+        "`region`",
+        "= \"华"
+      ],
+      "expected_outcome": null,
+      "difficulty": "hard",
+      "notes": "JOIN 多表 + AVG + ORDER BY DESC + LIMIT · 综合方言能力测试 · v1 放宽 avg(amount) → avg( 接受表别名风味（avg(o.amount)）"
+    }
+  ]
+}

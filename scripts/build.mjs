@@ -1,0 +1,54 @@
+import { build } from "esbuild";
+import { mkdir, cp } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, "..");
+const outDir = path.join(rootDir, "dist");
+
+await mkdir(outDir, { recursive: true });
+
+await build({
+  entryPoints: [path.join(rootDir, "src", "cli.tsx")],
+  outfile: path.join(outDir, "cli.js"),
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  target: "node22",
+  packages: "external",
+  jsx: "automatic",
+  sourcemap: true,
+  legalComments: "none",
+  banner: {
+    js: "#!/usr/bin/env node"
+  },
+  define: {
+    "process.env.NODE_ENV": "\"production\""
+  }
+});
+
+// migrate.ts 用 path.join(__dirname, "migrations", kind) 解析 sql 文件位置；
+// 打包后 __dirname = dist/，所以 sql 必须随之拷贝到 dist/migrations/{data,audit}/。
+// esbuild bundle 不会处理 fs.readdirSync 引用的非 import 资源。
+await cp(
+  path.join(rootDir, "src", "storage", "migrations"),
+  path.join(outDir, "migrations"),
+  { recursive: true }
+);
+
+// web SPA 静态文件：server.ts defaultStaticRoot 会找 dist/public 或 ../../web。
+// 生产构建拷贝到 dist/public 让 codeclaw web 命令直接 serve。
+await cp(path.join(rootDir, "web"), path.join(outDir, "public"), { recursive: true });
+
+// #115 阶段 B：React 版若已 build 过，拷到 dist/public-react；未构建时跳过（不强求）。
+import { existsSync as _existsSync } from "node:fs";
+const reactDist = path.join(rootDir, "web-react", "dist");
+if (_existsSync(reactDist)) {
+  await cp(reactDist, path.join(outDir, "public-react"), { recursive: true });
+  console.log("Built dist/cli.js + copied migrations/ + web → dist/public/ + web-react → dist/public-react/");
+} else {
+  console.log(
+    "Built dist/cli.js + copied migrations/ + web → dist/public/ (web-react/dist not present, skipped)"
+  );
+}

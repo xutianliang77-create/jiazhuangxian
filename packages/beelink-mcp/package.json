@@ -1,0 +1,9 @@
+{
+  "name": "@chatbi/beelink-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "beelink-mcp": "src/index.ts"
+  }
+}

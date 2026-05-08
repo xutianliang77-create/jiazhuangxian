@@ -1,0 +1,70 @@
+{
+  "name": "jiazhuangxian",
+  "version": "0.1.0",
+  "description": "Thyroid ultrasound AI agent platform built on CodeClaw",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "jiazhuangxian": "dist/cli.js",
+    "codeclaw": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src test scripts packages eslint.config.js",
+    "golden:ask": "tsx test/golden/runner/ask.ts",
+    "golden:fix": "tsx test/golden/runner/fix.ts",
+    "golden:dremio": "tsx test/golden/runner/dremio.ts",
+    "golden:data": "tsx test/golden/runner/data.ts",
+    "golden:dialect": "tsx test/golden/runner/dialect.ts",
+    "golden:meta-router": "tsx test/golden/runner/meta-router.ts",
+    "golden:report": "tsx test/golden/runner/report-view.ts",
+    "golden:ci": "npm run golden:dialect -- --mock && npm run golden:meta-router -- --mock --variants",
+    "beelink:mcp": "tsx packages/beelink-mcp/src/index.ts",
+    "dicom:mcp": "tsx packages/dicom-mcp/src/index.ts",
+    "setup:lsp": "bash ./scripts/setup-lsp.sh",
+    "setup:hooks": "git config core.hooksPath scripts/git-hooks && echo 'pre-push gate enabled (scripts/git-hooks/pre-push)'",
+    "nightly": "node scripts/nightly.mjs",
+    "build:web": "cd web-react && npm run build",
+    "build": "npm run build:web && node scripts/build.mjs",
+    "build:all": "npm run build",
+    "install:web": "cd web-react && npm install",
+    "postinstall": "node scripts/post-install.mjs",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0",
+    "better-sqlite3": "^11.10.0",
+    "gpt-tokenizer": "^2.9.0",
+    "ink": "^5.2.1",
+    "ink-select-input": "^6.2.0",
+    "ink-text-input": "^6.0.0",
+    "js-yaml": "^4.1.0",
+    "pdf-parse": "^1.1.4",
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-devtools-core": "latest",
+    "ulid": "^3.0.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.26.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.15.21",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^18.3.12",
+    "esbuild": "^0.25.4",
+    "eslint": "^9.26.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.31.1",
+    "vitest": "^3.1.2"
+  }
+}

@@ -1,0 +1,97 @@
+/**
+ * Workspace: 顶部 tabs + 左侧 sessions sidebar + 主面板 + 状态栏
+ */
+
+import { useState } from "react";
+import Header from "./Header";
+import SessionsList from "./SessionsList";
+import StatusLine from "./StatusLine";
+import ChatPane from "./ChatPane";
+import CommandPalette from "./CommandPalette";
+import SubagentTree from "./SubagentTree";
+import RagPanel from "./panels/RagPanel";
+import GraphPanel from "./panels/GraphPanel";
+import McpPanel from "./panels/McpPanel";
+import HooksPanel from "./panels/HooksPanel";
+import CronPanel from "./panels/CronPanel";
+import ReportsPanel from "./panels/ReportsPanel";
+import DashboardsPanel from "./panels/DashboardsPanel";
+import TeamPanel from "./panels/TeamPanel";
+import { useSessionsStore } from "@/store/sessions";
+
+type TabId = "chat" | "reports" | "dashboards" | "rag" | "graph" | "mcp" | "hooks" | "subagents" | "team" | "cron";
+
+// Tab labels：英文为主（短、对齐），中文 tooltip 通过 title 暴露
+const TABS: { id: TabId; label: string; titleZh: string }[] = [
+  { id: "chat", label: "Chat", titleZh: "对话" },
+  { id: "reports", label: "Reports", titleZh: "报表" },
+  { id: "dashboards", label: "Dashboards", titleZh: "看板" },
+  { id: "rag", label: "RAG", titleZh: "检索" },
+  { id: "graph", label: "Graph", titleZh: "代码图" },
+  { id: "mcp", label: "MCP", titleZh: "MCP 工具" },
+  { id: "hooks", label: "Hooks", titleZh: "钩子" },
+  { id: "subagents", label: "Subagents", titleZh: "子代理" },
+  { id: "team", label: "Team", titleZh: "多 Agent 团队" },
+  { id: "cron", label: "Cron", titleZh: "定时任务" },
+];
+
+interface Props {
+  onError(msg: string | null): void;
+}
+
+export default function Workspace({ onError }: Props) {
+  const [tab, setTab] = useState<TabId>("chat");
+  const activeId = useSessionsStore((s) => s.activeId);
+
+  return (
+    <div className="h-full flex flex-col">
+      <CommandPalette
+        onPick={(entry) => {
+          // 选中后切到 chat tab，便于看到 composer
+          setTab("chat");
+          console.info("[palette] picked", entry.name);
+        }}
+      />
+      <Header />
+      <nav className="flex gap-1 px-4 pt-2 border-b border-border">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            title={`${t.label} · ${t.titleZh}`}
+            className={
+              "px-4 py-1.5 text-sm rounded-t border border-transparent border-b-0 -mb-px " +
+              (tab === t.id
+                ? "border-border bg-bg text-fg"
+                : "text-muted hover:text-fg")
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      <div className="flex-1 grid grid-cols-[220px_1fr] gap-3 p-3 min-h-0">
+        <SessionsList onError={onError} />
+        <main className="border border-border rounded-lg bg-bg/40 overflow-hidden flex flex-col min-h-0">
+          {tab === "chat" && <ChatPane key={activeId ?? "no-session"} onError={onError} />}
+          {tab === "reports" && (
+            <ReportsPanel onError={onError} onOpenDashboards={() => setTab("dashboards")} />
+          )}
+          {tab === "dashboards" && <DashboardsPanel onError={onError} />}
+          {tab === "rag" && <RagPanel onError={onError} />}
+          {tab === "graph" && <GraphPanel onError={onError} />}
+          {tab === "mcp" && <McpPanel onError={onError} />}
+          {tab === "hooks" && <HooksPanel onError={onError} />}
+          {tab === "cron" && <CronPanel onError={onError} />}
+          {tab === "team" && <TeamPanel sessionId={activeId} onError={onError} />}
+          {tab === "subagents" && (
+            <div className="p-4 overflow-y-auto">
+              <SubagentTree sessionId={activeId} />
+            </div>
+          )}
+        </main>
+      </div>
+      <StatusLine />
+    </div>
+  );
+}

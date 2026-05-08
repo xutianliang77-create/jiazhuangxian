@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  duckdb:
+    build: .
+    container_name: chatbi-duckdb
+    ports:
+      - "8080:8080"
+    volumes:
+      - duckdb-data:/data
+    environment:
+      - DUCKDB_DB=/data/chatbi.duckdb
+    restart: unless-stopped
+
+volumes:
+  duckdb-data:
+    driver: local

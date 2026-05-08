@@ -1,0 +1,9 @@
+{
+  "name": "@codeclaw/dicom-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "dicom-mcp": "src/index.ts"
+  }
+}

@@ -1,0 +1,61 @@
+order_id,order_date,customer_id,item_name,category,quantity,unit_price,sales_amount,city,channel,store_id,order_status,rating
+ORD-20260101-001,2026-01-01,CUST-001,Bread,Bakery,5,6.00,30.00,Shanghai,offline,ST-001,completed,4.5
+ORD-20260101-002,2026-01-01,CUST-002,Banana Shake,Drink,2,18.00,36.00,Shanghai,online,ST-001,completed,4.7
+ORD-20260101-003,2026-01-01,CUST-003,Truffle Pasta,Main,1,128.00,128.00,Beijing,offline,ST-002,completed,4.8
+ORD-20260101-004,2026-01-01,CUST-004,Pizza,Main,2,58.00,116.00,Beijing,online,ST-002,completed,4.4
+ORD-20260101-005,2026-01-01,CUST-005,Coffee,Drink,3,22.00,66.00,Shanghai,offline,ST-003,completed,4.2
+ORD-20260102-006,2026-01-02,CUST-006,Bread,Bakery,8,6.00,48.00,Guangzhou,offline,ST-004,completed,4.3
+ORD-20260102-007,2026-01-02,CUST-007,Crispy Onion Rings,Snack,3,24.00,72.00,Guangzhou,online,ST-004,completed,4.1
+ORD-20260102-008,2026-01-02,CUST-008,Steak,Main,1,188.00,188.00,Shanghai,offline,ST-001,completed,4.9
+ORD-20260102-009,2026-01-02,CUST-009,Noodles,Main,4,28.00,112.00,Beijing,offline,ST-002,completed,4.0
+ORD-20260102-010,2026-01-02,CUST-010,Banana Shake,Drink,4,18.00,72.00,Shanghai,online,ST-003,completed,4.6
+ORD-20260103-011,2026-01-03,CUST-011,Bread,Bakery,10,6.00,60.00,Shanghai,offline,ST-001,completed,4.2
+ORD-20260103-012,2026-01-03,CUST-012,Truffle Pasta,Main,2,128.00,256.00,Beijing,offline,ST-002,completed,4.9
+ORD-20260103-013,2026-01-03,CUST-013,Salad,Side,3,26.00,78.00,Guangzhou,online,ST-004,completed,4.1
+ORD-20260103-014,2026-01-03,CUST-014,Coffee,Drink,5,22.00,110.00,Shanghai,offline,ST-003,completed,4.3
+ORD-20260103-015,2026-01-03,CUST-015,Pizza,Main,3,58.00,174.00,Beijing,online,ST-002,completed,4.5
+ORD-20260104-016,2026-01-04,CUST-016,Bread,Bakery,7,6.00,42.00,Guangzhou,offline,ST-004,completed,4.0
+ORD-20260104-017,2026-01-04,CUST-017,Steak,Main,2,188.00,376.00,Shanghai,offline,ST-001,completed,4.8
+ORD-20260104-018,2026-01-04,CUST-018,Banana Shake,Drink,6,18.00,108.00,Shanghai,online,ST-003,completed,4.7
+ORD-20260104-019,2026-01-04,CUST-019,Noodles,Main,5,28.00,140.00,Beijing,offline,ST-002,completed,4.1
+ORD-20260104-020,2026-01-04,CUST-020,Crispy Onion Rings,Snack,4,24.00,96.00,Guangzhou,online,ST-004,completed,4.2
+ORD-20260105-021,2026-01-05,CUST-021,Bread,Bakery,9,6.00,54.00,Shanghai,offline,ST-001,completed,4.1
+ORD-20260105-022,2026-01-05,CUST-022,Truffle Pasta,Main,2,128.00,256.00,Beijing,offline,ST-002,completed,4.9
+ORD-20260105-023,2026-01-05,CUST-023,Pizza,Main,4,58.00,232.00,Beijing,online,ST-002,completed,4.4
+ORD-20260105-024,2026-01-05,CUST-024,Coffee,Drink,6,22.00,132.00,Shanghai,offline,ST-003,completed,4.2
+ORD-20260105-025,2026-01-05,CUST-025,Salad,Side,5,26.00,130.00,Guangzhou,online,ST-004,completed,4.0
+ORD-20260106-026,2026-01-06,CUST-026,Bread,Bakery,11,6.00,66.00,Guangzhou,offline,ST-004,completed,4.3
+ORD-20260106-027,2026-01-06,CUST-027,Steak,Main,1,188.00,188.00,Shanghai,offline,ST-001,completed,4.7
+ORD-20260106-028,2026-01-06,CUST-028,Banana Shake,Drink,5,18.00,90.00,Shanghai,online,ST-003,completed,4.6
+ORD-20260106-029,2026-01-06,CUST-029,Noodles,Main,6,28.00,168.00,Beijing,offline,ST-002,completed,4.1
+ORD-20260106-030,2026-01-06,CUST-030,Crispy Onion Rings,Snack,6,24.00,144.00,Guangzhou,online,ST-004,completed,4.2
+ORD-20260107-031,2026-01-07,CUST-031,Bread,Bakery,12,6.00,72.00,Shanghai,offline,ST-001,completed,4.2
+ORD-20260107-032,2026-01-07,CUST-032,Truffle Pasta,Main,3,128.00,384.00,Beijing,offline,ST-002,completed,4.9
+ORD-20260107-033,2026-01-07,CUST-033,Pizza,Main,5,58.00,290.00,Beijing,online,ST-002,completed,4.5
+ORD-20260107-034,2026-01-07,CUST-034,Coffee,Drink,7,22.00,154.00,Shanghai,offline,ST-003,completed,4.3
+ORD-20260107-035,2026-01-07,CUST-035,Salad,Side,6,26.00,156.00,Guangzhou,online,ST-004,completed,4.0
+ORD-20260108-036,2026-01-08,CUST-036,Bread,Bakery,13,6.00,78.00,Guangzhou,offline,ST-004,completed,4.1
+ORD-20260108-037,2026-01-08,CUST-037,Steak,Main,2,188.00,376.00,Shanghai,offline,ST-001,completed,4.8
+ORD-20260108-038,2026-01-08,CUST-038,Banana Shake,Drink,7,18.00,126.00,Shanghai,online,ST-003,completed,4.7
+ORD-20260108-039,2026-01-08,CUST-039,Noodles,Main,7,28.00,196.00,Beijing,offline,ST-002,completed,4.1
+ORD-20260108-040,2026-01-08,CUST-040,Crispy Onion Rings,Snack,7,24.00,168.00,Guangzhou,online,ST-004,completed,4.2
+ORD-20260109-041,2026-01-09,CUST-041,Bread,Bakery,14,6.00,84.00,Shanghai,offline,ST-001,completed,4.0
+ORD-20260109-042,2026-01-09,CUST-042,Truffle Pasta,Main,3,128.00,384.00,Beijing,offline,ST-002,completed,4.8
+ORD-20260109-043,2026-01-09,CUST-043,Pizza,Main,4,58.00,232.00,Beijing,online,ST-002,completed,4.4
+ORD-20260109-044,2026-01-09,CUST-044,Coffee,Drink,8,22.00,176.00,Shanghai,offline,ST-003,completed,4.2
+ORD-20260109-045,2026-01-09,CUST-045,Salad,Side,7,26.00,182.00,Guangzhou,online,ST-004,completed,4.1
+ORD-20260110-046,2026-01-10,CUST-046,Bread,Bakery,15,6.00,90.00,Guangzhou,offline,ST-004,completed,4.2
+ORD-20260110-047,2026-01-10,CUST-047,Steak,Main,2,188.00,376.00,Shanghai,offline,ST-001,completed,4.9
+ORD-20260110-048,2026-01-10,CUST-048,Banana Shake,Drink,8,18.00,144.00,Shanghai,online,ST-003,completed,4.6
+ORD-20260110-049,2026-01-10,CUST-049,Noodles,Main,8,28.00,224.00,Beijing,offline,ST-002,completed,4.0
+ORD-20260110-050,2026-01-10,CUST-050,Crispy Onion Rings,Snack,8,24.00,192.00,Guangzhou,online,ST-004,completed,4.3
+ORD-20260111-051,2026-01-11,CUST-051,Bread,Bakery,16,6.00,96.00,Shanghai,offline,ST-001,completed,4.1
+ORD-20260111-052,2026-01-11,CUST-052,Truffle Pasta,Main,4,128.00,512.00,Beijing,offline,ST-002,completed,4.9
+ORD-20260111-053,2026-01-11,CUST-053,Pizza,Main,5,58.00,290.00,Beijing,online,ST-002,completed,4.5
+ORD-20260111-054,2026-01-11,CUST-054,Coffee,Drink,9,22.00,198.00,Shanghai,offline,ST-003,completed,4.2
+ORD-20260111-055,2026-01-11,CUST-055,Salad,Side,8,26.00,208.00,Guangzhou,online,ST-004,completed,4.1
+ORD-20260112-056,2026-01-12,CUST-056,Bread,Bakery,18,6.00,108.00,Guangzhou,offline,ST-004,completed,4.2
+ORD-20260112-057,2026-01-12,CUST-057,Steak,Main,3,188.00,564.00,Shanghai,offline,ST-001,completed,4.8
+ORD-20260112-058,2026-01-12,CUST-058,Banana Shake,Drink,9,18.00,162.00,Shanghai,online,ST-003,completed,4.7
+ORD-20260112-059,2026-01-12,CUST-059,Noodles,Main,9,28.00,252.00,Beijing,offline,ST-002,completed,4.1
+ORD-20260112-060,2026-01-12,CUST-060,Crispy Onion Rings,Snack,9,24.00,216.00,Guangzhou,online,ST-004,completed,4.2

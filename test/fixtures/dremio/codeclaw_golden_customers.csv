@@ -1,0 +1,12 @@
+customer_id,customer_name,gender_code,gender_label,birth_year,city,member_level,signup_date
+C001,Alice,F,女性,1992,Shanghai,Gold,2025-11-01
+C002,Bella,F,女性,1988,Shanghai,Silver,2025-11-03
+C003,Cindy,F,女性,1995,Beijing,Gold,2025-11-05
+C004,Dora,F,女性,1990,Guangzhou,Platinum,2025-11-07
+C005,Elaine,F,女性,1998,Shenzhen,Silver,2025-11-09
+C006,Fiona,F,女性,1991,Hangzhou,Bronze,2025-11-11
+C007,George,M,男性,1987,Shanghai,Gold,2025-11-02
+C008,Henry,M,男性,1993,Beijing,Silver,2025-11-04
+C009,Ivan,M,男性,1985,Guangzhou,Gold,2025-11-06
+C010,Jack,M,男性,1996,Shenzhen,Bronze,2025-11-08
+C011,Unknown,U,未知,1994,Chengdu,Silver,2025-11-10

@@ -1,0 +1,53 @@
+.DS_Store
+._*
+.~*
+
+# Local original CodeClaw checkout. The tracked working baseline is synced into
+# the repository root under src/, packages/, web-react/, web/, scripts/, etc.
+CodeClaw/
+
+# Office/source artifacts kept locally only.
+*.docx
+*.doc
+
+# Environment and secrets.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+coverage/
+.vite/
+.codeclaw/
+.backups/
+.venv-lsp/
+
+# Generated validation reports and copied upstream heavy fixtures.
+reports/
+test/golden/reports/
+test/golden/fix/**/node_modules/
+
+# Local verification data.
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/artifacts/**
+!data/artifacts/
+!data/artifacts/**/
+!data/artifacts/**/.gitkeep
+
+# Logs and temporary files.
+*.log
+tmp/
+temp/

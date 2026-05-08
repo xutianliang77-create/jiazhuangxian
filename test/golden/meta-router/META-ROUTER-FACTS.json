@@ -1,0 +1,216 @@
+{
+  "version": "v55 D-P0 + 文案修订（v55 D commit ac89c2fd）",
+  "exported_at": "2026-05-06",
+  "source_file": "services/smartquery/src/main/java/com/dremio/service/smartquery/meta/MetaQuestionRouter.java",
+  "purpose": "v55 D-P0 元提问路由真实事实回答库 · 7 类 fact 关键词命中即返填 OptionManager 真实值的 chat 答案 · 完全绕过 LLM 防止编造系统能力",
+  "trigger_origin": "用户「看下beelink」会话 (cid conv_beelink_61c57993-6bea-4b38-8ce7-7e1285b5ed67) 48 轮多轮对话中 LLM 编造系统能力的 7 处归因",
+  "ordinal_note": "ordinal 1-7 顺序连续 · 与源码 buildFacts() Arrays.asList 顺序一一对应",
+  "matching_strategy": {
+    "method": "trigger_keywords 任一子串命中 question（小写不敏感）即触发",
+    "fallback_when_no_hit": "回到 LLM chat 路径 + PromptBuilder 系统提示中的「严禁编造 Beelink 自身实现细节」硬约束兜底"
+  },
+  "baseline_runtime_values": {
+    "smartquery.llm.max-tokens": 4096,
+    "smartquery.multiagent.enabled": false,
+    "smartquery.discovery.enabled": true,
+    "captured_at": "2026-05-06 23:47 · v55 baseline 运行时实测"
+  },
+  "schema": {
+    "ordinal": "1-7 顺序号",
+    "fact_id": "fact 业务标识 · 与源码 MetaFact.id 一致",
+    "category": "fact 解决的幻觉类别",
+    "trigger_session_messages": "「看下beelink」会话中触发本 fact 的 message 序号",
+    "design_note": "fact 设计意图（解决什么 LLM 幻觉）",
+    "trigger_keywords": "命中关键词列表（任一子串 + 小写不敏感）",
+    "sample_question": "代表性提问（用户视角）",
+    "answer_dynamic_fields": "答案中包含的运行时动态字段（占位符 + 数据源 + baseline 值）",
+    "answer_template": "可选 · 含 {placeholder} 占位符的答案模板（仅 fact 2/5/7 有动态字段）",
+    "answer_branches": "可选 · fact 5 的 A/B 动态分支（按 multiagent.enabled 实时切换）",
+    "answer": "按 baseline 运行时值渲染后的最终答案文本（即用户实际看到的回复）"
+  },
+  "total": 7,
+  "items": [
+    {
+      "ordinal": 1,
+      "fact_id": "md_file",
+      "category": "静态知识库幻觉",
+      "trigger_session_messages": [
+        "#23"
+      ],
+      "design_note": "用户问「你的 md 文件」时 LLM 易编造静态文件 · 实际无任何 .md 知识库",
+      "trigger_keywords": [
+        "md 文件",
+        "md文件",
+        ".md",
+        "你的 md",
+        "你的md",
+        "md 里面",
+        "md里面",
+        "你的元数据",
+        "你封装的",
+        "封装的上下文"
+      ],
+      "sample_question": "你的 md 文件里写了什么？",
+      "answer_dynamic_fields": [],
+      "answer": "Beelink 智能问数没有静态文件作为知识库。\n\n我的「知识」由四部分动态拼接得到：\n1. 表结构清单（每次提问时实时从数据源读取）\n2. 业务语义层（在「设置 → 智能问数 → 语义层」维护）\n3. 样本库（在「设置 → 智能问数 → 样本库」维护）\n4. SQL 生成规则（系统内置）\n\n所以不存在所谓的 .md 文件。"
+    },
+    {
+      "ordinal": 2,
+      "fact_id": "context_window",
+      "category": "上下文容量幻觉",
+      "trigger_session_messages": [
+        "#25",
+        "#27"
+      ],
+      "design_note": "用户问「上下文超过 1MB 怎么办」时 LLM 易编造 1MB 上限 · 实际按 token 计",
+      "trigger_keywords": [
+        "上下文多大",
+        "上下文有多大",
+        "上下文窗口",
+        "context window",
+        "token 上限",
+        "token上限",
+        "1m",
+        "1mb",
+        "超过 1m",
+        "上下文超过"
+      ],
+      "sample_question": "你的上下文窗口多大？超过 1MB 会怎么样？",
+      "answer_dynamic_fields": [
+        {
+          "placeholder": "{maxTokens}",
+          "source": "OptionManager.smartquery.llm.max-tokens",
+          "current_baseline_value": 4096
+        }
+      ],
+      "answer_template": "Beelink 智能问数当前的上下文配置：\n- 单次对话最多容纳 {maxTokens} 个 token（约几千汉字）\n- 多轮对话保留首问 + 最近 4 轮的内容\n- 如果元数据非常大会自动按 token 截断（不存在 1MB 上限的概念，容量按 token 算）\n\n实际可用空间 = 上限 − 系统说明 − 表结构 − 历史对话。",
+      "answer": "Beelink 智能问数当前的上下文配置：\n- 单次对话最多容纳 4096 个 token（约几千汉字）\n- 多轮对话保留首问 + 最近 4 轮的内容\n- 如果元数据非常大会自动按 token 截断（不存在 1MB 上限的概念，容量按 token 算）\n\n实际可用空间 = 上限 − 系统说明 − 表结构 − 历史对话。"
+    },
+    {
+      "ordinal": 3,
+      "fact_id": "verifier_mechanism",
+      "category": "校验机制幻觉",
+      "trigger_session_messages": [
+        "#37",
+        "#38"
+      ],
+      "design_note": "用户问「为什么没有校验出来」时 LLM 易编造校验环节 · 此回答列出真实的 4 层校验",
+      "trigger_keywords": [
+        "检查 sql",
+        "检查sql",
+        "检查最终结果",
+        "校验机制",
+        "校验功能",
+        "verifier",
+        "验证机制",
+        "校验出来",
+        "技术疏漏",
+        "语义级"
+      ],
+      "sample_question": "出现了技术疏漏为什么没有校验出来？",
+      "answer_dynamic_fields": [],
+      "answer": "Beelink 智能问数当前的校验机制：\n1. 形态检查：判断生成结果是 SQL 还是闲聊回答。\n2. 表名白名单：只允许使用授权范围内的表（防止访问非授权数据）。\n3. EXPLAIN 干跑：提交样本库前做 SQL 语法 / 字段 / 权限校验。\n4. 字段完整性：用户要几个字段时检查 SQL 是否全返，比如要「性别 / 销售额 / 品类 / 产品名」时少一个会在回答末尾告警提示原因。"
+    },
+    {
+      "ordinal": 4,
+      "fact_id": "history_window",
+      "category": "多轮记忆幻觉",
+      "trigger_session_messages": [
+        "#46"
+      ],
+      "design_note": "用户问「有记忆功能吗」时 LLM 易编造跨会话持久记忆 · 实际仅当前会话最近 10 轮",
+      "trigger_keywords": [
+        "多轮",
+        "对话窗口",
+        "history 窗口",
+        "历史窗口",
+        "记忆功能",
+        "记忆",
+        "上一轮",
+        "上下文压缩"
+      ],
+      "sample_question": "你有记忆功能吗？跨会话能记住之前说过的吗？",
+      "answer_dynamic_fields": [],
+      "answer": "Beelink 智能问数的多轮记忆机制：\n- 没有独立的「记忆」功能 · 也没有跨会话记忆\n- 仅在当前会话内记录历史：保留最近 10 轮的提问和回答\n- 每次新提问时会把这些历史作为上下文一起发给我 · 让我能理解像「再加一个维度」「按月看一下」「前 3 名」这种追问\n\n跨会话之间互不打通 · 换个对话窗口我就忘了之前说过什么。"
+    },
+    {
+      "ordinal": 5,
+      "fact_id": "agent_flow",
+      "category": "Agent 流程幻觉",
+      "trigger_session_messages": [
+        "#42"
+      ],
+      "design_note": "用户问「你的 agent loop 流程」时 LLM 易混合讲单 agent / multi-agent / ReAct · 此回答按 multiagent.enabled 动态切换 A/B 分支",
+      "trigger_keywords": [
+        "agent loop",
+        "agent 流程",
+        "agent框架",
+        "agent loop 流程",
+        "ReAct",
+        "react agent",
+        "流程定义",
+        "流程描述"
+      ],
+      "sample_question": "你的 agent loop 流程是什么样的？",
+      "answer_dynamic_fields": [
+        {
+          "placeholder": "{multiAgentEnabled}",
+          "source": "OptionManager.smartquery.multiagent.enabled",
+          "current_baseline_value": false
+        }
+      ],
+      "answer_branches": {
+        "multiagent_enabled_true": "Beelink 智能问数当前走的是「multi-agent」流程：\n1. 选数据：从所有可用表中挑出最相关的\n2. 装配上下文：拼装表结构、历史对话、业务语义层\n3. 生成 SQL：让 LLM 生成 SQL 和回答\n4. 校验 SQL：检查表名是否在授权范围内\n5. 执行 SQL 拿数据回答\n\n整套流程在系统里固化 · 不需要外部流程文件。",
+        "multiagent_enabled_false": "Beelink 智能问数当前走的是「单 agent」流程：\n1. 收到提问后 · 系统会拼装上下文（历史对话 + 表结构 + 业务语义层 + 样本库）\n2. 把这些信息发给 LLM 让它生成 SQL 和回答\n3. 校验 SQL（表名是否在授权范围内 / 是否能执行）\n4. 执行 SQL 拿到数据 · 整理成你看到的回答\n\n整套流程在系统里固化 · 不需要外部流程文件。"
+      },
+      "answer": "Beelink 智能问数当前走的是「单 agent」流程：\n1. 收到提问后 · 系统会拼装上下文（历史对话 + 表结构 + 业务语义层 + 样本库）\n2. 把这些信息发给 LLM 让它生成 SQL 和回答\n3. 校验 SQL（表名是否在授权范围内 / 是否能执行）\n4. 执行 SQL 拿到数据 · 整理成你看到的回答\n\n整套流程在系统里固化 · 不需要外部流程文件。"
+    },
+    {
+      "ordinal": 6,
+      "fact_id": "knowledge_base",
+      "category": "知识沉淀幻觉",
+      "trigger_session_messages": [
+        "#43",
+        "#44",
+        "#45"
+      ],
+      "design_note": "用户问「知识库 / 业务沉淀」时 LLM 易编造内置 RAG · 实际仅 3 部分（语义层 + 样本库 + 字段注解）",
+      "trigger_keywords": [
+        "知识库",
+        "业务知识库",
+        "沉淀知识",
+        "沉淀业务",
+        "知识沉淀"
+      ],
+      "sample_question": "Beelink 怎么沉淀业务知识？",
+      "answer_dynamic_fields": [],
+      "answer": "Beelink 智能问数的「知识」由 3 部分构成：\n1. 业务语义层（设置 → 智能问数 → 语义层）：业务对象 / 度量 / 维度 / 表之间的关联路径\n2. 样本库（设置 → 智能问数 → 样本库）：典型问题 + 对应的正确 SQL，作为参考示例\n3. 字段含义注解（设置 → 智能问数 → 自动探查）：每个字段的业务含义说明\n\n没有独立的「业务流程定义」知识 · 流程隐含在 SQL 生成规则和数据模型里。\n没有跨会话沉淀 · 每次提问独立装配上下文。"
+    },
+    {
+      "ordinal": 7,
+      "fact_id": "discovery_feature",
+      "category": "数据探查幻觉",
+      "trigger_session_messages": [
+        "#47"
+      ],
+      "design_note": "用户问「数据探查 / 自动探查功能」时 LLM 易混淆 schema annotator / scheduler · 此回答给真实管理入口",
+      "trigger_keywords": [
+        "数据探查",
+        "schema 探查",
+        "discovery 功能",
+        "自动探查",
+        "探查功能"
+      ],
+      "sample_question": "Beelink 的自动探查功能在哪开关？",
+      "answer_dynamic_fields": [
+        {
+          "placeholder": "{discoveryEnabled}",
+          "source": "OptionManager.smartquery.discovery.enabled",
+          "current_baseline_value": true
+        }
+      ],
+      "answer_template": "Beelink 智能问数的数据探查功能：\n- 系统会按周期自动扫描所有数据源（管理员可开关 · 当前 = {discoveryEnabled}），提取每个表的结构信息\n- 管理员可以触发 LLM 推断每个字段的业务含义，审核通过后写入系统知识\n- 管理入口：设置 → 智能问数 → 自动探查",
+      "answer": "Beelink 智能问数的数据探查功能：\n- 系统会按周期自动扫描所有数据源（管理员可开关 · 当前 = true），提取每个表的结构信息\n- 管理员可以触发 LLM 推断每个字段的业务含义，审核通过后写入系统知识\n- 管理入口：设置 → 智能问数 → 自动探查"
+    }
+  ]
+}
