@@ -84,6 +84,19 @@ cd /Users/xutianliang/Downloads/jiazhuangxian
 JZX_DATA_DB=data/artifacts/medical/data.db npm run model-gateway
 ```
 
+启动前可先检查模型网关配置：
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+JZX_DATA_DB=data/artifacts/medical/data.db npm run model-gateway:check
+```
+
+启动后也可通过 HTTP 检查：
+
+```bash
+curl -s http://127.0.0.1:8766/model/v1/config/check
+```
+
 终端 3：启动验证 worker。
 
 ```bash

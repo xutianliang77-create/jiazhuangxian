@@ -28,10 +28,16 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
                             "routes": [
                                 "/model/v1/infer/thyroid/detect-nodules",
                                 "/model/v1/jobs/{job_id}",
+                                "/model/v1/config/check",
                             ],
                         }
                     )
                 )
+                return
+            if self.path == "/model/v1/config/check":
+                from .config_check import build_config_report
+
+                self._write_response(ok(build_config_report(db_path=store.db_path)))
                 return
             if self.path.startswith("/model/v1/jobs/"):
                 job_id = self.path.rsplit("/", 1)[-1]

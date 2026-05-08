@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries and config checks, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker.
 
 ### Completed
 
@@ -111,6 +111,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - The validation medical agent worker now runs synchronous placeholder tasks for image QC, TI-RADS feature classification, TI-RADS calculation, report draft, and safety review.
 - `detect_nodules` agent tasks now create a `thyroid.detect_nodules` `model_job`, move to `waiting_model`, and later sync model success/failure back into the agent task chain.
 - Updated local MCP setup documentation so Web, medical-agent-worker, model-gateway, and model-worker use the same `JZX_DATA_DB`.
+- Added `services/model-gateway/app/config_check.py` to report Python runtime, base packages, detector runtime packages, detector weight env/path/readability, Torch/CUDA availability, and GPU device metadata.
+- Added `GET /model/v1/config/check` to the model-gateway HTTP API.
+- Added root script `npm run model-gateway:check`.
+- Updated model-gateway and MCP setup docs with configuration check usage.
 
 ### Verification
 
@@ -151,6 +155,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Targeted lint passed for medical agent worker, storage repo, CLI script, and worker tests.
 - Root `npm run typecheck` passed after medical agent worker implementation.
 - CLI smoke test passed: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `python3 -m unittest discover services/model-gateway/tests` passed after model-gateway config check: 9 tests.
+- CLI smoke test passed: `npm run model-gateway:check -- --db <tmp>/data.db` returned degraded JSON with package, weight, and CUDA diagnostics.
+- Root `npm run typecheck` passed after model-gateway config check.
+- `npm test` passed after model-gateway config check: 176 files passed, 1 skipped; 1674 tests passed, 3 skipped.
+- `git diff --check` passed after model-gateway config check.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -183,9 +192,9 @@ None.
 
 ### Next Session Priorities
 
-1. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
-2. Add detector artifact output conventions for overlays, bounding boxes, and model comparison once weights are available.
-3. Replace validation placeholder outputs with real image-worker/MCP calls where dependencies are configured.
+1. Add detector artifact output conventions for overlays, bounding boxes, and model comparison once weights are available.
+2. Replace validation placeholder outputs with real image-worker/MCP calls where dependencies are configured.
+3. Add UI/API visibility for model-gateway config check results in the Medical workstation.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 

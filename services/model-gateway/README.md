@@ -16,6 +16,7 @@ Python 模型服务入口，负责模型路由、SQLite `model_job` 队列和本
 | `GET` | `/health` | 服务健康检查 |
 | `POST` | `/model/v1/infer/thyroid/detect-nodules` | 创建甲状腺结节检测任务 |
 | `GET` | `/model/v1/jobs/{job_id}` | 查询模型任务 |
+| `GET` | `/model/v1/config/check` | 检查检测模型权重、运行时包和 GPU/CUDA 状态 |
 
 当前 worker：
 
@@ -59,6 +60,30 @@ JZX_ARTIFACT_ROOT=../../data/artifacts \
 JZX_YOLOV11_WEIGHTS=/absolute/path/to/yolov11-thyroid.pt \
 python3 -m app.worker --once
 ```
+
+检查模型网关配置：
+
+```bash
+cd services/model-gateway
+JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db \
+JZX_ARTIFACT_ROOT=../../data/artifacts \
+JZX_YOLOV11_WEIGHTS=/absolute/path/to/yolov11-thyroid.pt \
+python3 -m app.config_check
+```
+
+根目录也提供了同等命令：
+
+```bash
+npm run model-gateway:check -- --db data/artifacts/medical/data.db
+```
+
+配置检查会报告：
+
+- Python 版本、可执行路径和平台。
+- `pydantic`、`numpy`、`opencv-python`、`pillow` 等基础包。
+- `ultralytics`、`torch`、`rfdetr` 等检测运行时包。
+- YOLOv11、RT-DETR、RF-DETR 权重环境变量、路径存在性、是否可读和文件大小。
+- Torch/CUDA 是否可用、GPU 数量、设备名称和显存。
 
 配置 RT-DETR 对照 adapter：
 

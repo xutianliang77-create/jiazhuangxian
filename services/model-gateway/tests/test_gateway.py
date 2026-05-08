@@ -15,6 +15,7 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
 
 from app.detectors import build_detector_request, select_detector_adapter  # noqa: E402
+from app.config_check import build_config_report  # noqa: E402
 from app.schemas import DetectNodulesRequest  # noqa: E402
 from app.server import create_server  # noqa: E402
 from app.store import ModelJobStore  # noqa: E402
@@ -33,10 +34,51 @@ class ModelGatewayTest(unittest.TestCase):
                 self.assertEqual(payload["status"], "ok")
                 self.assertEqual(payload["result"]["service"], "model-gateway")
                 self.assertIn("/model/v1/infer/thyroid/detect-nodules", payload["result"]["routes"])
+                self.assertIn("/model/v1/config/check", payload["result"]["routes"])
             finally:
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=5)
+
+    def test_config_check_endpoint_reports_runtime_and_detectors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "model.db"
+            server = create_server(port=0, db_path=db_path)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = server.server_address
+                payload = get_json(f"http://{host}:{port}/model/v1/config/check")
+                self.assertEqual(payload["status"], "ok")
+                result = payload["result"]
+                self.assertEqual(result["service"], "model-gateway")
+                self.assertEqual(result["storage"]["data_db"], str(db_path))
+                self.assertIn("python", result["runtime"])
+                self.assertIn("gpu", result["runtime"])
+                self.assertEqual(
+                    [detector["model_family"] for detector in result["detectors"]],
+                    ["yolov11", "rt-detr", "rf-detr"],
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_config_report_validates_weight_environment_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            weights = Path(tmp) / "yolov11.pt"
+            weights.write_bytes(b"weights")
+            report = build_config_report(env={"JZX_YOLOV11_WEIGHTS": str(weights)})
+
+        yolo = next(item for item in report["detectors"] if item["model_family"] == "yolov11")
+        self.assertTrue(yolo["weights"]["configured"])
+        self.assertTrue(yolo["weights"]["exists"])
+        self.assertTrue(yolo["weights"]["is_file"])
+        self.assertTrue(yolo["weights"]["readable"])
+        self.assertEqual(yolo["weights"]["size_bytes"], 7)
+
+        rtdetr = next(item for item in report["detectors"] if item["model_family"] == "rt-detr")
+        self.assertIn("weights_env_missing", [issue["code"] for issue in rtdetr["issues"]])
 
     def test_detect_nodules_enqueues_model_job(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
