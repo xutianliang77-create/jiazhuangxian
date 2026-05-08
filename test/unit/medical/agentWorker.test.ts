@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { runMedicalAgentWorkerOnce } from "../../../src/medical/agentWorker";
+import { runMedicalAgentWorkerOnce, runMedicalAgentWorkerOnceAsync } from "../../../src/medical/agentWorker";
 import { MedicalCaseRepo, type AgentTaskRecord } from "../../../src/medical/storage";
 import { migrateIfNeeded } from "../../../src/storage/migrate";
 
@@ -84,6 +84,104 @@ describe("medical agent worker", () => {
     expect(repo.getAgentTask(tasks[1].id)?.status).toBe("blocked");
     expect(repo.getAnalysisSession(sessionId)?.status).toBe("failed");
   });
+
+  it("calls image-worker for image_qc through the async worker", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const { tasks } = seedAgentTaskChain(["image_qc"]);
+
+    const first = await runMedicalAgentWorkerOnceAsync(repo, {
+      workerId: "worker-test",
+      now: () => 4000,
+      imageWorkerUrl: "http://worker.test/",
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+        return jsonResponse({
+          status: "ok",
+          result: {
+            quality_score: 0.88,
+            is_analyzable: true,
+            issues: ["low_contrast"],
+            width: 640,
+            height: 480,
+          },
+          warnings: ["mild_probe_shadow"],
+          trace_id: tasks[0].id,
+        });
+      },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: "http://worker.test/image/v1/image-quality-check",
+      body: {
+        image_uri: "artifact://raw/ACC-AGENT/IMG1.png",
+        trace_id: tasks[0].id,
+        metadata: {
+          file_type: "png",
+          width: 640,
+          height: 480,
+        },
+      },
+    });
+    expect(first).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "image_qc",
+      output: {
+        validation_mode: false,
+        result: {
+          image_worker_status: "ok",
+          image_quality: "analyzable",
+          quality_score: 0.88,
+          is_analyzable: true,
+          issues: ["low_contrast"],
+        },
+        warnings: ["mild_probe_shadow"],
+      },
+    });
+
+    const image = repo.getImage(String(tasks[0].input.image_id));
+    expect(image).toMatchObject({
+      imageQuality: "analyzable",
+      qualityScore: 0.88,
+      processingStatus: "qc_completed",
+    });
+    expect(repo.getAnalysisSession(String(tasks[0].analysisSessionId))?.status).toBe("succeeded");
+  });
+
+  it("keeps image_qc non-blocking when image-worker is unreachable", async () => {
+    const { tasks } = seedAgentTaskChain(["image_qc", "detect_nodules"]);
+
+    const first = await runMedicalAgentWorkerOnceAsync(repo, {
+      workerId: "worker-test",
+      now: () => 5000,
+      imageWorkerUrl: "http://worker.test",
+      fetchImpl: async () => {
+        throw new Error("offline");
+      },
+    });
+
+    expect(first).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "image_qc",
+      output: {
+        validation_mode: true,
+        result: {
+          image_worker_status: "error",
+          image_quality: "unchecked",
+          quality_score: null,
+          processing_status: "uploaded",
+          image_worker_error: { code: "image_worker_unreachable", message: "offline" },
+        },
+        warnings: ["image_worker_qc_unavailable", "image_worker_unreachable"],
+      },
+    });
+    expect(repo.getImage(String(tasks[0].input.image_id))?.processingStatus).toBe("uploaded");
+
+    const second = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 5100 });
+    expect(second).toMatchObject({ status: "waiting_model", claimed: true, taskType: "detect_nodules" });
+  });
 });
 
 function seedAgentTaskChain(taskTypes: string[]): { sessionId: string; tasks: AgentTaskRecord[] } {
@@ -120,4 +218,11 @@ function seedAgentTaskChain(taskTypes: string[]): { sessionId: string; tasks: Ag
     return task;
   });
   return { sessionId: session.id, tasks };
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }

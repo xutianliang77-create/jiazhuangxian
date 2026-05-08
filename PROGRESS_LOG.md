@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff.
 
 ### Completed
 
@@ -119,6 +119,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Successful `thyroid.detect_nodules` model-worker runs now write `artifact://model-output/thyroid-detect-nodules/<study>/<image>/<job>/detections.json` and persist the URI to `model_job.artifact_uri`.
 - Detection artifact JSON now standardizes schema version, pixel `xyxy` coordinate system, model provenance, detections, warnings, raw output, overlay URI slot, and future model-comparison slots.
 - Added `docs/MODEL_ARTIFACT_CONVENTIONS.md` and linked it from `README.md`.
+- Added an async medical agent worker entrypoint so `image_qc` can call the Python image-worker HTTP service while preserving the existing synchronous validation path.
+- `medical-agent-worker` now calls `/image/v1/image-quality-check` for `image_qc`, writes successful quality metadata back to the `image` row, and returns a structured non-blocking warning when image-worker is unavailable.
+- Updated `scripts/medical-agent-worker.ts` to use the async worker and accept `--image-worker-url` / `JZX_IMAGE_WORKER_URL`.
+- Updated local MCP setup documentation with the real `image_qc` runtime flow and image-worker fallback behavior.
 
 ### Verification
 
@@ -168,6 +172,14 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Root `npm run typecheck` passed after detector artifact conventions.
 - `npm test` passed after detector artifact conventions: 176 files passed, 1 skipped; 1674 tests passed, 3 skipped.
 - `git diff --check` passed after detector artifact conventions.
+- Targeted medical agent worker/storage tests passed after image QC handoff: `npm test -- --run test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts` with 8 tests.
+- Root `npm run typecheck` passed after image QC handoff.
+- Targeted lint passed for image QC handoff files: `npx eslint src/medical/agentWorker.ts src/medical/storage/caseRepo.ts scripts/medical-agent-worker.ts test/unit/medical/agentWorker.test.ts`.
+- `npm test` passed after image QC handoff: 176 files passed, 1 skipped; 1677 tests passed, 3 skipped.
+- `python3 -m unittest discover services/image-worker/tests` passed after image QC handoff: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after image QC handoff: 10 tests.
+- CLI smoke test passed after image QC handoff: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after image QC handoff.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -200,7 +212,7 @@ None.
 
 ### Next Session Priorities
 
-1. Replace validation placeholder outputs with real image-worker/MCP calls where dependencies are configured.
+1. Replace the remaining validation placeholder outputs with real feature-classifier, TI-RADS rule, report-generation, and safety-review calls where dependencies are configured.
 2. Add UI/API visibility for model-gateway config check results and detector artifacts in the Medical workstation.
 3. Add overlay image generation for detector bbox results.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.

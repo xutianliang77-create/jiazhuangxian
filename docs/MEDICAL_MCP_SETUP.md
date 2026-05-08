@@ -10,7 +10,7 @@
 | `image-worker` | 单独 HTTP 服务 | DICOM 解析、脱敏、预览、预处理、图像质量检查 |
 | `model-gateway` | 单独 HTTP 服务 | 接收检测请求并写入 `model_job` 队列 |
 | `model-worker` | 单独后台进程 | 消费 `model_job`；当前验证版只写结构化未配置错误 |
-| `medical-agent-worker` | 单独后台进程 | 消费 `agent_task`；推进图像质控、检测排队、TI-RADS、报告草稿与安全审核任务链 |
+| `medical-agent-worker` | 单独后台进程 | 消费 `agent_task`；`image_qc` 调用 image-worker，检测任务写入 `model_job`，并推进 TI-RADS、报告草稿与安全审核任务链 |
 
 `.mcp.json` 只负责启动 MCP server，不负责拉起长期运行的 HTTP 后台服务。
 
@@ -108,13 +108,13 @@ JZX_DATA_DB=data/artifacts/medical/data.db npm run model-worker
 
 ```bash
 cd /Users/xutianliang/Downloads/jiazhuangxian
-JZX_DATA_DB=data/artifacts/medical/data.db npm run medical-agent-worker
+JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1:8765 npm run medical-agent-worker
 ```
 
 也可以单步消费一条任务，便于调试：
 
 ```bash
-JZX_DATA_DB=data/artifacts/medical/data.db npm run medical-agent-worker:once
+JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1:8765 npm run medical-agent-worker:once
 ```
 
 终端 5：启动 CodeClaw，并通过 `/mcp` 检查工具。
@@ -150,17 +150,19 @@ JZX_DATA_DB=data/artifacts/medical/data.db npm run medical-agent-worker:once
 
 1. 手工登记患者、检查和图像。
 2. 打开病例详情，点击图像行的 `启动分析`。
-3. `medical-agent-worker` 消费 `agent_task`，同步任务会直接完成。
+3. `medical-agent-worker` 消费 `agent_task`；`image_qc` 会调用 `image-worker` 的 `/image/v1/image-quality-check`，并将成功返回的 `image_quality`/`quality_score` 写回 `image` 表。
 4. `detect_nodules` 任务会进入 `waiting_model`，并创建 `model_job`。
 5. `model-worker` 消费 `model_job`；当前没有真实权重时会写入 `detector_not_configured`。
 6. `medical-agent-worker` 再次同步 `waiting_model`，将检测任务标记为失败并阻断下游任务；接入真实权重后会继续推进下游任务。
+
+如果 `image-worker` 未启动，`image_qc` 不会阻断验证链路；任务会以 `validation_mode=true` 成功完成，并在输出中写入 `image_worker_qc_unavailable` 与具体错误码，便于本地分步验证。
 
 ## 常见问题
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | `/mcp tools medical` 无工具 | `npm run medical:mcp` 启动失败或工作目录不对 | 项目级配置用样例；用户级配置加绝对 `cwd` |
-| `image-worker` unreachable | HTTP 服务未启动或端口不一致 | 检查 `JZX_IMAGE_WORKER_URL` 和 `npm run image-worker` |
+| `image_worker_qc_unavailable` | `medical-agent-worker` 无法访问 image-worker，或 image-worker 返回非标准响应 | 检查 `JZX_IMAGE_WORKER_URL`、`npm run image-worker` 和图像 `artifact://` 路径 |
 | `model_gateway_unreachable` | model-gateway 未启动 | 检查 `JZX_MODEL_GATEWAY_URL` 和 `npm run model-gateway` |
 | `knowledge_db_unavailable` | `JZX_DATA_DB` 指向的 SQLite 不存在或未迁移 | 使用默认 `~/.codeclaw/data.db`，或先初始化带医学迁移的验证数据库 |
 | `detector_not_configured` | 当前验证 worker 尚未接真实 YOLOv11/RT-DETR 权重 | 这是当前预期行为；后续替换 detector adapter |

@@ -98,6 +98,14 @@ export interface ImageRecord {
   updatedAt: number;
 }
 
+export interface ImageQualityUpdate {
+  imageId: string;
+  imageQuality?: string;
+  qualityScore?: number;
+  processingStatus?: string;
+  now?: number;
+}
+
 export interface AnalysisSessionInput {
   id?: string;
   studyId: string;
@@ -516,6 +524,27 @@ export class MedicalCaseRepo {
   getImage(id: string): ImageRecord | null {
     const row = this.db.prepare<[string], ImageRow>("SELECT * FROM image WHERE id = ?").get(id);
     return row ? mapImage(row) : null;
+  }
+
+  updateImageQuality(input: ImageQualityUpdate): ImageRecord | null {
+    const now = input.now ?? Date.now();
+    const updated = this.db
+      .prepare<[string | null, number | null, string | null, number, string]>(
+        `UPDATE image
+         SET image_quality = COALESCE(?, image_quality),
+             quality_score = COALESCE(?, quality_score),
+             processing_status = COALESCE(?, processing_status),
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.imageQuality ?? null,
+        input.qualityScore ?? null,
+        input.processingStatus ?? null,
+        now,
+        input.imageId
+      );
+    return updated.changes === 1 ? this.getImage(input.imageId) : null;
   }
 
   getAnalysisSession(id: string): AnalysisSessionRecord | null {

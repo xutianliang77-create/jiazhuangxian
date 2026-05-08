@@ -163,4 +163,32 @@ describe("MedicalCaseRepo", () => {
       })
     ).toThrow();
   });
+
+  it("updates image quality metadata after worker QC", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-QC", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-QC", now: 1100 });
+    const image = repo.addImage({
+      studyId: study.id,
+      fileUri: "artifact://raw/ACC-QC/IMG-QC.png",
+      fileType: "png",
+      now: 1200,
+    });
+
+    const updated = repo.updateImageQuality({
+      imageId: image.id,
+      imageQuality: "analyzable",
+      qualityScore: 0.91,
+      processingStatus: "qc_completed",
+      now: 1300,
+    });
+
+    expect(updated).toMatchObject({
+      id: image.id,
+      imageQuality: "analyzable",
+      qualityScore: 0.91,
+      processingStatus: "qc_completed",
+      updatedAt: 1300,
+    });
+  });
 });

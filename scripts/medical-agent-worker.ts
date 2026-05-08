@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { runMedicalAgentWorkerOnce } from "../src/medical/agentWorker";
+import { runMedicalAgentWorkerOnceAsync } from "../src/medical/agentWorker";
 import { MedicalCaseRepo } from "../src/medical/storage";
 import { defaultDataDbPath, openDataDb } from "../src/storage/db";
 
@@ -9,6 +9,7 @@ interface CliArgs {
   once: boolean;
   workerId: string;
   intervalMs: number;
+  imageWorkerUrl?: string;
 }
 
 async function main(): Promise<void> {
@@ -21,12 +22,12 @@ async function main(): Promise<void> {
 
   try {
     if (args.once) {
-      console.log(JSON.stringify(runMedicalAgentWorkerOnce(repo, { workerId: args.workerId }), null, 2));
+      console.log(JSON.stringify(await runMedicalAgentWorkerOnceAsync(repo, workerOptions(args)), null, 2));
       return;
     }
 
     for (;;) {
-      const result = runMedicalAgentWorkerOnce(repo, { workerId: args.workerId });
+      const result = await runMedicalAgentWorkerOnceAsync(repo, workerOptions(args));
       console.log(JSON.stringify(result, null, 2));
       if (!result.claimed) await sleep(args.intervalMs);
     }
@@ -40,6 +41,7 @@ function parseArgs(argv: string[]): CliArgs {
     once: false,
     workerId: process.env.JZX_MEDICAL_AGENT_WORKER_ID ?? "medical-agent-worker",
     intervalMs: positiveIntValue(process.env.JZX_MEDICAL_AGENT_WORKER_INTERVAL_MS, 1000),
+    imageWorkerUrl: process.env.JZX_IMAGE_WORKER_URL,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -55,11 +57,21 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (arg === "--interval-ms") {
       parsed.intervalMs = positiveInt(arg, next);
       i += 1;
+    } else if (arg === "--image-worker-url") {
+      parsed.imageWorkerUrl = requireValue(arg, next);
+      i += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
   return parsed;
+}
+
+function workerOptions(args: CliArgs): { workerId: string; imageWorkerUrl?: string } {
+  return {
+    workerId: args.workerId,
+    imageWorkerUrl: args.imageWorkerUrl,
+  };
 }
 
 function sleep(ms: number): Promise<void> {
