@@ -89,6 +89,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Manual case registration now creates patient, study, and image records in sequence, then refreshes the medical summary and recent studies list.
 - Manual case UI captures validation fields for external patient id, accession number, artifact/file URI, sex, birth year, clinical context, file type, width, and height.
 - Added MedicalPanel tests for successful manual registration and registration error handling.
+- Extended medical knowledge ingestion to accept Markdown manifest files with YAML front matter.
+- Markdown knowledge ingestion now reads `document`, optional `chunk_defaults`, and optional `report_templates` from front matter, then chunks the Markdown body by headings.
+- Added `examples/medical-knowledge/acr-tirads-validation.md` as the first Markdown medical knowledge sample.
+- Updated the knowledge ingestion guide with Markdown import usage.
 
 ### Verification
 
@@ -110,6 +114,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Full web-react tests passed after manual case UI: `cd web-react && npm test` with 11 files passed and 38 tests passed.
 - `npm run build:web` passed after manual case UI; Vite still reports the existing Monaco chunk-size warning.
 - Root `npm run typecheck` passed after manual case UI.
+- Targeted knowledge ingestion tests passed after Markdown support: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts test/unit/medical/initDbCli.test.ts` with 7 tests.
+- Targeted lint for knowledge ingestion passed after Markdown support: `npx eslint src/medical/knowledge/ingestion.ts test/unit/medical/knowledgeIngestion.test.ts scripts/medical-ingest.ts scripts/medical-init-db.ts`.
+- CLI smoke test passed for Markdown ingestion with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.md --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
+- `npm test` passed after Markdown ingestion support: 174 files passed, 1 skipped; 1670 tests passed, 3 skipped.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -142,11 +150,11 @@ None.
 
 ### Next Session Priorities
 
-1. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
+1. Add embedding backfill command for medical RAG chunks once the embedding endpoint is configured.
 2. Add detector artifact output conventions for overlays and model comparison once weights are available.
 3. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
 4. Add a study detail view that can launch analysis sessions from the registered image rows.
-5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
+5. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 
 ### Resume Checklist
 

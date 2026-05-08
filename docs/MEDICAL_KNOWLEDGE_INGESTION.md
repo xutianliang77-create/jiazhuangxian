@@ -7,7 +7,7 @@
 
 ## Manifest 边界
 
-当前只支持 JSON manifest。导入入口会强制校验：
+当前支持 JSON manifest 和带 YAML front matter 的 Markdown manifest。导入入口会强制校验：
 
 - `document.review_status` 必须是 `approved`
 - `document.approved_by` 必须存在
@@ -18,7 +18,10 @@
 
 ```text
 examples/medical-knowledge/acr-tirads-validation.manifest.json
+examples/medical-knowledge/acr-tirads-validation.md
 ```
+
+Markdown manifest 的 front matter 必须包含 `document`，可选 `chunk_defaults` 和 `report_templates`。正文会按 Markdown 标题切成知识 chunk，所有 chunk 仍然通过同一套 manifest ingestion 管线写入 `medical_chunk_metadata` 和 CodeClaw `rag_chunks`。
 
 ## 运行命令
 
@@ -43,6 +46,13 @@ cd /Users/xutianliang/Downloads/jiazhuangxian
 npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json
 ```
 
+导入 Markdown：
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.md
+```
+
 使用验证版本地数据库：
 
 ```bash
@@ -64,6 +74,6 @@ npm run medical:ingest -- \
 
 ## 后续扩展点
 
-- PDF / Markdown 解析：在 manifest 前增加解析器，最终仍输出同一 manifest 结构。
+- PDF 解析：在 manifest 前增加解析器，最终仍输出同一 manifest 结构。
 - Embedding：基于现有 `rag_chunks.embedding` 批处理补齐，不放在 manifest 导入同步路径里。
 - 医生审核发布：manifest 生成前走人工审核，导入入口只接受已审核内容。

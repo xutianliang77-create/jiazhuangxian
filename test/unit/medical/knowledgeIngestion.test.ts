@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -147,6 +147,72 @@ describe("medical knowledge ingestion", () => {
     expect(manifest.document.review_status).toBe("approved");
     expect(manifest.chunks.length).toBeGreaterThan(0);
     expect(manifest.report_templates?.[0]?.scene).toBe("tirads_evidence_summary");
+  });
+
+  it("loads Markdown front matter and chunks headings into RAG-ready sections", () => {
+    const file = path.join(tmpRoot, "markdown-knowledge.md");
+    writeFileSync(
+      file,
+      `---
+document:
+  id: doc-test-markdown-knowledge-v1
+  title: Markdown Knowledge
+  source_type: guideline_summary
+  source_name: unit_test_markdown
+  version: v1
+  language: zh-CN
+  review_status: approved
+  approved_by: unit_test
+chunk_defaults:
+  chunk_type: guideline_summary
+  topic: tirads
+  evidence_level: test
+  tirads_system: ACR_TI_RADS
+  body_part: thyroid
+report_templates:
+  - id: tpl-test-markdown-v1
+    template_name: Markdown Template
+    scene: tirads_evidence_summary
+    template_text: "{evidence_summary}"
+    required_fields: ["evidence_summary"]
+    forbidden_phrases: ["确诊"]
+    version: v1
+    status: active
+---
+
+# Composition
+
+Solid composition adds points.
+
+## Safety
+
+AI text remains a draft.
+`
+    );
+
+    const manifest = loadMedicalKnowledgeManifest(file);
+    expect(manifest.document.id).toBe("doc-test-markdown-knowledge-v1");
+    expect(manifest.chunks).toHaveLength(2);
+    expect(manifest.chunks[0]).toMatchObject({
+      id: "composition",
+      section_title: "Composition",
+      chunk_type: "guideline_summary",
+      tirads_system: "ACR_TI_RADS",
+      body_part: "thyroid",
+    });
+
+    const result = ingestMedicalKnowledgeManifest(dataDb, ragHandle.db, manifest, {
+      jobId: "job-med-markdown-1",
+      now: 1778245200000,
+      workspaceRelPath: "examples/medical-knowledge/markdown-knowledge.md",
+    });
+
+    expect(result).toMatchObject({
+      documentId: "doc-test-markdown-knowledge-v1",
+      chunksUpserted: 2,
+      templatesUpserted: 1,
+    });
+    expect(countRagRows("rag_chunks", "chunk_id = ?", "medical/doc-test-markdown-knowledge-v1/composition")).toBe(1);
   });
 });
 

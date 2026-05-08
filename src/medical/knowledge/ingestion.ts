@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import yaml from "js-yaml";
 import { ulid } from "ulid";
 
 import { deleteChunk, insertTerms, setMeta, upsertChunk } from "../../rag/store";
@@ -91,11 +92,16 @@ interface BuiltChunk {
 }
 
 export function loadMedicalKnowledgeManifest(manifestPath: string): MedicalKnowledgeManifest {
-  if (path.extname(manifestPath).toLowerCase() !== ".json") {
-    throw new Error("medical knowledge ingestion currently accepts JSON manifest files only");
+  const ext = path.extname(manifestPath).toLowerCase();
+  const rawText = readFileSync(manifestPath, "utf8");
+  if (ext === ".json") {
+    const raw = JSON.parse(rawText) as unknown;
+    return normalizeManifest(raw, manifestPath);
   }
-  const raw = JSON.parse(readFileSync(manifestPath, "utf8")) as unknown;
-  return normalizeManifest(raw, manifestPath);
+  if (ext === ".md" || ext === ".markdown") {
+    return normalizeMarkdownManifest(rawText, manifestPath);
+  }
+  throw new Error("medical knowledge ingestion accepts JSON or Markdown manifest files");
 }
 
 export function ingestMedicalKnowledgeManifest(
@@ -181,6 +187,91 @@ function normalizeManifest(raw: unknown, source: string): MedicalKnowledgeManife
     chunks: chunksRaw.map((item, index) => normalizeChunk(item, index, source)),
     report_templates: templatesRaw.map((item, index) => normalizeTemplate(item, index, source)),
   };
+}
+
+function normalizeMarkdownManifest(raw: string, source: string): MedicalKnowledgeManifest {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);
+  if (!match) {
+    throw new Error(`${source}: Markdown medical manifest must start with YAML front matter`);
+  }
+  const frontMatter = requireObject(yaml.load(match[1]), `${source}: front matter`);
+  const document = requireObject(frontMatter.document, `${source}: document`);
+  const chunkDefaults = optionalObject(frontMatter, "chunk_defaults") ?? {};
+  const body = raw.slice(match[0].length);
+  const chunks = markdownChunks(body, chunkDefaults, source);
+  const reportTemplates = optionalArray(frontMatter.report_templates, `${source}: report_templates`);
+  return normalizeManifest(
+    {
+      document,
+      chunks,
+      report_templates: reportTemplates,
+    },
+    source
+  );
+}
+
+function markdownChunks(rawBody: string, defaults: JsonObject, source: string): JsonObject[] {
+  const lines = rawBody.replace(/\s+$/g, "").split(/\r?\n/);
+  const sections: Array<{ title: string; start: number; end: number; lines: string[] }> = [];
+  let current: { title: string; start: number; lines: string[] } | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const heading = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (heading) {
+      if (current) {
+        sections.push({
+          ...current,
+          end: index,
+        });
+      }
+      current = { title: heading[2].trim(), start: index + 1, lines: [] };
+      continue;
+    }
+    if (!current) current = { title: "正文", start: index + 1, lines: [] };
+    current.lines.push(line);
+  }
+
+  if (current) {
+    sections.push({
+      title: current.title,
+      start: current.start,
+      lines: current.lines,
+      end: lines.length,
+    });
+  }
+
+  const usedIds = new Map<string, number>();
+  const chunks = sections
+    .map((section) => ({
+      ...section,
+      text: section.lines.join("\n").trim(),
+    }))
+    .filter((section) => section.text.length > 0)
+    .map((section) => {
+      const baseId = uniqueMarkdownChunkId(slugify(section.title), usedIds);
+      return {
+        id: baseId,
+        text: `${section.title}\n\n${section.text}`,
+        section_title: section.title,
+        line_start: section.start,
+        line_end: section.end,
+        chunk_type: optionalString(defaults, "chunk_type") ?? "guideline_summary",
+        topic: optionalString(defaults, "topic"),
+        evidence_level: optionalString(defaults, "evidence_level"),
+        tirads_system: optionalString(defaults, "tirads_system"),
+        body_part: optionalString(defaults, "body_part"),
+        metadata: {
+          ...(optionalObject(defaults, "metadata") ?? {}),
+          source_format: "markdown",
+        },
+      };
+    });
+
+  if (chunks.length === 0) {
+    throw new Error(`${source}: Markdown body must contain at least one non-empty section`);
+  }
+  return chunks;
 }
 
 function normalizeChunk(raw: unknown, index: number, source: string): MedicalKnowledgeChunkManifest {
@@ -521,6 +612,23 @@ function safeChunkKey(value: string): string {
   const key = value.trim().replace(/[^a-zA-Z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
   if (!key) throw new Error("chunk id must contain at least one safe character");
   return key;
+}
+
+function uniqueMarkdownChunkId(base: string, usedIds: Map<string, number>): string {
+  const safeBase = base || "section";
+  const count = usedIds.get(safeBase) ?? 0;
+  usedIds.set(safeBase, count + 1);
+  return count === 0 ? safeBase : `${safeBase}-${count + 1}`;
+}
+
+function slugify(value: string): string {
+  const ascii = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (ascii) return ascii;
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
 function stableId(prefix: string, value: string): string {
