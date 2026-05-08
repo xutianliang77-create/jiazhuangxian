@@ -672,6 +672,126 @@ describe("Web server · medical API", () => {
     }
   });
 
+  it("POST medical patients/studies/images registers a manual validation case", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-write-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+
+      const patientResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/patients`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          externalPatientId: "EXT-WEB-P1",
+          nameHash: "hash-p1",
+          sex: "F",
+          birthYear: 1980,
+          meta: { source: "manual-validation" },
+        }),
+      });
+      expect(patientResponse.status).toBe(201);
+      const patientBody = (await patientResponse.json()) as { patient: { id: string; externalPatientId: string } };
+      expect(patientBody.patient.externalPatientId).toBe("EXT-WEB-P1");
+
+      const studyResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/studies`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          patientId: patientBody.patient.id,
+          accessionNo: "ACC-WEB-1",
+          clinicalContext: "手工验证病例",
+        }),
+      });
+      expect(studyResponse.status).toBe(201);
+      const studyBody = (await studyResponse.json()) as { study: { id: string; createdBy: string } };
+      expect(studyBody.study.createdBy).toBe("web-test-tok");
+
+      const imageResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/images`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          studyId: studyBody.study.id,
+          fileUri: "artifact://raw/ACC-WEB-1/IMG1.png",
+          fileType: "png",
+          width: 640,
+          height: 480,
+          pixelSpacing: { row_mm: 0.08, col_mm: 0.08 },
+        }),
+      });
+      expect(imageResponse.status).toBe(201);
+      const imageBody = (await imageResponse.json()) as { image: { id: string; studyId: string; fileUri: string } };
+      expect(imageBody.image).toMatchObject({
+        studyId: studyBody.study.id,
+        fileUri: "artifact://raw/ACC-WEB-1/IMG1.png",
+      });
+
+      const summary = await fetch(`${medicalBaseUrl}/v1/web/medical/summary`, { headers: authHeaders() });
+      expect(summary.status).toBe(200);
+      const summaryBody = (await summary.json()) as {
+        counts: Record<string, number>;
+        recentStudies: Array<Record<string, unknown>>;
+      };
+      expect(summaryBody.counts).toMatchObject({ patients: 1, studies: 1, images: 1 });
+      expect(summaryBody.recentStudies[0]).toMatchObject({
+        id: studyBody.study.id,
+        externalPatientId: "EXT-WEB-P1",
+        accessionNo: "ACC-WEB-1",
+        imageCount: 1,
+      });
+    } finally {
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("POST medical image with unknown study → 400 invalid-reference", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-write-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const r = await fetch(`${medicalBaseUrl}/v1/web/medical/images`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          studyId: "missing-study",
+          fileUri: "artifact://raw/missing.png",
+        }),
+      });
+      expect(r.status).toBe(400);
+      const body = (await r.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("invalid-reference");
+    } finally {
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("GET /v1/web/medical/summary wrong token → 401", async () => {
     const r = await fetch(`${baseUrl}/v1/web/medical/summary`, {
       headers: { Authorization: "Bearer wrong" },

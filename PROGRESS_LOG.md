@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API slice.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API read/write slice.
 
 ### Completed
 
@@ -68,13 +68,22 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `examples/medical-knowledge/acr-tirads-validation.manifest.json` as the first validation manifest sample.
 - Added `docs/MEDICAL_KNOWLEDGE_INGESTION.md` and linked it from `README.md`.
 - Added unit tests covering successful ingestion, re-ingestion cleanup, rejection of draft documents, failed job tracking, and loading the checked-in manifest.
+- Added verification-version medical write APIs: `POST /v1/web/medical/patients`, `POST /v1/web/medical/studies`, and `POST /v1/web/medical/images`.
+- Medical write APIs reuse `MedicalCaseRepo` and support manual validation registration for patient, study, and ultrasound image records.
+- Medical write APIs derive `study.createdBy` from the authenticated Web user by default.
+- Medical write APIs return structured errors for disabled medical storage, invalid request bodies, bad foreign-key references, and duplicate SQLite records.
+- Added Web server tests for manual patient/study/image registration and invalid image study references.
 
 ### Verification
 
 - `npm run typecheck` passed.
 - `npm run typecheck` passed after the medical knowledge ingestion slice.
+- `npm run typecheck` passed after the medical Web/API write slice.
 - `npm test` passed after the medical Web/API slice: 172 files passed, 1 skipped; 1661 tests passed, 3 skipped.
 - `npm test` passed after the medical knowledge ingestion slice: 173 files passed, 1 skipped; 1665 tests passed, 3 skipped.
+- `npm test` passed after the medical Web/API write slice: 173 files passed, 1 skipped; 1667 tests passed, 3 skipped.
+- Targeted medical Web/API tests passed after write routes: `npm test -- --run test/unit/channels/web/server.test.ts` with 40 tests.
+- Targeted lint for the Web/API write files passed: `npx eslint src/channels/web/medicalHandlers.ts src/channels/web/server.ts test/unit/channels/web/server.test.ts`.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -107,10 +116,10 @@ None.
 
 ### Next Session Priorities
 
-1. Add medical Web/API write routes for manual validation patient/study/image registration.
-2. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
-3. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
-4. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
+1. Add the first real detector adapter boundary for YOLOv11 / RT-DETR without changing the queue/API contract.
+2. Add a validation database initialization command if a project-local medical SQLite DB is preferred over the default `~/.codeclaw/data.db`.
+3. Extend knowledge ingestion with PDF/Markdown parsing and embedding backfill once the manifest path is stable.
+4. Add Web UI forms for the manual patient/study/image registration APIs.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist

@@ -82,7 +82,12 @@ import {
   handleReadReportHtml,
   handleUpgradeReportToDashboard,
 } from "./reportHandlers";
-import { handleMedicalSummary } from "./medicalHandlers";
+import {
+  handleCreateMedicalImage,
+  handleCreateMedicalPatient,
+  handleCreateMedicalStudy,
+  handleMedicalSummary,
+} from "./medicalHandlers";
 import { SessionStore } from "./sessionStore";
 import type { QueryEngineOptions } from "../../agent/types";
 import { createQueryEngine } from "../../agent/queryEngine";
@@ -397,6 +402,15 @@ async function dispatch(
   // ===== Medical validation HTTP API =====
   if (url.pathname === "/v1/web/medical/summary" && method === "GET") {
     return handleMedicalSummary(req, res, deps, url);
+  }
+  if (url.pathname === "/v1/web/medical/patients" && method === "POST") {
+    return handleCreateMedicalPatient(req, res, deps);
+  }
+  if (url.pathname === "/v1/web/medical/studies" && method === "POST") {
+    return handleCreateMedicalStudy(req, res, deps);
+  }
+  if (url.pathname === "/v1/web/medical/images" && method === "POST") {
+    return handleCreateMedicalImage(req, res, deps);
   }
 
   // ===== CodeClaw Reports HTTP API =====

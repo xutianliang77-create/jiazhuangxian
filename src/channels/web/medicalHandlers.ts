@@ -2,7 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
 
-import { authenticate, jsonResponse, type HandlerDeps } from "./handlers";
+import { MedicalCaseRepo, type ImageInput, type PatientInput, type StudyInput } from "../../medical/storage/caseRepo";
+import { authenticate, jsonResponse, readJsonBody, type HandlerDeps } from "./handlers";
+
+type JsonObject = Record<string, unknown>;
 
 interface CountRow {
   count: number;
@@ -67,6 +70,63 @@ export async function handleMedicalSummary(
         message: err instanceof Error ? err.message : String(err),
       },
     });
+  }
+}
+
+export async function handleCreateMedicalPatient(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const repo = new MedicalCaseRepo(ctx.db);
+    const patient = repo.upsertPatient(patientInput(body));
+    jsonResponse(res, 201, { patient });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
+export async function handleCreateMedicalStudy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const repo = new MedicalCaseRepo(ctx.db);
+    const study = repo.createStudy({
+      ...studyInput(body),
+      createdBy: stringField(body, "createdBy", "created_by") ?? ctx.userId,
+    });
+    jsonResponse(res, 201, { study });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
+export async function handleCreateMedicalImage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const repo = new MedicalCaseRepo(ctx.db);
+    const image = repo.addImage(imageInput(body));
+    jsonResponse(res, 201, { image });
+  } catch (err) {
+    medicalWriteError(res, err);
   }
 }
 
@@ -183,4 +243,169 @@ function emptyQueues(): Record<string, Record<string, number>> {
     modelJobs: {},
     agentTasks: {},
   };
+}
+
+function authenticateMedicalWrite(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps
+): { db: Database.Database; userId: string } | null {
+  const auth = authenticate(req, res, deps);
+  if (!auth) return null;
+  if (!deps.dataDb) {
+    jsonResponse(res, 503, {
+      error: {
+        code: "medical-storage-disabled",
+        message: "medical storage disabled (no data.db)",
+      },
+    });
+    return null;
+  }
+  return { db: deps.dataDb, userId: auth.userId };
+}
+
+function patientInput(body: JsonObject): PatientInput {
+  return {
+    id: stringField(body, "id"),
+    externalPatientId: stringField(body, "externalPatientId", "external_patient_id"),
+    nameHash: stringField(body, "nameHash", "name_hash"),
+    sex: stringField(body, "sex"),
+    birthYear: numberField(body, "birthYear", "birth_year"),
+    deidentified: booleanField(body, "deidentified"),
+    meta: objectField(body, "meta", "meta_json"),
+  };
+}
+
+function studyInput(body: JsonObject): StudyInput {
+  return {
+    id: stringField(body, "id"),
+    patientId: stringField(body, "patientId", "patient_id"),
+    accessionNo: stringField(body, "accessionNo", "accession_no"),
+    studyInstanceUid: stringField(body, "studyInstanceUid", "study_instance_uid"),
+    modality: stringField(body, "modality"),
+    bodyPart: stringField(body, "bodyPart", "body_part"),
+    studyTime: numberField(body, "studyTime", "study_time"),
+    status: stringField(body, "status"),
+    clinicalContext: stringField(body, "clinicalContext", "clinical_context"),
+    sourceType: stringField(body, "sourceType", "source_type") ?? "manual",
+  };
+}
+
+function imageInput(body: JsonObject): ImageInput {
+  return {
+    id: stringField(body, "id"),
+    studyId: requiredString(body, "studyId", "study_id"),
+    seriesInstanceUid: stringField(body, "seriesInstanceUid", "series_instance_uid"),
+    sopInstanceUid: stringField(body, "sopInstanceUid", "sop_instance_uid"),
+    fileUri: requiredString(body, "fileUri", "file_uri"),
+    previewUri: stringField(body, "previewUri", "preview_uri"),
+    modelReadyUri: stringField(body, "modelReadyUri", "model_ready_uri"),
+    fileType: stringField(body, "fileType", "file_type"),
+    checksumSha256: stringField(body, "checksumSha256", "checksum_sha256"),
+    width: numberField(body, "width"),
+    height: numberField(body, "height"),
+    pixelSpacing: objectField(body, "pixelSpacing", "pixel_spacing"),
+    dicomMetadata: objectField(body, "dicomMetadata", "dicom_metadata"),
+    imageQuality: stringField(body, "imageQuality", "image_quality"),
+    qualityScore: numberField(body, "qualityScore", "quality_score"),
+    processingStatus: stringField(body, "processingStatus", "processing_status"),
+  };
+}
+
+function requireBodyObject(body: unknown): JsonObject {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new MedicalRequestError(400, "invalid-request", "JSON body must be an object");
+  }
+  return body as JsonObject;
+}
+
+function requiredString(body: JsonObject, camelKey: string, snakeKey?: string): string {
+  const value = stringField(body, camelKey, snakeKey);
+  if (!value) throw new MedicalRequestError(400, "invalid-request", `${camelKey} is required`);
+  return value;
+}
+
+function stringField(body: JsonObject, camelKey: string, snakeKey?: string): string | undefined {
+  const value = body[camelKey] ?? (snakeKey ? body[snakeKey] : undefined);
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") {
+    throw new MedicalRequestError(400, "invalid-request", `${camelKey} must be a string`);
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function numberField(body: JsonObject, camelKey: string, snakeKey?: string): number | undefined {
+  const value = body[camelKey] ?? (snakeKey ? body[snakeKey] : undefined);
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new MedicalRequestError(400, "invalid-request", `${camelKey} must be a finite number`);
+  }
+  return value;
+}
+
+function booleanField(body: JsonObject, camelKey: string, snakeKey?: string): boolean | undefined {
+  const value = body[camelKey] ?? (snakeKey ? body[snakeKey] : undefined);
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "boolean") {
+    throw new MedicalRequestError(400, "invalid-request", `${camelKey} must be a boolean`);
+  }
+  return value;
+}
+
+function objectField(body: JsonObject, camelKey: string, snakeKey?: string): JsonObject | undefined {
+  const value = body[camelKey] ?? (snakeKey ? body[snakeKey] : undefined);
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new MedicalRequestError(400, "invalid-request", `${camelKey} must be an object`);
+  }
+  return value as JsonObject;
+}
+
+function medicalWriteError(res: ServerResponse, err: unknown): void {
+  if (err instanceof MedicalRequestError) {
+    jsonResponse(res, err.status, { error: { code: err.code, message: err.message } });
+    return;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof SyntaxError) {
+    jsonResponse(res, 400, {
+      error: { code: "invalid-json", message },
+    });
+    return;
+  }
+  if (/body too large/i.test(message)) {
+    jsonResponse(res, 413, {
+      error: { code: "request-too-large", message },
+    });
+    return;
+  }
+  if (/FOREIGN KEY constraint failed/i.test(message)) {
+    jsonResponse(res, 400, {
+      error: { code: "invalid-reference", message },
+    });
+    return;
+  }
+  if (/UNIQUE constraint failed/i.test(message)) {
+    jsonResponse(res, 409, {
+      error: { code: "duplicate-medical-record", message },
+    });
+    return;
+  }
+  jsonResponse(res, 503, {
+    error: {
+      code: "medical-schema-unavailable",
+      message,
+    },
+  });
+}
+
+class MedicalRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
 }
