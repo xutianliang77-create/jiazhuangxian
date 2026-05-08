@@ -124,6 +124,7 @@ describe("MedicalCaseRepo", () => {
       dicomMetadata: { modality: "US" },
     });
     expect(bundle?.analysisSessions.map((s) => s.id)).toEqual([session.id]);
+    expect(bundle?.agentTasks.map((t) => t.id)).toEqual([task.id]);
     expect(task).toMatchObject({
       agentName: "CaseCoordinatorAgent",
       taskType: "orchestrate",

@@ -35,6 +35,19 @@ interface RecentStudyRow {
   latest_report_status: string | null;
 }
 
+const MEDICAL_ANALYSIS_TASKS = [
+  { agentName: "ImageQcAgent", taskType: "image_qc", toolName: "thyroid.ImageQC" },
+  { agentName: "NoduleDetectionAgent", taskType: "detect_nodules", toolName: "thyroid.DetectNodules" },
+  {
+    agentName: "TiradsFeatureAgent",
+    taskType: "classify_tirads_features",
+    toolName: "thyroid.ClassifyTiradsFeatures",
+  },
+  { agentName: "TiradsRuleAgent", taskType: "calculate_tirads", toolName: "thyroid.CalculateTirads" },
+  { agentName: "ReportDraftAgent", taskType: "draft_report", toolName: "medical.GetReportTemplate" },
+  { agentName: "SafetyReviewAgent", taskType: "safety_review", toolName: "medical.SearchGuideline" },
+] as const;
+
 export async function handleMedicalSummary(
   req: IncomingMessage,
   res: ServerResponse,
@@ -70,6 +83,27 @@ export async function handleMedicalSummary(
         message: err instanceof Error ? err.message : String(err),
       },
     });
+  }
+}
+
+export async function handleReadMedicalStudy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  studyId: string
+): Promise<void> {
+  const ctx = authenticateMedicalStorage(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const repo = new MedicalCaseRepo(ctx.db);
+    const bundle = repo.getStudyBundle(studyId);
+    if (!bundle) {
+      throw new MedicalRequestError(404, "study-not-found", `study not found: ${studyId}`);
+    }
+    jsonResponse(res, 200, { bundle });
+  } catch (err) {
+    medicalWriteError(res, err);
   }
 }
 
@@ -125,6 +159,79 @@ export async function handleCreateMedicalImage(
     const repo = new MedicalCaseRepo(ctx.db);
     const image = repo.addImage(imageInput(body));
     jsonResponse(res, 201, { image });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
+export async function handleStartMedicalAnalysis(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  studyId: string
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const repo = new MedicalCaseRepo(ctx.db);
+    const bundle = repo.getStudyBundle(studyId);
+    if (!bundle) {
+      throw new MedicalRequestError(404, "study-not-found", `study not found: ${studyId}`);
+    }
+
+    const requestedImageId = stringField(body, "imageId", "image_id");
+    const image = requestedImageId
+      ? bundle.images.find((candidate) => candidate.id === requestedImageId)
+      : bundle.images[0];
+    if (requestedImageId && !image) {
+      throw new MedicalRequestError(400, "invalid-reference", "image does not belong to study");
+    }
+    if (!image) {
+      throw new MedicalRequestError(400, "image-required", "study must have a registered image before analysis");
+    }
+
+    const now = Date.now();
+    const analysisSession = repo.createAnalysisSession({
+      studyId,
+      status: "queued",
+      triggerSource: stringField(body, "triggerSource", "trigger_source") ?? "web_manual",
+      createdBy: ctx.userId,
+      summary: {
+        selected_image_id: image.id,
+        task_count: MEDICAL_ANALYSIS_TASKS.length,
+        task_types: MEDICAL_ANALYSIS_TASKS.map((task) => task.taskType),
+      },
+      now,
+    });
+
+    let parentTaskId: string | undefined;
+    const agentTasks = MEDICAL_ANALYSIS_TASKS.map((task, index) => {
+      const created = repo.createAgentTask({
+        analysisSessionId: analysisSession.id,
+        parentTaskId,
+        agentName: task.agentName,
+        taskType: task.taskType,
+        status: "queued",
+        input: {
+          study_id: studyId,
+          image_id: image.id,
+          tool_name: task.toolName,
+          sequence: index + 1,
+          source: "web_manual_analysis",
+        },
+        now: now + index,
+      });
+      parentTaskId = created.id;
+      return created;
+    });
+
+    jsonResponse(res, 201, {
+      analysisSession,
+      agentTasks,
+      bundle: repo.getStudyBundle(studyId),
+    });
   } catch (err) {
     medicalWriteError(res, err);
   }
@@ -246,6 +353,14 @@ function emptyQueues(): Record<string, Record<string, number>> {
 }
 
 function authenticateMedicalWrite(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps
+): { db: Database.Database; userId: string } | null {
+  return authenticateMedicalStorage(req, res, deps);
+}
+
+function authenticateMedicalStorage(
   req: IncomingMessage,
   res: ServerResponse,
   deps: HandlerDeps

@@ -757,6 +757,101 @@ describe("Web server · medical API", () => {
     }
   });
 
+  it("GET medical study detail and POST analyze queues validation agent tasks", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-analyze-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+
+      const patientResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/patients`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ externalPatientId: "EXT-ANALYZE-P1" }),
+      });
+      const patientBody = (await patientResponse.json()) as { patient: { id: string } };
+      const studyResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/studies`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ patientId: patientBody.patient.id, accessionNo: "ACC-ANALYZE-1" }),
+      });
+      const studyBody = (await studyResponse.json()) as { study: { id: string } };
+      const imageResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/images`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          studyId: studyBody.study.id,
+          fileUri: "artifact://raw/ACC-ANALYZE-1/IMG1.png",
+          fileType: "png",
+        }),
+      });
+      const imageBody = (await imageResponse.json()) as { image: { id: string } };
+
+      const detail = await fetch(`${medicalBaseUrl}/v1/web/medical/studies/${studyBody.study.id}`, {
+        headers: authHeaders(),
+      });
+      expect(detail.status).toBe(200);
+      const detailBody = (await detail.json()) as { bundle: { images: unknown[]; agentTasks: unknown[] } };
+      expect(detailBody.bundle.images).toHaveLength(1);
+      expect(detailBody.bundle.agentTasks).toHaveLength(0);
+
+      const analyze = await fetch(`${medicalBaseUrl}/v1/web/medical/studies/${studyBody.study.id}/analyze`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ imageId: imageBody.image.id }),
+      });
+      expect(analyze.status).toBe(201);
+      const analyzeBody = (await analyze.json()) as {
+        analysisSession: { status: string; createdBy: string; summary: Record<string, unknown> };
+        agentTasks: Array<{ id: string; taskType: string; status: string; parentTaskId: string | null }>;
+      };
+      expect(analyzeBody.analysisSession).toMatchObject({
+        status: "queued",
+        createdBy: "web-test-tok",
+      });
+      expect(analyzeBody.analysisSession.summary.selected_image_id).toBe(imageBody.image.id);
+      expect(analyzeBody.agentTasks.map((task) => task.taskType)).toEqual([
+        "image_qc",
+        "detect_nodules",
+        "classify_tirads_features",
+        "calculate_tirads",
+        "draft_report",
+        "safety_review",
+      ]);
+      expect(analyzeBody.agentTasks.every((task) => task.status === "queued")).toBe(true);
+      expect(analyzeBody.agentTasks[0].parentTaskId).toBeNull();
+      expect(analyzeBody.agentTasks[1].parentTaskId).toBe(analyzeBody.agentTasks[0].id);
+
+      const detailAfter = await fetch(`${medicalBaseUrl}/v1/web/medical/studies/${studyBody.study.id}`, {
+        headers: authHeaders(),
+      });
+      const detailAfterBody = (await detailAfter.json()) as {
+        bundle: { analysisSessions: unknown[]; agentTasks: unknown[] };
+      };
+      expect(detailAfterBody.bundle.analysisSessions).toHaveLength(1);
+      expect(detailAfterBody.bundle.agentTasks).toHaveLength(6);
+
+      const summary = await fetch(`${medicalBaseUrl}/v1/web/medical/summary`, { headers: authHeaders() });
+      const summaryBody = (await summary.json()) as { queues: { agentTasks: Record<string, number> } };
+      expect(summaryBody.queues.agentTasks.queued).toBe(6);
+    } finally {
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("POST medical image with unknown study → 400 invalid-reference", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-write-"));
     const dbPath = path.join(dir, "data.db");

@@ -5,12 +5,21 @@ import { useAuthStore } from "@/store/auth";
 
 vi.mock("@/api/endpoints", () => ({
   getMedicalSummary: vi.fn(),
+  getMedicalStudy: vi.fn(),
   createMedicalPatient: vi.fn(),
   createMedicalStudy: vi.fn(),
   createMedicalImage: vi.fn(),
+  startMedicalAnalysis: vi.fn(),
 }));
 
-import { createMedicalImage, createMedicalPatient, createMedicalStudy, getMedicalSummary } from "@/api/endpoints";
+import {
+  createMedicalImage,
+  createMedicalPatient,
+  createMedicalStudy,
+  getMedicalStudy,
+  getMedicalSummary,
+  startMedicalAnalysis,
+} from "@/api/endpoints";
 
 const summary = {
   enabled: true,
@@ -50,11 +59,129 @@ const summary = {
   warnings: [],
 };
 
+const studyBundle = {
+  patient: {
+    id: "P1",
+    externalPatientId: "EXT-P1",
+    nameHash: null,
+    sex: null,
+    birthYear: null,
+    deidentified: true,
+    meta: {},
+    createdAt: 1778245200000,
+    updatedAt: 1778245200000,
+  },
+  study: {
+    id: "S1",
+    patientId: "P1",
+    accessionNo: "ACC-1",
+    studyInstanceUid: null,
+    modality: "US",
+    bodyPart: "thyroid",
+    studyTime: null,
+    status: "created",
+    clinicalContext: null,
+    sourceType: "manual",
+    createdBy: "doctor",
+    createdAt: 1778245200000,
+    updatedAt: 1778245200000,
+  },
+  images: [
+    {
+      id: "IMG1",
+      studyId: "S1",
+      fileUri: "artifact://raw/S1/IMG1.png",
+      previewUri: null,
+      modelReadyUri: null,
+      fileType: "png",
+      width: 640,
+      height: 480,
+      imageQuality: null,
+      qualityScore: null,
+      processingStatus: "uploaded",
+      createdAt: 1778245200000,
+      updatedAt: 1778245200000,
+    },
+  ],
+  analysisSessions: [],
+  agentTasks: [],
+};
+
 describe("MedicalPanel", () => {
   beforeEach(() => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     useAuthStore.setState({ token: "test-token", connected: true });
     vi.mocked(getMedicalSummary).mockResolvedValue(summary);
+    vi.mocked(getMedicalStudy).mockResolvedValue({ bundle: studyBundle });
+    vi.mocked(startMedicalAnalysis).mockResolvedValue({
+      analysisSession: {
+        id: "AS1",
+        studyId: "S1",
+        teamRunId: null,
+        status: "queued",
+        triggerSource: "web_manual",
+        summary: {},
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        createdBy: "web-test",
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      agentTasks: [
+        {
+          id: "AT1",
+          analysisSessionId: "AS1",
+          parentTaskId: null,
+          agentName: "ImageQcAgent",
+          taskType: "image_qc",
+          status: "queued",
+          input: {},
+          output: null,
+          error: null,
+          startedAt: null,
+          completedAt: null,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ],
+      bundle: {
+        ...studyBundle,
+        analysisSessions: [
+          {
+            id: "AS1",
+            studyId: "S1",
+            teamRunId: null,
+            status: "queued",
+            triggerSource: "web_manual",
+            summary: {},
+            error: null,
+            startedAt: null,
+            completedAt: null,
+            createdBy: "web-test",
+            createdAt: 0,
+            updatedAt: 0,
+          },
+        ],
+        agentTasks: [
+          {
+            id: "AT1",
+            analysisSessionId: "AS1",
+            parentTaskId: null,
+            agentName: "ImageQcAgent",
+            taskType: "image_qc",
+            status: "queued",
+            input: {},
+            output: null,
+            error: null,
+            startedAt: null,
+            completedAt: null,
+            createdAt: 0,
+            updatedAt: 0,
+          },
+        ],
+      },
+    });
     vi.mocked(createMedicalPatient).mockResolvedValue({
       patient: {
         id: "P2",
@@ -123,6 +250,22 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("Manual Case")).toBeInTheDocument();
   });
 
+  it("opens study detail and starts analysis for an image", async () => {
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    expect(await screen.findByText("artifact://raw/S1/IMG1.png")).toBeInTheDocument();
+    expect(screen.getByText(/640×480/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "启动分析" }));
+
+    await waitFor(() => expect(startMedicalAnalysis).toHaveBeenCalledWith("S1", { imageId: "IMG1" }));
+    expect(getMedicalStudy).toHaveBeenCalledWith("S1");
+    expect(getMedicalSummary).toHaveBeenCalledTimes(2);
+  });
+
   it("registers a manual patient, study, and image then refreshes", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 
@@ -161,6 +304,7 @@ describe("MedicalPanel", () => {
     });
     expect(await screen.findByText("已登记 ACC-2")).toBeInTheDocument();
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
+    expect(getMedicalStudy).toHaveBeenCalledWith("S2");
   });
 
   it("shows form error when manual registration fails", async () => {

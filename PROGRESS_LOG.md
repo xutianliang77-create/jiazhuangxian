@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API + UI read/write slice.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, and the first medical Web/API + UI case workflow slice.
 
 ### Completed
 
@@ -98,6 +98,12 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `medical:embed` uses the existing CodeClaw OpenAI-compatible embedding client and writes vectors to `rag_chunks.embedding`.
 - Added embedding backfill tests using a fake embedding endpoint, including a guard that non-medical RAG chunks are not touched.
 - Updated the knowledge ingestion guide with embedding backfill usage and environment variables.
+- Added `GET /v1/web/medical/studies/:studyId` for the medical study detail bundle, including patient, study, images, analysis sessions, and agent tasks.
+- Added `POST /v1/web/medical/studies/:studyId/analyze` to create a queued validation analysis session from a registered image row.
+- The validation analysis API now creates the first fixed medical agent task chain: image QC, nodule detection, TI-RADS feature classification, TI-RADS rule calculation, report draft, and safety review.
+- Extended `MedicalCaseRepo.getStudyBundle()` so UI and API callers can read the study's queued/running/completed agent tasks with the rest of the case context.
+- Extended the React `MedicalPanel` with selectable recent studies, a compact study detail view, image rows, and a per-image `启动分析` action.
+- Added frontend endpoint types and API helpers for study detail bundles, analysis sessions, and agent task records.
 
 ### Verification
 
@@ -125,6 +131,15 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `npm test` passed after Markdown ingestion support: 174 files passed, 1 skipped; 1670 tests passed, 3 skipped.
 - Targeted embedding backfill tests passed: `npm test -- --run test/unit/medical/embeddingBackfill.test.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - `npm test` passed after embedding backfill command: 175 files passed, 1 skipped; 1671 tests passed, 3 skipped.
+- Targeted study detail/analysis API tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts` with 45 tests.
+- Targeted MedicalPanel tests passed after study detail/analysis UI: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 6 tests.
+- Root `npm run typecheck` passed after study detail/analysis UI.
+- Frontend typecheck passed after study detail/analysis UI: `cd web-react && npm run typecheck`.
+- Full web-react tests passed after study detail/analysis UI: `cd web-react && npm test` with 11 files passed and 39 tests passed.
+- Targeted lint passed for modified backend files and modified `web-react` files using each package's ESLint config.
+- `npm run build:web` passed after study detail/analysis UI; Vite still reports the existing Monaco chunk-size warning.
+- `npm test` passed after study detail/analysis UI: 175 files passed, 1 skipped; 1672 tests passed, 3 skipped.
+- `git diff --check` passed after study detail/analysis UI.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -159,7 +174,7 @@ None.
 
 1. Add detector artifact output conventions for overlays and model comparison once weights are available.
 2. Add a model-gateway configuration check endpoint/command for detector weights and runtime packages.
-3. Add a study detail view that can launch analysis sessions from the registered image rows.
+3. Connect queued medical `agent_task` rows to the CodeClaw team/orchestration execution path or a validation worker.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 

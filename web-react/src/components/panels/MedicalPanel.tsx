@@ -4,8 +4,13 @@ import {
   createMedicalImage,
   createMedicalPatient,
   createMedicalStudy,
+  getMedicalStudy,
   getMedicalSummary,
+  startMedicalAnalysis,
+  type MedicalAgentTask,
+  type MedicalImage,
   type MedicalRecentStudy,
+  type MedicalStudyBundle,
   type MedicalSummary,
 } from "@/api/endpoints";
 
@@ -55,6 +60,11 @@ export default function MedicalPanel({ onError }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
   const [formMessage, setFormMessage] = useState<string | null>(null);
   const [manualCase, setManualCase] = useState<ManualCaseFormState>(EMPTY_MANUAL_CASE);
+  const [selectedStudyId, setSelectedStudyId] = useState<string | null>(null);
+  const [studyBundle, setStudyBundle] = useState<MedicalStudyBundle | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [analysisBusyImageId, setAnalysisBusyImageId] = useState<string | null>(null);
 
   async function refresh() {
     setBusy(true);
@@ -71,9 +81,45 @@ export default function MedicalPanel({ onError }: Props) {
   }
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void refresh();
   }, []);
+
+  async function loadStudyDetail(studyId: string) {
+    setDetailBusy(true);
+    setDetailError(null);
+    try {
+      const result = await getMedicalStudy(studyId);
+      setStudyBundle(result.bundle);
+    } catch (err) {
+      const message = `Medical 病例加载失败：${(err as Error).message}`;
+      setDetailError(message);
+      onError(message);
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
+  async function selectStudy(studyId: string) {
+    setSelectedStudyId(studyId);
+    setStudyBundle(null);
+    await loadStudyDetail(studyId);
+  }
+
+  async function launchAnalysis(imageId: string) {
+    if (!studyBundle) return;
+    setAnalysisBusyImageId(imageId);
+    setDetailError(null);
+    try {
+      await startMedicalAnalysis(studyBundle.study.id, { imageId });
+      await Promise.all([refresh(), loadStudyDetail(studyBundle.study.id)]);
+    } catch (err) {
+      const message = `Medical 分析启动失败：${(err as Error).message}`;
+      setDetailError(message);
+      onError(message);
+    } finally {
+      setAnalysisBusyImageId(null);
+    }
+  }
 
   async function registerManualCase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,7 +156,8 @@ export default function MedicalPanel({ onError }: Props) {
       });
       setManualCase(EMPTY_MANUAL_CASE);
       setFormMessage(`已登记 ${accessionNo}`);
-      await refresh();
+      setSelectedStudyId(study.study.id);
+      await Promise.all([refresh(), loadStudyDetail(study.study.id)]);
     } catch (err) {
       const message = `Medical 登记失败：${(err as Error).message}`;
       setFormError(message);
@@ -185,6 +232,14 @@ export default function MedicalPanel({ onError }: Props) {
           onSubmit={registerManualCase}
         />
 
+        <StudyDetail
+          bundle={studyBundle}
+          busy={detailBusy}
+          error={detailError}
+          analyzingImageId={analysisBusyImageId}
+          onStartAnalysis={launchAnalysis}
+        />
+
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-bold">Recent Studies</h3>
           {summary.warnings.length > 0 && (
@@ -196,7 +251,12 @@ export default function MedicalPanel({ onError }: Props) {
         ) : (
           <div className="space-y-2">
             {summary.recentStudies.map((study) => (
-              <StudyRow key={study.id} study={study} />
+              <StudyRow
+                key={study.id}
+                study={study}
+                selected={selectedStudyId === study.id}
+                onSelect={() => selectStudy(study.id)}
+              />
             ))}
           </div>
         )}
@@ -347,9 +407,142 @@ function QueueBlock({ title, values }: { title: string; values: Record<string, n
   );
 }
 
-function StudyRow({ study }: { study: MedicalRecentStudy }) {
+function StudyDetail({
+  bundle,
+  busy,
+  error,
+  analyzingImageId,
+  onStartAnalysis,
+}: {
+  bundle: MedicalStudyBundle | null;
+  busy: boolean;
+  error: string | null;
+  analyzingImageId: string | null;
+  onStartAnalysis(imageId: string): void;
+}) {
+  if (!bundle) {
+    return (
+      <div className="border border-border rounded p-3 text-sm text-muted">
+        {busy ? "病例加载中..." : error ?? "请选择一个病例。"}
+      </div>
+    );
+  }
+
+  const { patient, study, images, analysisSessions, agentTasks } = bundle;
   return (
-    <article className="border border-border rounded p-3 hover:border-accent">
+    <div className="border border-border rounded p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="font-mono text-xs text-muted">{study.id}</div>
+          <h3 className="text-sm font-bold mt-1">{study.accessionNo ?? "manual study"}</h3>
+          <p className="text-xs text-muted mt-1">
+            {patient?.externalPatientId ?? "unknown patient"} · {study.modality}/{study.bodyPart}
+          </p>
+        </div>
+        <span className="text-xs border border-border rounded px-2 py-1">{study.status}</span>
+      </div>
+
+      {error && <div className="mt-3 text-sm text-danger">{error}</div>}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-xs">
+        <Metric label="source" value={study.sourceType} />
+        <Metric label="images" value={String(images.length)} />
+        <Metric label="analysis" value={String(analysisSessions.length)} />
+        <Metric label="tasks" value={String(agentTasks.length)} />
+      </div>
+
+      <div className="mt-4">
+        <h4 className="text-xs uppercase text-muted mb-2">Images</h4>
+        {images.length === 0 ? (
+          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        ) : (
+          <div className="space-y-2">
+            {images.map((image) => (
+              <ImageRow
+                key={image.id}
+                image={image}
+                busy={busy || analyzingImageId !== null}
+                analyzing={analyzingImageId === image.id}
+                onStart={() => onStartAnalysis(image.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <h4 className="text-xs uppercase text-muted mb-2">Agent Tasks</h4>
+        {agentTasks.length === 0 ? (
+          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {agentTasks.map((task) => (
+              <TaskRow key={task.id} task={task} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ImageRow({
+  image,
+  busy,
+  analyzing,
+  onStart,
+}: {
+  image: MedicalImage;
+  busy: boolean;
+  analyzing: boolean;
+  onStart(): void;
+}) {
+  const size = image.width && image.height ? `${image.width}×${image.height}` : "unknown";
+  return (
+    <div className="flex flex-col md:flex-row md:items-center gap-3 border border-border rounded p-2">
+      <div className="min-w-0 flex-1">
+        <div className="font-mono text-xs text-muted truncate">{image.id}</div>
+        <div className="font-mono text-xs truncate mt-1">{image.fileUri}</div>
+        <div className="text-xs text-muted mt-1">
+          {image.fileType} · {size} · {image.processingStatus}
+        </div>
+      </div>
+      <button onClick={onStart} disabled={busy} className="btn-primary md:self-start">
+        {analyzing ? "启动中..." : "启动分析"}
+      </button>
+    </div>
+  );
+}
+
+function TaskRow({ task }: { task: MedicalAgentTask }) {
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium truncate">{task.agentName}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{task.status}</span>
+      </div>
+      <div className="text-muted mt-1 truncate">{task.taskType}</div>
+    </div>
+  );
+}
+
+function StudyRow({
+  study,
+  selected,
+  onSelect,
+}: {
+  study: MedicalRecentStudy;
+  selected: boolean;
+  onSelect(): void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full text-left border rounded p-3 hover:border-accent ${
+        selected ? "border-accent bg-accent/5" : "border-border"
+      }`}
+    >
       <div className="flex items-start gap-3">
         <div>
           <div className="font-mono text-xs text-muted">{study.id}</div>
@@ -369,7 +562,7 @@ function StudyRow({ study }: { study: MedicalRecentStudy }) {
         <Metric label="updated" value={formatTime(study.updatedAt)} />
         <Metric label="created by" value={study.createdBy ?? "local"} />
       </div>
-    </article>
+    </button>
   );
 }
 

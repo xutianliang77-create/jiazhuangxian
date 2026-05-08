@@ -163,6 +163,7 @@ export interface StudyBundle {
   study: StudyRecord;
   images: ImageRecord[];
   analysisSessions: AnalysisSessionRecord[];
+  agentTasks: AgentTaskRecord[];
 }
 
 interface PatientRow {
@@ -443,7 +444,17 @@ export class MedicalCaseRepo {
       )
       .all(studyId)
       .map(mapAnalysisSession);
-    return { patient, study, images, analysisSessions };
+    const agentTasks = this.db
+      .prepare<[string], AgentTaskRow>(
+        `SELECT t.*
+         FROM agent_task t
+         JOIN analysis_session a ON a.id = t.analysis_session_id
+         WHERE a.study_id = ?
+         ORDER BY a.created_at ASC, t.created_at ASC, t.id ASC`
+      )
+      .all(studyId)
+      .map(mapAgentTask);
+    return { patient, study, images, analysisSessions, agentTasks };
   }
 
   private updatePatient(id: string, input: PatientInput): PatientRecord {

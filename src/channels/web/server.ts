@@ -87,6 +87,8 @@ import {
   handleCreateMedicalPatient,
   handleCreateMedicalStudy,
   handleMedicalSummary,
+  handleReadMedicalStudy,
+  handleStartMedicalAnalysis,
 } from "./medicalHandlers";
 import { SessionStore } from "./sessionStore";
 import type { QueryEngineOptions } from "../../agent/types";
@@ -408,6 +410,14 @@ async function dispatch(
   }
   if (url.pathname === "/v1/web/medical/studies" && method === "POST") {
     return handleCreateMedicalStudy(req, res, deps);
+  }
+  const medicalStudyAnalyzeMatch = /^\/v1\/web\/medical\/studies\/([^/]+)\/analyze$/.exec(url.pathname);
+  if (medicalStudyAnalyzeMatch && method === "POST") {
+    return handleStartMedicalAnalysis(req, res, deps, decodeURIComponent(medicalStudyAnalyzeMatch[1]));
+  }
+  const medicalStudyMatch = /^\/v1\/web\/medical\/studies\/([^/]+)$/.exec(url.pathname);
+  if (medicalStudyMatch && method === "GET") {
+    return handleReadMedicalStudy(req, res, deps, decodeURIComponent(medicalStudyMatch[1]));
   }
   if (url.pathname === "/v1/web/medical/images" && method === "POST") {
     return handleCreateMedicalImage(req, res, deps);

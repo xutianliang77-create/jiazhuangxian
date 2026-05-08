@@ -311,17 +311,61 @@ export interface MedicalStudy {
 export interface MedicalImage {
   id: string;
   studyId: string;
+  seriesInstanceUid?: string | null;
+  sopInstanceUid?: string | null;
   fileUri: string;
   previewUri: string | null;
   modelReadyUri: string | null;
   fileType: string;
+  checksumSha256?: string | null;
   width: number | null;
   height: number | null;
+  pixelSpacing?: Record<string, unknown>;
+  dicomMetadata?: Record<string, unknown>;
   imageQuality: string | null;
   qualityScore: number | null;
   processingStatus: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface MedicalAnalysisSession {
+  id: string;
+  studyId: string;
+  teamRunId: string | null;
+  status: string;
+  triggerSource: string;
+  summary: Record<string, unknown>;
+  error: Record<string, unknown> | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MedicalAgentTask {
+  id: string;
+  analysisSessionId: string;
+  parentTaskId: string | null;
+  agentName: string;
+  taskType: string;
+  status: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown> | null;
+  error: Record<string, unknown> | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MedicalStudyBundle {
+  patient: MedicalPatient | null;
+  study: MedicalStudy;
+  images: MedicalImage[];
+  analysisSessions: MedicalAnalysisSession[];
+  agentTasks: MedicalAgentTask[];
 }
 
 // ===== sessions =====
@@ -495,6 +539,9 @@ export const validateDashboard = (dashboardId: string) =>
 export const getMedicalSummary = (limit = 12) =>
   api<MedicalSummary>("GET", `/v1/web/medical/summary?limit=${encodeURIComponent(String(limit))}`);
 
+export const getMedicalStudy = (studyId: string) =>
+  api<{ bundle: MedicalStudyBundle }>("GET", `/v1/web/medical/studies/${encodeURIComponent(studyId)}`);
+
 export const createMedicalPatient = (input: {
   externalPatientId?: string;
   nameHash?: string;
@@ -518,6 +565,13 @@ export const createMedicalImage = (input: {
   height?: number;
   pixelSpacing?: Record<string, unknown>;
 }) => api<{ image: MedicalImage }>("POST", "/v1/web/medical/images", input);
+
+export const startMedicalAnalysis = (studyId: string, input: { imageId?: string; triggerSource?: string } = {}) =>
+  api<{
+    analysisSession: MedicalAnalysisSession;
+    agentTasks: MedicalAgentTask[];
+    bundle: MedicalStudyBundle;
+  }>("POST", `/v1/web/medical/studies/${encodeURIComponent(studyId)}/analyze`, input);
 
 // ===== Cron #116 =====
 
