@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, and medical MCP wrappers.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, medical MCP wrappers, and seeded medical rules/templates.
 
 ### Completed
 
@@ -30,15 +30,21 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Wired `image.*` and `thyroid.ImageQC` to the Python image-worker over HTTP with `JZX_IMAGE_WORKER_URL`.
 - Added ACR TI-RADS 2017 rule calculation for `thyroid.CalculateTirads`; detector and feature-classifier tools currently return explicit `model_gateway_not_configured` responses until model-gateway is implemented.
 - Added root `npm run medical:mcp` script.
+- Added `007_medical_seed_rules_templates.sql` with deterministic seed rows for ACR TI-RADS 2017 rules, Chinese report templates, and medical safety rules.
+- Seeded 36 active ACR TI-RADS rows: feature scoring rules, category thresholds, and size-based follow-up/FNA recommendation rules.
+- Seeded 3 report templates: thyroid ultrasound draft, TI-RADS explanation, and doctor review summary.
+- Seeded 5 safety rules covering final-diagnosis wording, unsupported FNA/follow-up recommendations, low-confidence automation, missing calibration for millimeter measurements, and PHI leakage.
+- Added seed-data tests that verify row counts, representative rules, template activation, safety codes, idempotence, and alignment between `thyroid.CalculateTirads` evidence rule codes and DB rows.
 
 ### Verification
 
 - `npm run typecheck` passed.
-- `npm test` passed after the medical MCP change: 170 files passed, 1 skipped; 1648 tests passed, 3 skipped.
+- `npm test` passed after the medical seed change: 171 files passed, 1 skipped; 1651 tests passed, 3 skipped.
 - Targeted storage tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts`.
 - Targeted medical MCP tests passed: `npm test -- --run test/unit/medical/mcp-server.test.ts test/unit/medical/caseRepo.test.ts`.
+- Targeted seed tests passed: `npm test -- --run test/unit/medical/seed-data.test.ts test/unit/medical/mcp-server.test.ts test/unit/storage/migrate.test.ts`.
 - `python3 -m unittest discover services/image-worker/tests` passed: 3 tests.
-- `npx eslint packages/medical-mcp test/unit/medical/mcp-server.test.ts` passed.
+- `npx eslint test/unit/medical/seed-data.test.ts packages/medical-mcp` passed.
 - `web-react`: `npm run typecheck` passed.
 - `git diff --cached --check` passed.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
@@ -53,8 +59,8 @@ None.
 
 ### Next Session Priorities
 
-1. Add seed data for `tirads_rules`, `report_templates`, and safety rules.
-2. Implement model-gateway skeleton and SQLite `model_job` queue so `thyroid.DetectNodules` can leave placeholder status.
+1. Implement model-gateway skeleton and SQLite `model_job` queue so `thyroid.DetectNodules` can leave placeholder status.
+2. Add medical knowledge MCP tools: `medical.GetTiradsRule`, `medical.GetReportTemplate`, and `medical.NormalizeTerm`.
 3. Add medical Web/API routes and doctor workstation panels incrementally on top of CodeClaw Web/React.
 4. Add MCP configuration examples for running `medical:mcp` with CodeClaw.
 5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
@@ -67,5 +73,6 @@ git status --short --branch
 find src packages web-react docs services data -maxdepth 3 -type f | sort
 npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/storage/migrate.test.ts
 npm test -- --run test/unit/medical/mcp-server.test.ts
+npm test -- --run test/unit/medical/seed-data.test.ts
 python3 -m unittest discover services/image-worker/tests
 ```
