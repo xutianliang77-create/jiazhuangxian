@@ -240,6 +240,19 @@ export interface NoduleRecord {
   updatedAt: number;
 }
 
+export interface NoduleRevisionInput {
+  noduleId: string;
+  bbox?: unknown;
+  location?: string | null;
+  status?: string;
+  now?: number;
+}
+
+export interface NoduleRevisionResult {
+  before: NoduleRecord;
+  nodule: NoduleRecord;
+}
+
 export interface TiradsFeatureInput {
   id?: string;
   noduleId: string;
@@ -822,6 +835,36 @@ export class MedicalCaseRepo {
     return this.getNoduleByStudyIndex(input.studyId, input.noduleIndex)!;
   }
 
+  reviseNodule(input: NoduleRevisionInput): NoduleRevisionResult {
+    const before = this.getNodule(input.noduleId);
+    if (!before) {
+      throw new Error(`nodule not found: ${input.noduleId}`);
+    }
+    const now = input.now ?? Date.now();
+    const nextBbox = input.bbox !== undefined ? input.bbox : before.bbox;
+    this.db
+      .prepare<[string, string | null, string, number, string]>(
+        `UPDATE nodule
+         SET bbox = ?,
+             location = ?,
+             source = 'doctor',
+             status = ?,
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        stringifyJsonValue(nextBbox ?? null),
+        input.location ?? before.location,
+        input.status ?? "doctor_revised",
+        now,
+        input.noduleId
+      );
+    return {
+      before,
+      nodule: this.getNodule(input.noduleId)!,
+    };
+  }
+
   createTiradsFeature(input: TiradsFeatureInput): TiradsFeatureRecord {
     const now = input.now ?? Date.now();
     const id = input.id ?? ulid();
@@ -1024,6 +1067,11 @@ export class MedicalCaseRepo {
       .prepare<[string], ModelJobRow>("SELECT * FROM model_job WHERE id = ?")
       .get(id);
     return row ? mapModelJob(row) : null;
+  }
+
+  getNodule(id: string): NoduleRecord | null {
+    const row = this.db.prepare<[string], NoduleRow>("SELECT * FROM nodule WHERE id = ?").get(id);
+    return row ? mapNodule(row) : null;
   }
 
   getNoduleByStudyIndex(studyId: string, noduleIndex: number): NoduleRecord | null {

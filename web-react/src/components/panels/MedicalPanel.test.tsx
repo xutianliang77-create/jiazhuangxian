@@ -12,6 +12,7 @@ vi.mock("@/api/endpoints", () => ({
   createMedicalStudy: vi.fn(),
   createMedicalImage: vi.fn(),
   reviewMedicalReport: vi.fn(),
+  reviseMedicalNodule: vi.fn(),
   startMedicalAnalysis: vi.fn(),
 }));
 
@@ -24,6 +25,7 @@ import {
   medicalArtifactUrl,
   getMedicalSummary,
   reviewMedicalReport,
+  reviseMedicalNodule,
   startMedicalAnalysis,
 } from "@/api/endpoints";
 
@@ -284,6 +286,60 @@ describe("MedicalPanel", () => {
         ],
       },
     });
+    vi.mocked(reviseMedicalNodule).mockResolvedValue({
+      nodule: {
+        ...studyBundle.nodules[0],
+        bbox: [12, 22, 32, 42],
+        source: "doctor",
+        status: "doctor_revised",
+        updatedAt: 1778245400000,
+      },
+      auditLog: {
+        id: "A3",
+        studyId: "S1",
+        actorType: "doctor",
+        actorId: "web-test",
+        action: "medical.nodule.revise",
+        targetType: "nodule",
+        targetId: "N1",
+        detail: {
+          before: { bbox: [10, 20, 30, 40] },
+          after: { bbox: [12, 22, 32, 42] },
+        },
+        traceId: "N1",
+        createdAt: 1778245400000,
+      },
+      bundle: {
+        ...studyBundle,
+        nodules: [
+          {
+            ...studyBundle.nodules[0],
+            bbox: [12, 22, 32, 42],
+            source: "doctor",
+            status: "doctor_revised",
+            updatedAt: 1778245400000,
+          },
+        ],
+        auditLogs: [
+          ...studyBundle.auditLogs,
+          {
+            id: "A3",
+            studyId: "S1",
+            actorType: "doctor",
+            actorId: "web-test",
+            action: "medical.nodule.revise",
+            targetType: "nodule",
+            targetId: "N1",
+            detail: {
+              before: { bbox: [10, 20, 30, 40] },
+              after: { bbox: [12, 22, 32, 42] },
+            },
+            traceId: "N1",
+            createdAt: 1778245400000,
+          },
+        ],
+      },
+    });
     vi.mocked(startMedicalAnalysis).mockResolvedValue({
       analysisSession: {
         id: "AS1",
@@ -468,6 +524,27 @@ describe("MedicalPanel", () => {
     );
     expect(await screen.findByText("confirmed")).toBeInTheDocument();
     expect(screen.getByText("approve")).toBeInTheDocument();
+    expect(getMedicalSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("saves a doctor bbox revision for a nodule", async () => {
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    expect(await screen.findByText("Nodule 1")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("bbox xyxy"), { target: { value: "12, 22, 32, 42" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
+
+    await waitFor(() =>
+      expect(reviseMedicalNodule).toHaveBeenCalledWith("N1", {
+        bbox: [12, 22, 32, 42],
+        status: "doctor_revised",
+      })
+    );
+    expect(await screen.findByText("doctor_revised")).toBeInTheDocument();
+    expect(screen.getAllByText("medical.nodule.revise").length).toBeGreaterThan(0);
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
   });
 

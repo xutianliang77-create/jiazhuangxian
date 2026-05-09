@@ -1079,6 +1079,102 @@ describe("Web server · medical API", () => {
     }
   });
 
+  it("POST medical nodule revise updates bbox and writes audit log", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-nodule-revise-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    let localDb: Database.Database | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const patientResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/patients`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ externalPatientId: "EXT-NOD-REV-P1" }),
+      });
+      const patientBody = (await patientResponse.json()) as { patient: { id: string } };
+      const studyResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/studies`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ patientId: patientBody.patient.id, accessionNo: "ACC-NOD-REV-1" }),
+      });
+      const studyBody = (await studyResponse.json()) as { study: { id: string } };
+      const imageResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/images`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          studyId: studyBody.study.id,
+          fileUri: "artifact://raw/ACC-NOD-REV-1/IMG1.png",
+          fileType: "png",
+        }),
+      });
+      const imageBody = (await imageResponse.json()) as { image: { id: string } };
+      const now = Date.now();
+      localDb = new Database(dbPath);
+      localDb
+        .prepare(
+          `INSERT INTO nodule(
+             id, study_id, image_id, nodule_index, bbox, detection_confidence,
+             source, status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          "N-WEB-REVISE",
+          studyBody.study.id,
+          imageBody.image.id,
+          1,
+          JSON.stringify([10, 20, 30, 40]),
+          0.91,
+          "ai",
+          "detected",
+          now,
+          now
+        );
+      localDb.close();
+      localDb = null;
+
+      const reviseResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/nodules/N-WEB-REVISE/revise`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ bbox: [12, 22, 32, 42], comment: "doctor adjusted bbox" }),
+      });
+      expect(reviseResponse.status).toBe(200);
+      const reviseBody = (await reviseResponse.json()) as {
+        nodule: { bbox: number[]; source: string; status: string };
+        auditLog: { action: string; actorType: string; detail: { before: { bbox: number[] }; after: { bbox: number[] } } };
+        bundle: { nodules: Array<{ bbox: number[]; status: string }>; auditLogs: Array<{ action: string }> };
+      };
+      expect(reviseBody.nodule).toMatchObject({
+        bbox: [12, 22, 32, 42],
+        source: "doctor",
+        status: "doctor_revised",
+      });
+      expect(reviseBody.auditLog).toMatchObject({
+        action: "medical.nodule.revise",
+        actorType: "doctor",
+      });
+      expect(reviseBody.auditLog.detail.before.bbox).toEqual([10, 20, 30, 40]);
+      expect(reviseBody.auditLog.detail.after.bbox).toEqual([12, 22, 32, 42]);
+      expect(reviseBody.bundle.nodules[0]).toMatchObject({ bbox: [12, 22, 32, 42], status: "doctor_revised" });
+      expect(reviseBody.bundle.auditLogs[0].action).toBe("medical.nodule.revise");
+    } finally {
+      localDb?.close();
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("POST medical image with unknown study → 400 invalid-reference", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-write-"));
     const dbPath = path.join(dir, "data.db");

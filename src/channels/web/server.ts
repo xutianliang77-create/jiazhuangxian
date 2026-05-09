@@ -91,6 +91,7 @@ import {
   handleReadMedicalArtifact,
   handleReadMedicalStudy,
   handleReviewMedicalReport,
+  handleReviseMedicalNodule,
   handleStartMedicalAnalysis,
 } from "./medicalHandlers";
 import { SessionStore } from "./sessionStore";
@@ -431,6 +432,10 @@ async function dispatch(
   const medicalReportReviewMatch = /^\/v1\/web\/medical\/reports\/([^/]+)\/review$/.exec(url.pathname);
   if (medicalReportReviewMatch && method === "POST") {
     return handleReviewMedicalReport(req, res, deps, decodeURIComponent(medicalReportReviewMatch[1]));
+  }
+  const medicalNoduleReviseMatch = /^\/v1\/web\/medical\/nodules\/([^/]+)\/revise$/.exec(url.pathname);
+  if (medicalNoduleReviseMatch && method === "POST") {
+    return handleReviseMedicalNodule(req, res, deps, decodeURIComponent(medicalNoduleReviseMatch[1]));
   }
   if (url.pathname === "/v1/web/medical/images" && method === "POST") {
     return handleCreateMedicalImage(req, res, deps);

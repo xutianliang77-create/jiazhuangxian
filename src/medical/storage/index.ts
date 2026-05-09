@@ -13,6 +13,8 @@ export type {
   ModelJobRecord,
   NoduleInput,
   NoduleRecord,
+  NoduleRevisionInput,
+  NoduleRevisionResult,
   PatientInput,
   PatientRecord,
   ReportInput,

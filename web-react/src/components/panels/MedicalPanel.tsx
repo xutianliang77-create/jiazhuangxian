@@ -9,6 +9,7 @@ import {
   getMedicalSummary,
   medicalArtifactUrl,
   reviewMedicalReport,
+  reviseMedicalNodule,
   startMedicalAnalysis,
   type MedicalAgentTask,
   type MedicalAuditLog,
@@ -77,6 +78,7 @@ export default function MedicalPanel({ onError }: Props) {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [analysisBusyImageId, setAnalysisBusyImageId] = useState<string | null>(null);
   const [reviewBusyReportId, setReviewBusyReportId] = useState<string | null>(null);
+  const [noduleBusyId, setNoduleBusyId] = useState<string | null>(null);
 
   async function refresh() {
     setBusy(true);
@@ -163,6 +165,26 @@ export default function MedicalPanel({ onError }: Props) {
       onError(message);
     } finally {
       setReviewBusyReportId(null);
+    }
+  }
+
+  async function reviseNodule(nodule: MedicalNodule, bbox: number[]) {
+    setNoduleBusyId(nodule.id);
+    setDetailError(null);
+    try {
+      const result = await reviseMedicalNodule(nodule.id, {
+        bbox,
+        status: "doctor_revised",
+      });
+      setStudyBundle(result.bundle);
+      await refresh();
+    } catch (err) {
+      const message = `Medical 结节修订失败：${(err as Error).message}`;
+      setDetailError(message);
+      onError(message);
+      throw err;
+    } finally {
+      setNoduleBusyId(null);
     }
   }
 
@@ -285,8 +307,10 @@ export default function MedicalPanel({ onError }: Props) {
           error={detailError}
           analyzingImageId={analysisBusyImageId}
           reviewingReportId={reviewBusyReportId}
+          revisingNoduleId={noduleBusyId}
           onStartAnalysis={launchAnalysis}
           onReviewReport={reviewReport}
+          onReviseNodule={reviseNodule}
         />
 
         <div className="flex items-center justify-between mb-3">
@@ -495,16 +519,20 @@ function StudyDetail({
   error,
   analyzingImageId,
   reviewingReportId,
+  revisingNoduleId,
   onStartAnalysis,
   onReviewReport,
+  onReviseNodule,
 }: {
   bundle: MedicalStudyBundle | null;
   busy: boolean;
   error: string | null;
   analyzingImageId: string | null;
   reviewingReportId: string | null;
+  revisingNoduleId: string | null;
   onStartAnalysis(imageId: string): void;
   onReviewReport(report: MedicalReport, action: "approve" | "reject"): void;
+  onReviseNodule(nodule: MedicalNodule, bbox: number[]): Promise<void>;
 }) {
   if (!bundle) {
     return (
@@ -583,6 +611,9 @@ function StudyDetail({
                 key={nodule.id}
                 nodule={nodule}
                 result={tiradsResults.find((item) => item.noduleId === nodule.id) ?? null}
+                busy={busy || revisingNoduleId !== null}
+                revising={revisingNoduleId === nodule.id}
+                onRevise={(bbox) => onReviseNodule(nodule, bbox)}
               />
             ))}
           </div>
@@ -710,7 +741,41 @@ function ArtifactLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function NoduleResultRow({ nodule, result }: { nodule: MedicalNodule; result: MedicalTiradsResult | null }) {
+function NoduleResultRow({
+  nodule,
+  result,
+  busy,
+  revising,
+  onRevise,
+}: {
+  nodule: MedicalNodule;
+  result: MedicalTiradsResult | null;
+  busy: boolean;
+  revising: boolean;
+  onRevise(bbox: number[]): Promise<void>;
+}) {
+  const [bboxText, setBboxText] = useState(formatBbox(nodule.bbox));
+  const [editError, setEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setBboxText(formatBbox(nodule.bbox));
+    setEditError(null);
+  }, [nodule.id, nodule.updatedAt, nodule.bbox]);
+
+  async function submitRevision() {
+    const parsed = parseBboxInput(bboxText);
+    if (typeof parsed === "string") {
+      setEditError(parsed);
+      return;
+    }
+    setEditError(null);
+    try {
+      await onRevise(parsed);
+    } catch {
+      // Parent surface already shows the API error.
+    }
+  }
+
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
@@ -724,6 +789,21 @@ function NoduleResultRow({ nodule, result }: { nodule: MedicalNodule; result: Me
         <Metric label="score" value={result?.score === null || result?.score === undefined ? "pending" : String(result.score)} />
       </div>
       {result?.recommendation && <div className="text-muted mt-2">{result.recommendation}</div>}
+      <div className="mt-2 flex flex-col gap-2">
+        <label className="text-muted">
+          bbox xyxy
+          <input
+            className={`${inputClass} mt-1 font-mono text-xs`}
+            value={bboxText}
+            onChange={(event) => setBboxText(event.target.value)}
+            placeholder="10, 20, 30, 40"
+          />
+        </label>
+        <button type="button" className="btn-secondary self-start" disabled={busy} onClick={submitRevision}>
+          {revising ? "保存中..." : "保存修订"}
+        </button>
+        {editError && <div className="text-danger">{editError}</div>}
+      </div>
     </div>
   );
 }
@@ -905,6 +985,22 @@ function formatTime(value: number): string {
 
 function formatOptionalNumber(value: number | null | undefined): string {
   return value === null || value === undefined ? "unknown" : value.toFixed(2);
+}
+
+function formatBbox(value: unknown): string {
+  return isNumberTuple4(value) ? value.map((item) => Number(item.toFixed(2))).join(", ") : "";
+}
+
+function parseBboxInput(value: string): number[] | string {
+  const parts = value.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length !== 4) return "bbox 需要 4 个数字：x1, y1, x2, y2";
+  const numbers = parts.map(Number);
+  if (!numbers.every(Number.isFinite)) return "bbox 只能包含有限数字";
+  return numbers;
+}
+
+function isNumberTuple4(value: unknown): value is number[] {
+  return Array.isArray(value) && value.length === 4 && value.every((item) => typeof item === "number" && Number.isFinite(item));
 }
 
 function stringValue(value: unknown): string | undefined {

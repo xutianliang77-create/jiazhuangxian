@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, and model-gateway/artifact visibility plus overlay preview in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, and doctor-side nodule bbox revision with audit history in the doctor workstation.
 
 ### Completed
 
@@ -149,6 +149,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Extended the MedicalPanel model-job view to show both detection JSON and overlay artifact URIs.
 - Added `GET /v1/web/medical/artifacts?uri=<artifact-uri>` to serve authenticated medical artifact previews from the configured artifact root with path traversal protection and a validation size limit.
 - MedicalPanel now renders overlay thumbnails directly from authenticated artifact preview URLs while still showing the original artifact URI for provenance.
+- Added `MedicalCaseRepo.reviseNodule()` and `getNodule()` for doctor-side nodule bbox correction in the validation workflow.
+- Added `POST /v1/web/medical/nodules/:noduleId/revise` to update a nodule bbox/location/status, mark the source as `doctor`, return the refreshed study bundle, and write a `medical.nodule.revise` audit log with before/after snapshots.
+- MedicalPanel nodule cards now include a compact numeric `bbox xyxy` editor and save action, then refresh the detail bundle and audit log view after a doctor correction.
+- Updated the medical MCP setup guide so the local validation workflow includes doctor-side nodule bbox revision before final report review.
 
 ### Verification
 
@@ -283,6 +287,16 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Frontend `cd web-react && npm run typecheck` and root `npm run typecheck` passed after detector overlay generation.
 - Targeted medical Web/API tests passed after detector overlay generation: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts` with 54 tests.
 - Targeted lint passed for modified MedicalPanel files after detector overlay generation.
+- Targeted doctor bbox revision tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts` with 57 tests.
+- Targeted MedicalPanel bbox revision test passed: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 8 tests.
+- Root `npm run typecheck` and frontend `cd web-react && npm run typecheck` passed after doctor bbox revision.
+- Targeted lint passed for the doctor bbox revision storage, Web API, endpoint, and MedicalPanel files.
+- Full web-react tests passed after doctor bbox revision: `cd web-react && npm test` with 11 files passed and 41 tests passed.
+- `npm run build:web` passed after doctor bbox revision; Vite still reports the existing Monaco chunk-size warning.
+- `python3 -m unittest discover services/image-worker/tests` passed after doctor bbox revision: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after doctor bbox revision: 10 tests.
+- CLI smoke test passed after doctor bbox revision: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after doctor bbox revision.
 - Full web-react tests passed after detector overlay generation: `cd web-react && npm test` with 11 files passed and 40 tests passed.
 - `npm run build:web` passed after detector overlay generation; Vite still reports the existing Monaco chunk-size warning.
 - `python3 -m unittest discover services/image-worker/tests` passed after detector overlay generation: 3 tests.
@@ -332,7 +346,7 @@ None.
 
 1. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
 2. Add PDF-to-manifest parsing when representative guideline PDFs are available.
-3. Add doctor-side bbox correction/edit history once overlay preview needs interactive review.
+3. Add drag-based bbox editing on the overlay preview if numeric bbox revision is not enough for validation users.
 4. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist

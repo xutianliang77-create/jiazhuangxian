@@ -410,6 +410,55 @@ export async function handleReviewMedicalReport(
   }
 }
 
+export async function handleReviseMedicalNodule(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  noduleId: string
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const repo = new MedicalCaseRepo(ctx.db);
+    if (!repo.getNodule(noduleId)) {
+      throw new MedicalRequestError(404, "nodule-not-found", `nodule not found: ${noduleId}`);
+    }
+    const now = Date.now();
+    const revised = repo.reviseNodule({
+      noduleId,
+      bbox: requiredBbox(body),
+      location: stringField(body, "location"),
+      status: stringField(body, "status") ?? "doctor_revised",
+      now,
+    });
+    const comment = stringField(body, "comment");
+    const auditLog = repo.createAuditLog({
+      studyId: revised.nodule.studyId,
+      actorType: "doctor",
+      actorId: ctx.userId,
+      action: "medical.nodule.revise",
+      targetType: "nodule",
+      targetId: noduleId,
+      detail: {
+        before: noduleAuditSnapshot(revised.before),
+        after: noduleAuditSnapshot(revised.nodule),
+        comment: comment ?? null,
+      },
+      traceId: noduleId,
+      now,
+    });
+    jsonResponse(res, 200, {
+      nodule: revised.nodule,
+      auditLog,
+      bundle: repo.getStudyBundle(revised.nodule.studyId),
+    });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
 function readCounts(db: Database.Database): Record<string, number> {
   return {
     patients: count(db, "patient"),
@@ -677,6 +726,37 @@ function objectField(body: JsonObject, camelKey: string, snakeKey?: string): Jso
     throw new MedicalRequestError(400, "invalid-request", `${camelKey} must be an object`);
   }
   return value as JsonObject;
+}
+
+function requiredBbox(body: JsonObject): number[] {
+  const value = body.bbox;
+  if (!Array.isArray(value) || value.length !== 4) {
+    throw new MedicalRequestError(400, "invalid-request", "bbox must be an array of four finite numbers");
+  }
+  return value.map((item) => {
+    if (typeof item !== "number" || !Number.isFinite(item)) {
+      throw new MedicalRequestError(400, "invalid-request", "bbox must be an array of four finite numbers");
+    }
+    return item;
+  });
+}
+
+function noduleAuditSnapshot(nodule: {
+  id: string;
+  bbox: unknown;
+  location: string | null;
+  source: string;
+  status: string;
+  updatedAt: number;
+}): JsonObject {
+  return {
+    id: nodule.id,
+    bbox: nodule.bbox,
+    location: nodule.location,
+    source: nodule.source,
+    status: nodule.status,
+    updated_at: nodule.updatedAt,
+  };
 }
 
 function isJsonObject(value: unknown): value is JsonObject {

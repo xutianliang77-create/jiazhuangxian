@@ -267,6 +267,43 @@ describe("MedicalCaseRepo", () => {
     ]);
   });
 
+  it("revises nodule bbox as a doctor correction", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-NOD-REV", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-NOD-REV", now: 1100 });
+    const image = repo.addImage({
+      studyId: study.id,
+      fileUri: "artifact://raw/ACC-NOD-REV/IMG.png",
+      fileType: "png",
+      now: 1200,
+    });
+    const nodule = repo.upsertNodule({
+      studyId: study.id,
+      imageId: image.id,
+      noduleIndex: 1,
+      bbox: [10, 20, 30, 40],
+      detectionConfidence: 0.88,
+      now: 1300,
+    });
+
+    const revised = repo.reviseNodule({
+      noduleId: nodule.id,
+      bbox: [12, 22, 32, 42],
+      status: "doctor_revised",
+      now: 1400,
+    });
+
+    expect(revised.before).toMatchObject({ id: nodule.id, bbox: [10, 20, 30, 40], source: "ai" });
+    expect(revised.nodule).toMatchObject({
+      id: nodule.id,
+      bbox: [12, 22, 32, 42],
+      source: "doctor",
+      status: "doctor_revised",
+      updatedAt: 1400,
+    });
+    expect(repo.getStudyBundle(study.id)?.nodules[0]).toMatchObject({ bbox: [12, 22, 32, 42] });
+  });
+
   it("persists TI-RADS features and calculated results", () => {
     const repo = new MedicalCaseRepo(db);
     const patient = repo.upsertPatient({ externalPatientId: "P-TIRADS", now: 1000 });

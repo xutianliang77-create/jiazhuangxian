@@ -717,6 +717,21 @@ export const reviewMedicalReport = (
     bundle: MedicalStudyBundle;
   }>("POST", `/v1/web/medical/reports/${encodeURIComponent(reportId)}/review`, input);
 
+export const reviseMedicalNodule = (
+  noduleId: string,
+  input: {
+    bbox: number[];
+    location?: string;
+    status?: string;
+    comment?: string;
+  }
+) =>
+  api<{
+    nodule: MedicalNodule;
+    auditLog: MedicalAuditLog;
+    bundle: MedicalStudyBundle;
+  }>("POST", `/v1/web/medical/nodules/${encodeURIComponent(noduleId)}/revise`, input);
+
 // ===== Cron #116 =====
 
 export type CronTaskKind = "slash" | "prompt" | "shell";
