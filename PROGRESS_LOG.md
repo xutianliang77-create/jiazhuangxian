@@ -168,6 +168,7 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Downloaded the public Sample-of-UD-TN GitHub sample to `data/artifacts/datasets/ud-tn-sample/raw/Sample-of-UD-TN-master` for smoke testing.
 - Added `examples/datasets/thyroid-ultrasound-public.manifest.json` as the tracked dataset source/status manifest for TN3K, Sample-of-UD-TN, TN5000, ThyroidXL, ThyUS2Path, Stanford Thyroid Cine-clip, AHU heterogeneous ultrasound, and DDTI.
 - Added `docs/PUBLIC_THYROID_ULTRASOUND_DATASETS.md` documenting downloaded paths, access blockers, and recommended model-development use.
+- Marked all not-yet-downloaded public datasets as explicit TODO items with priority, blocker, target path, and next action in both the dataset manifest and public dataset documentation.
 - Added `data/artifacts/datasets/.gitkeep` and updated `data/README.md` so the local dataset artifact directory is explicit while real data stays out of Git.
 
 ### Verification

@@ -13,6 +13,56 @@
     ],
     "purpose": "validation, pretraining, smoke testing, and model evaluation only"
   },
+  "download_todos": [
+    {
+      "dataset_id": "tn5000",
+      "priority": "P0",
+      "status": "todo",
+      "blocker": "Figshare command-line download is blocked by AWS WAF challenge.",
+      "target_path": "data/artifacts/datasets/tn5000",
+      "next_action": "Open the Figshare page in a browser, download the archive manually, place it under raw/, extract it under processed/, then record file size, sha256, and annotation format."
+    },
+    {
+      "dataset_id": "thyroidxl",
+      "priority": "P1",
+      "status": "todo",
+      "blocker": "Hugging Face dataset is manual gated and requires account approval.",
+      "target_path": "data/artifacts/datasets/thyroidxl",
+      "next_action": "Log in to Hugging Face, accept the dataset terms, download with the approved account, then update this manifest with checksums and split/annotation metadata."
+    },
+    {
+      "dataset_id": "thyus2path",
+      "priority": "P1",
+      "status": "todo",
+      "blocker": "Large pathology-validated dataset needs official/manual dataset access.",
+      "target_path": "data/artifacts/datasets/thyus2path",
+      "next_action": "Follow the publication data-access link, download the official archive, verify pathology labels, and register it as classification/external-validation data."
+    },
+    {
+      "dataset_id": "stanford-thyroid-cine-clip",
+      "priority": "P2",
+      "status": "todo",
+      "blocker": "Download is routed through Redivis official flow.",
+      "target_path": "data/artifacts/datasets/stanford-thyroid-cine-clip",
+      "next_action": "Use the Redivis account/terms flow, download cine clips and metadata, then document clip, segmentation, TI-RADS, and pathology fields."
+    },
+    {
+      "dataset_id": "ahu-heterogeneous-ultrasound",
+      "priority": "P3",
+      "status": "todo",
+      "blocker": "General heterogeneous ultrasound dataset; not first-priority thyroid detector data.",
+      "target_path": "data/artifacts/datasets/ahu-heterogeneous-ultrasound",
+      "next_action": "Download only after the primary thyroid datasets are ready, then tag thyroid-relevant subsets for robustness/domain-shift checks."
+    },
+    {
+      "dataset_id": "ddti",
+      "priority": "P3",
+      "status": "todo",
+      "blocker": "Original host did not resolve from this machine.",
+      "target_path": "data/artifacts/datasets/ddti",
+      "next_action": "Find a reliable mirror with clear license terms, download only after source legitimacy is confirmed, then record checksum and annotation format."
+    }
+  ],
   "datasets": [
     {
       "id": "tn3k",

@@ -8,12 +8,23 @@
 |---|---|---|---|
 | TN3K | 已下载并解压 | `data/artifacts/datasets/tn3k/` | 分割、良恶性分类、mask 转 bbox 后做检测预训练 |
 | Sample-of-UD-TN | 已下载公开样例 | `data/artifacts/datasets/ud-tn-sample/` | 轻量 smoke test、分类链路检查 |
-| TN5000 | 未自动下载 | `data/artifacts/datasets/tn5000/` | YOLOv11/RT-DETR 结节检测主数据集 |
-| ThyroidXL | 未下载，需 Hugging Face 人工授权 | `data/artifacts/datasets/thyroidxl/` | 检测、分割、分类、TI-RADS 评估 |
-| ThyUS2Path | 未下载，需手工获取大文件 | `data/artifacts/datasets/thyus2path/` | 病理验证分类、外部验证 |
-| Stanford Thyroid Cine-clip | 未下载，需 Redivis 官方流程 | `data/artifacts/datasets/stanford-thyroid-cine-clip/` | cine clip 分割、TI-RADS 描述符、外部验证 |
-| AHU heterogeneous ultrasound | 未下载，非甲状腺专用 | `data/artifacts/datasets/ahu-heterogeneous-ultrasound/` | 超声域偏移和鲁棒性探测 |
-| DDTI | 未下载，原站不可解析 | `data/artifacts/datasets/ddti/` | 小规模分割/检测 smoke test |
+| TN5000 | TODO P0：需浏览器手工下载 | `data/artifacts/datasets/tn5000/` | YOLOv11/RT-DETR 结节检测主数据集 |
+| ThyroidXL | TODO P1：需 Hugging Face 人工授权 | `data/artifacts/datasets/thyroidxl/` | 检测、分割、分类、TI-RADS 评估 |
+| ThyUS2Path | TODO P1：需手工获取官方大文件 | `data/artifacts/datasets/thyus2path/` | 病理验证分类、外部验证 |
+| Stanford Thyroid Cine-clip | TODO P2：需 Redivis 官方流程 | `data/artifacts/datasets/stanford-thyroid-cine-clip/` | cine clip 分割、TI-RADS 描述符、外部验证 |
+| AHU heterogeneous ultrasound | TODO P3：非甲状腺专用，后置 | `data/artifacts/datasets/ahu-heterogeneous-ultrasound/` | 超声域偏移和鲁棒性探测 |
+| DDTI | TODO P3：原站不可解析，需可靠镜像 | `data/artifacts/datasets/ddti/` | 小规模分割/检测 smoke test |
+
+## TODO 队列
+
+| 优先级 | 数据集 | 阻塞原因 | 下一步 |
+|---|---|---|---|
+| P0 | TN5000 | Figshare 命令行下载被 AWS WAF challenge 拦截 | 浏览器打开 Figshare 页面，手工下载到 `data/artifacts/datasets/tn5000/raw/`，解压到 `processed/`，补充 sha256、文件大小和标注格式 |
+| P1 | ThyroidXL | Hugging Face `manual gated`，需要账号同意条款 | 登录 Hugging Face 并接受条款后下载，记录分割/检测/分类/TI-RADS 字段 |
+| P1 | ThyUS2Path | 需要官方/论文数据入口获取大文件 | 下载官方归档，核对病理标签，登记为分类和外部验证集 |
+| P2 | Stanford Thyroid Cine-clip | 下载入口走 Redivis 官方流程 | 按 Redivis 条款获取 cine clip、分割、TI-RADS、病理 metadata |
+| P3 | AHU heterogeneous ultrasound | 多器官通用超声数据，不是主检测训练集 | 主甲状腺数据集准备完成后，再抽取甲状腺相关子集做鲁棒性测试 |
+| P3 | DDTI | 原始站点不可解析 | 先确认可靠镜像和授权条款，再下载并记录 checksum/标注格式 |
 
 ## 已下载数据
 
