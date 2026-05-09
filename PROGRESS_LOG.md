@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, and TI-RADS rule calculation persistence.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, and TI-RADS rule calculation persistence.
 
 ### Completed
 
@@ -127,6 +127,7 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - When a `thyroid.detect_nodules` model job succeeds, `medical-agent-worker` now writes returned detections into the `nodule` table and includes `persisted_nodules` in the agent task output.
 - Added `MedicalCaseRepo.createTiradsFeature()`, `listTiradsFeaturesByStudy()`, `createTiradsResult()`, and `listTiradsResultsByStudy()` for structured TI-RADS storage.
 - `calculate_tirads` agent tasks now read persisted structured features, call the existing ACR TI-RADS 2017 rule engine, write `tirads_result`, and return persisted result ids plus evidence rules.
+- `classify_tirads_features` agent tasks now persist validation structured feature candidates from task input into `tirads_feature` when candidates are provided, while preserving a clear not-configured warning when no feature model/input exists.
 
 ### Verification
 
@@ -200,6 +201,14 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after TI-RADS result persistence: 10 tests.
 - CLI smoke test passed after TI-RADS result persistence: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - `git diff --check` passed after TI-RADS result persistence.
+- Targeted TI-RADS feature persistence tests passed: `npm test -- --run test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts test/unit/medical/mcp-server.test.ts test/unit/medical/seed-data.test.ts` with 27 tests.
+- Root `npm run typecheck` passed after TI-RADS feature persistence.
+- Targeted lint passed for TI-RADS feature persistence files.
+- `npm test` passed after TI-RADS feature persistence: 176 files passed, 1 skipped; 1681 tests passed, 3 skipped.
+- `python3 -m unittest discover services/image-worker/tests` passed after TI-RADS feature persistence: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after TI-RADS feature persistence: 10 tests.
+- CLI smoke test passed after TI-RADS feature persistence: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after TI-RADS feature persistence.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -232,7 +241,7 @@ None.
 
 ### Next Session Priorities
 
-1. Replace the remaining validation placeholder outputs with real feature-classifier, report-generation, and safety-review calls where dependencies are configured.
+1. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
 2. Add UI/API visibility for model-gateway config check results and detector artifacts in the Medical workstation.
 3. Add overlay image generation for detector bbox results.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.

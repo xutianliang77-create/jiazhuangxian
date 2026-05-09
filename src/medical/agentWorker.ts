@@ -2,6 +2,7 @@ import {
   MedicalCaseRepo,
   type AgentTaskRecord,
   type ModelJobRecord,
+  type NoduleRecord,
   type TiradsFeatureRecord,
 } from "./storage";
 import { calculateAcrTirads, type TiradsInput } from "../../packages/medical-mcp/src/tirads";
@@ -430,15 +431,7 @@ function buildSynchronousTaskOutput(
         warnings: image?.imageQuality ? [] : ["image_worker_qc_not_run"],
       };
     case "classify_tirads_features":
-      return {
-        ...base,
-        result: {
-          nodules: [],
-          features: [],
-          model_status: "not_configured",
-        },
-        warnings: ["tirads_feature_model_not_configured"],
-      };
+      return buildClassifyTiradsFeaturesTaskOutput(repo, task, base, now);
     case "calculate_tirads":
       return buildCalculateTiradsTaskOutput(repo, task, base, now);
     case "draft_report":
@@ -600,6 +593,79 @@ function buildCalculateTiradsTaskOutput(
   };
 }
 
+function buildClassifyTiradsFeaturesTaskOutput(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  base: JsonObject,
+  now: number
+): JsonObject {
+  const studyId = requiredString(task.input.study_id, "study_id");
+  const nodules = repo.listNodulesByStudy(studyId);
+  const candidates = featureCandidatesFromTask(task);
+  if (candidates.length === 0) {
+    return {
+      ...base,
+      result: {
+        nodules: nodules.map((nodule) => ({
+          nodule_id: nodule.id,
+          nodule_index: nodule.noduleIndex,
+          detection_confidence: nodule.detectionConfidence,
+        })),
+        features: [],
+        model_status: "not_configured",
+      },
+      warnings: ["tirads_feature_model_not_configured"],
+    };
+  }
+
+  const noduleById = new Map(nodules.map((nodule) => [nodule.id, nodule]));
+  const noduleByIndex = new Map(nodules.map((nodule) => [nodule.noduleIndex, nodule]));
+  const warnings: string[] = [];
+  const persisted = candidates.flatMap((candidate, index) => {
+    const nodule = resolveCandidateNodule(candidate, nodules, noduleById, noduleByIndex);
+    if (!nodule) {
+      warnings.push(`tirads_feature_nodule_not_found:${candidateLabel(candidate, index)}`);
+      return [];
+    }
+    const features = extractFeaturePayload(candidate);
+    if (Object.keys(features).length === 0) {
+      warnings.push(`tirads_feature_payload_empty:${candidateLabel(candidate, index)}`);
+      return [];
+    }
+    const feature = repo.createTiradsFeature({
+      noduleId: nodule.id,
+      systemName: optionalString(candidate.system_name) ?? "ACR_TI_RADS",
+      features,
+      confidence: extractConfidencePayload(candidate),
+      sourceModel: optionalString(candidate.source_model) ?? optionalString(candidate.model_name) ?? "validation-input",
+      requiresReview: optionalBoolean(candidate.requires_review) ?? true,
+      now,
+    });
+    return [
+      {
+        tirads_feature_id: feature.id,
+        nodule_id: nodule.id,
+        nodule_index: nodule.noduleIndex,
+        features: feature.features,
+        confidence: feature.confidence,
+        source_model: feature.sourceModel,
+        requires_review: feature.requiresReview,
+      },
+    ];
+  });
+
+  return {
+    ...base,
+    validation_mode: persisted.length === 0,
+    result: {
+      features: persisted,
+      feature_status: persisted.length > 0 ? "persisted" : "no_features_persisted",
+      source: "structured_validation_input",
+    },
+    warnings,
+  };
+}
+
 function latestFeaturePerNodule(features: TiradsFeatureRecord[]): TiradsFeatureRecord[] {
   const seen = new Set<string>();
   const latest: TiradsFeatureRecord[] = [];
@@ -609,6 +675,54 @@ function latestFeaturePerNodule(features: TiradsFeatureRecord[]): TiradsFeatureR
     latest.push(feature);
   }
   return latest;
+}
+
+function featureCandidatesFromTask(task: AgentTaskRecord): JsonObject[] {
+  const candidates = asRecordArray(task.input.feature_candidates ?? task.input.tirads_features);
+  if (candidates.length > 0) return candidates;
+  const features = asJsonObject(task.input.features);
+  if (!features) return [];
+  return [
+    {
+      nodule_id: task.input.nodule_id,
+      nodule_index: task.input.nodule_index,
+      features,
+      confidence: task.input.confidence,
+      source_model: task.input.source_model,
+      requires_review: task.input.requires_review,
+    },
+  ];
+}
+
+function resolveCandidateNodule(
+  candidate: JsonObject,
+  nodules: NoduleRecord[],
+  noduleById: Map<string, NoduleRecord>,
+  noduleByIndex: Map<number, NoduleRecord>
+): NoduleRecord | undefined {
+  const noduleId = optionalString(candidate.nodule_id);
+  if (noduleId) return noduleById.get(noduleId);
+  const noduleIndex = optionalInteger(candidate.nodule_index);
+  if (noduleIndex) return noduleByIndex.get(noduleIndex);
+  return nodules.length === 1 ? nodules[0] : undefined;
+}
+
+function extractFeaturePayload(candidate: JsonObject): JsonObject {
+  const nested = asJsonObject(candidate.features);
+  if (nested) return nested;
+  const features: JsonObject = {};
+  for (const key of ["composition", "echogenicity", "shape", "margin", "echogenic_foci", "size_mm"]) {
+    if (candidate[key] !== undefined) features[key] = candidate[key];
+  }
+  return features;
+}
+
+function extractConfidencePayload(candidate: JsonObject): JsonObject {
+  return asJsonObject(candidate.confidence) ?? asJsonObject(candidate.feature_confidence) ?? {};
+}
+
+function candidateLabel(candidate: JsonObject, index: number): string {
+  return optionalString(candidate.nodule_id) ?? String(optionalInteger(candidate.nodule_index) ?? index + 1);
 }
 
 function tiradsInputFromFeature(feature: TiradsFeatureRecord): TiradsInput {

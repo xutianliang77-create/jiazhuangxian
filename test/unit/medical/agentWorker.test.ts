@@ -273,9 +273,94 @@ describe("medical agent worker", () => {
       },
     ]);
   });
+
+  it("persists structured TI-RADS feature candidates from classify task input", () => {
+    const { tasks } = seedAgentTaskChain(["classify_tirads_features"], {
+      classify_tirads_features: {
+        feature_candidates: [
+          {
+            nodule_index: 1,
+            features: {
+              composition: "solid",
+              echogenicity: "hypoechoic",
+              shape: "wider_than_tall",
+              margin: "smooth",
+              echogenic_foci: ["none"],
+              size_mm: { long_axis: 11, short_axis: 7, ap_axis: 8 },
+            },
+            confidence: { composition: 0.93, echogenicity: 0.87 },
+            source_model: "tc-vit-validation",
+            requires_review: true,
+          },
+        ],
+      },
+    });
+    const studyId = String(tasks[0].input.study_id);
+    const imageId = String(tasks[0].input.image_id);
+    const nodule = repo.upsertNodule({
+      studyId,
+      imageId,
+      noduleIndex: 1,
+      bbox: [10, 20, 30, 40],
+      detectionConfidence: 0.91,
+      now: 7000,
+    });
+
+    const result = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 7100 });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "classify_tirads_features",
+      output: {
+        validation_mode: false,
+        result: {
+          feature_status: "persisted",
+          source: "structured_validation_input",
+          features: [
+            {
+              nodule_id: nodule.id,
+              nodule_index: 1,
+              features: {
+                composition: "solid",
+                echogenicity: "hypoechoic",
+                shape: "wider_than_tall",
+                margin: "smooth",
+                echogenic_foci: ["none"],
+                size_mm: { long_axis: 11, short_axis: 7, ap_axis: 8 },
+              },
+              confidence: { composition: 0.93, echogenicity: 0.87 },
+              source_model: "tc-vit-validation",
+              requires_review: true,
+            },
+          ],
+        },
+        warnings: [],
+      },
+    });
+    expect(repo.listTiradsFeaturesByStudy(studyId)).toMatchObject([
+      {
+        noduleId: nodule.id,
+        features: {
+          composition: "solid",
+          echogenicity: "hypoechoic",
+          shape: "wider_than_tall",
+          margin: "smooth",
+          echogenic_foci: ["none"],
+          size_mm: { long_axis: 11, short_axis: 7, ap_axis: 8 },
+        },
+        confidence: { composition: 0.93, echogenicity: 0.87 },
+        sourceModel: "tc-vit-validation",
+        requiresReview: true,
+      },
+    ]);
+  });
 });
 
-function seedAgentTaskChain(taskTypes: string[]): { sessionId: string; tasks: AgentTaskRecord[] } {
+function seedAgentTaskChain(
+  taskTypes: string[],
+  taskInputs: Record<string, Record<string, unknown>> = {}
+): { sessionId: string; tasks: AgentTaskRecord[] } {
   const patient = repo.upsertPatient({ externalPatientId: "EXT-AGENT", now: 1000 });
   const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-AGENT", now: 1100 });
   const image = repo.addImage({
@@ -302,6 +387,7 @@ function seedAgentTaskChain(taskTypes: string[]): { sessionId: string; tasks: Ag
       input: {
         study_id: study.id,
         image_id: image.id,
+        ...(taskInputs[taskType] ?? {}),
       },
       now: 1400 + index,
     });
