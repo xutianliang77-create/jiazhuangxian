@@ -103,6 +103,73 @@ const studyBundle = {
       updatedAt: 1778245200000,
     },
   ],
+  nodules: [
+    {
+      id: "N1",
+      studyId: "S1",
+      imageId: "IMG1",
+      noduleIndex: 1,
+      location: null,
+      bbox: [10, 20, 30, 40],
+      maskUri: null,
+      detectionConfidence: 0.91,
+      source: "ai",
+      status: "detected",
+      createdAt: 1778245200000,
+      updatedAt: 1778245200000,
+    },
+  ],
+  tiradsFeatures: [],
+  tiradsResults: [
+    {
+      id: "TR1",
+      noduleId: "N1",
+      systemName: "ACR_TI_RADS",
+      systemVersion: "2017",
+      score: 4,
+      category: "TR4",
+      recommendation: "TR4 nodule >=10 mm: ultrasound follow-up.",
+      evidenceRules: [{ rule_code: "ACR_2017_category_TR4" }],
+      warnings: [],
+      createdAt: 1778245200000,
+    },
+  ],
+  reports: [
+    {
+      id: "R1",
+      studyId: "S1",
+      analysisSessionId: null,
+      reportType: "thyroid_ultrasound",
+      status: "draft",
+      templateId: "tpl-thyroid-ultrasound-draft-v1",
+      draftText: "甲状腺超声AI辅助报告（草稿）\nTI-RADS TR4，需医生审核确认后生效。",
+      finalText: null,
+      structured: { review_required: true },
+      evidence: [{ source: "tirads_result", rule_code: "ACR_2017_category_TR4" }],
+      createdByAgent: "worker-test",
+      confirmedBy: null,
+      confirmedAt: null,
+      createdAt: 1778245200000,
+      updatedAt: 1778245200000,
+    },
+  ],
+  auditLogs: [
+    {
+      id: "A1",
+      studyId: "S1",
+      actorType: "agent",
+      actorId: "worker-test",
+      action: "medical.safety_review",
+      targetType: "report",
+      targetId: "R1",
+      detail: {
+        safety_status: "needs_doctor_review",
+        issues: [{ rule_code: "NO_FINAL_DIAGNOSIS_WITHOUT_DOCTOR", severity: "critical", message: "需医生审核" }],
+      },
+      traceId: "AT-SAFE",
+      createdAt: 1778245200000,
+    },
+  ],
   analysisSessions: [],
   agentTasks: [],
 };
@@ -258,6 +325,10 @@ describe("MedicalPanel", () => {
 
     expect(await screen.findByText("artifact://raw/S1/IMG1.png")).toBeInTheDocument();
     expect(screen.getByText(/640×480/)).toBeInTheDocument();
+    expect(screen.getByText("Nodule 1")).toBeInTheDocument();
+    expect(screen.getByText("TR4")).toBeInTheDocument();
+    expect(screen.getByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
+    expect(screen.getByText("needs_doctor_review")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "启动分析" }));
 

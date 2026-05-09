@@ -360,10 +360,85 @@ export interface MedicalAgentTask {
   updatedAt: number;
 }
 
+export interface MedicalNodule {
+  id: string;
+  studyId: string;
+  imageId: string | null;
+  noduleIndex: number;
+  location: string | null;
+  bbox: unknown;
+  maskUri: string | null;
+  detectionConfidence: number | null;
+  source: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MedicalTiradsFeature {
+  id: string;
+  noduleId: string;
+  systemName: string;
+  features: Record<string, unknown>;
+  confidence: Record<string, unknown>;
+  sourceModel: string | null;
+  requiresReview: boolean;
+  createdAt: number;
+}
+
+export interface MedicalTiradsResult {
+  id: string;
+  noduleId: string;
+  systemName: string;
+  systemVersion: string;
+  score: number | null;
+  category: string | null;
+  recommendation: string | null;
+  evidenceRules: unknown[];
+  warnings: string[];
+  createdAt: number;
+}
+
+export interface MedicalReport {
+  id: string;
+  studyId: string;
+  analysisSessionId: string | null;
+  reportType: string;
+  status: string;
+  templateId: string | null;
+  draftText: string | null;
+  finalText: string | null;
+  structured: Record<string, unknown>;
+  evidence: unknown[];
+  createdByAgent: string | null;
+  confirmedBy: string | null;
+  confirmedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MedicalAuditLog {
+  id: string;
+  studyId: string | null;
+  actorType: string;
+  actorId: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  detail: Record<string, unknown>;
+  traceId: string | null;
+  createdAt: number;
+}
+
 export interface MedicalStudyBundle {
   patient: MedicalPatient | null;
   study: MedicalStudy;
   images: MedicalImage[];
+  nodules: MedicalNodule[];
+  tiradsFeatures: MedicalTiradsFeature[];
+  tiradsResults: MedicalTiradsResult[];
+  reports: MedicalReport[];
+  auditLogs: MedicalAuditLog[];
   analysisSessions: MedicalAnalysisSession[];
   agentTasks: MedicalAgentTask[];
 }

@@ -802,8 +802,21 @@ describe("Web server · medical API", () => {
         headers: authHeaders(),
       });
       expect(detail.status).toBe(200);
-      const detailBody = (await detail.json()) as { bundle: { images: unknown[]; agentTasks: unknown[] } };
+      const detailBody = (await detail.json()) as {
+        bundle: {
+          images: unknown[];
+          nodules: unknown[];
+          tiradsResults: unknown[];
+          reports: unknown[];
+          auditLogs: unknown[];
+          agentTasks: unknown[];
+        };
+      };
       expect(detailBody.bundle.images).toHaveLength(1);
+      expect(detailBody.bundle.nodules).toHaveLength(0);
+      expect(detailBody.bundle.tiradsResults).toHaveLength(0);
+      expect(detailBody.bundle.reports).toHaveLength(0);
+      expect(detailBody.bundle.auditLogs).toHaveLength(0);
       expect(detailBody.bundle.agentTasks).toHaveLength(0);
 
       const analyze = await fetch(`${medicalBaseUrl}/v1/web/medical/studies/${studyBody.study.id}/analyze`, {

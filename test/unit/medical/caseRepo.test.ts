@@ -125,6 +125,11 @@ describe("MedicalCaseRepo", () => {
     });
     expect(bundle?.analysisSessions.map((s) => s.id)).toEqual([session.id]);
     expect(bundle?.agentTasks.map((t) => t.id)).toEqual([task.id]);
+    expect(bundle?.nodules).toEqual([]);
+    expect(bundle?.tiradsFeatures).toEqual([]);
+    expect(bundle?.tiradsResults).toEqual([]);
+    expect(bundle?.reports).toEqual([]);
+    expect(bundle?.auditLogs).toEqual([]);
     expect(task).toMatchObject({
       agentName: "CaseCoordinatorAgent",
       taskType: "orchestrate",
@@ -289,6 +294,11 @@ describe("MedicalCaseRepo", () => {
         warnings: ["missing_margin"],
       },
     ]);
+    expect(repo.getStudyBundle(study.id)).toMatchObject({
+      nodules: [{ id: nodule.id, noduleIndex: 1 }],
+      tiradsFeatures: [{ id: feature.id, noduleId: nodule.id }],
+      tiradsResults: [{ id: result.id, noduleId: nodule.id, category: "TR4" }],
+    });
   });
 
   it("persists report drafts with structured evidence", () => {
@@ -332,6 +342,7 @@ describe("MedicalCaseRepo", () => {
     expect(repo.getActiveReportTemplateText("tpl-thyroid-ultrasound-draft-v1")).toContain(
       "甲状腺超声AI辅助报告（草稿）"
     );
+    expect(repo.getStudyBundle(study.id)?.reports.map((item) => item.id)).toEqual([report.id]);
   });
 
   it("reads safety rules and persists audit logs", () => {
@@ -374,5 +385,6 @@ describe("MedicalCaseRepo", () => {
       createdAt: 1200,
     });
     expect(repo.listAuditLogsByStudy(study.id).map((item) => item.id)).toEqual([audit.id]);
+    expect(repo.getStudyBundle(study.id)?.auditLogs.map((item) => item.id)).toEqual([audit.id]);
   });
 });

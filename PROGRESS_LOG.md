@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, and deterministic safety-review audit persistence.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, and study-detail result visualization.
 
 ### Completed
 
@@ -134,6 +134,8 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `MedicalCaseRepo.listActiveSafetyRules()`, `createAuditLog()`, `getAuditLog()`, and `listAuditLogsByStudy()` for deterministic safety review and audit tracking.
 - `safety_review` agent tasks now read the latest report draft, active `safety_rules`, image quality metadata, and persisted nodules, then detect final-diagnosis wording, unsupported FNA/follow-up suggestions, low confidence/low quality, missing millimeter calibration, and PHI-pattern risks.
 - Safety review results are written to `audit_log` with the agent task id as `trace_id`, while the task output returns `safety_status`, issues, checked rule count, and `doctor_review_required`.
+- Extended `MedicalCaseRepo.getStudyBundle()` and the medical study-detail API bundle to include `nodules`, `tiradsFeatures`, `tiradsResults`, `reports`, and `auditLogs`.
+- Extended the React `MedicalPanel` study detail view with AI result rows, TI-RADS category/score/recommendation display, report draft preview, and safety audit issue display.
 
 ### Verification
 
@@ -231,6 +233,17 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after safety review audit persistence: 10 tests.
 - CLI smoke test passed after safety review audit persistence: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - `git diff --check` passed after safety review audit persistence.
+- Targeted study detail result-view tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts` with 50 tests.
+- Targeted MedicalPanel result-view test passed: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 6 tests.
+- Root `npm run typecheck` and frontend `cd web-react && npm run typecheck` passed after study detail result visualization.
+- Targeted lint passed for the modified storage, Web API, endpoint, and MedicalPanel files.
+- Full web-react tests passed after study detail result visualization: `cd web-react && npm test` with 11 files passed and 39 tests passed.
+- `npm run build:web` passed after study detail result visualization; Vite still reports the existing Monaco chunk-size warning.
+- `npm test` passed after study detail result visualization: 176 files passed, 1 skipped; 1685 tests passed, 3 skipped.
+- `python3 -m unittest discover services/image-worker/tests` passed after study detail result visualization: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after study detail result visualization: 10 tests.
+- CLI smoke test passed after study detail result visualization: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after study detail result visualization.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.

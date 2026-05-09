@@ -8,10 +8,14 @@ import {
   getMedicalSummary,
   startMedicalAnalysis,
   type MedicalAgentTask,
+  type MedicalAuditLog,
   type MedicalImage,
+  type MedicalNodule,
   type MedicalRecentStudy,
+  type MedicalReport,
   type MedicalStudyBundle,
   type MedicalSummary,
+  type MedicalTiradsResult,
 } from "@/api/endpoints";
 
 interface Props {
@@ -428,7 +432,7 @@ function StudyDetail({
     );
   }
 
-  const { patient, study, images, analysisSessions, agentTasks } = bundle;
+  const { patient, study, images, nodules, tiradsResults, reports, auditLogs, analysisSessions, agentTasks } = bundle;
   return (
     <div className="border border-border rounded p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -447,6 +451,9 @@ function StudyDetail({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-xs">
         <Metric label="source" value={study.sourceType} />
         <Metric label="images" value={String(images.length)} />
+        <Metric label="nodules" value={String(nodules.length)} />
+        <Metric label="reports" value={String(reports.length)} />
+        <Metric label="audits" value={String(auditLogs.length)} />
         <Metric label="analysis" value={String(analysisSessions.length)} />
         <Metric label="tasks" value={String(agentTasks.length)} />
       </div>
@@ -471,6 +478,49 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
+        <h4 className="text-xs uppercase text-muted mb-2">AI Results</h4>
+        {nodules.length === 0 && tiradsResults.length === 0 ? (
+          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {nodules.map((nodule) => (
+              <NoduleResultRow
+                key={nodule.id}
+                nodule={nodule}
+                result={tiradsResults.find((item) => item.noduleId === nodule.id) ?? null}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <h4 className="text-xs uppercase text-muted mb-2">Reports</h4>
+        {reports.length === 0 ? (
+          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        ) : (
+          <div className="space-y-2">
+            {reports.map((report) => (
+              <ReportRow key={report.id} report={report} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <h4 className="text-xs uppercase text-muted mb-2">Safety Audit</h4>
+        {auditLogs.length === 0 ? (
+          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        ) : (
+          <div className="space-y-2">
+            {auditLogs.map((audit) => (
+              <AuditRow key={audit.id} audit={audit} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4">
         <h4 className="text-xs uppercase text-muted mb-2">Agent Tasks</h4>
         {agentTasks.length === 0 ? (
           <div className="text-sm text-muted border border-border rounded p-2">none</div>
@@ -482,6 +532,69 @@ function StudyDetail({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function NoduleResultRow({ nodule, result }: { nodule: MedicalNodule; result: MedicalTiradsResult | null }) {
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold">Nodule {nodule.noduleIndex}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{nodule.status}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <Metric label="confidence" value={formatOptionalNumber(nodule.detectionConfidence)} />
+        <Metric label="source" value={nodule.source} />
+        <Metric label="TI-RADS" value={result?.category ?? "pending"} />
+        <Metric label="score" value={result?.score === null || result?.score === undefined ? "pending" : String(result.score)} />
+      </div>
+      {result?.recommendation && <div className="text-muted mt-2">{result.recommendation}</div>}
+    </div>
+  );
+}
+
+function ReportRow({ report }: { report: MedicalReport }) {
+  const text = report.finalText ?? report.draftText ?? "";
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-mono text-muted">{report.id}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{report.status}</span>
+      </div>
+      <div className="text-muted mt-1">
+        {report.reportType} · {report.templateId ?? "no template"} · {formatTime(report.updatedAt)}
+      </div>
+      {text && (
+        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg px-2 py-1.5 text-xs">
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function AuditRow({ audit }: { audit: MedicalAuditLog }) {
+  const safetyStatus = stringValue(audit.detail.safety_status) ?? audit.action;
+  const issues = Array.isArray(audit.detail.issues) ? audit.detail.issues : [];
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">{safetyStatus}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{audit.action}</span>
+      </div>
+      <div className="text-muted mt-1">
+        {audit.actorType}:{audit.actorId ?? "unknown"} · {formatTime(audit.createdAt)}
+      </div>
+      {issues.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {issues.map((issue, index) => (
+            <div key={index} className="rounded border border-warning/40 px-2 py-1 text-warning">
+              {issueLabel(issue)}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -578,6 +691,20 @@ function Metric({ label, value }: { label: string; value: string }) {
 function formatTime(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "unknown";
   return new Date(value).toLocaleString();
+}
+
+function formatOptionalNumber(value: number | null | undefined): string {
+  return value === null || value === undefined ? "unknown" : value.toFixed(2);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function issueLabel(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return String(value);
+  const record = value as Record<string, unknown>;
+  return [record.rule_code, record.severity, record.message].filter((item) => typeof item === "string").join(" · ");
 }
 
 const inputClass = "w-full min-w-0 rounded border border-border bg-bg px-2 py-1.5 text-sm text-fg";

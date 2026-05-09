@@ -366,6 +366,11 @@ export interface StudyBundle {
   patient: PatientRecord | null;
   study: StudyRecord;
   images: ImageRecord[];
+  nodules: NoduleRecord[];
+  tiradsFeatures: TiradsFeatureRecord[];
+  tiradsResults: TiradsResultRecord[];
+  reports: ReportRecord[];
+  auditLogs: AuditLogRecord[];
   analysisSessions: AnalysisSessionRecord[];
   agentTasks: AgentTaskRecord[];
 }
@@ -1222,7 +1227,18 @@ export class MedicalCaseRepo {
       )
       .all(studyId)
       .map(mapAgentTask);
-    return { patient, study, images, analysisSessions, agentTasks };
+    return {
+      patient,
+      study,
+      images,
+      nodules: this.listNodulesByStudy(studyId),
+      tiradsFeatures: this.listTiradsFeaturesByStudy(studyId),
+      tiradsResults: this.listTiradsResultsByStudy(studyId),
+      reports: this.listReportsByStudy(studyId),
+      auditLogs: this.listAuditLogsByStudy(studyId),
+      analysisSessions,
+      agentTasks,
+    };
   }
 
   private markSessionRunning(analysisSessionId: string, now: number): void {
