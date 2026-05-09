@@ -240,6 +240,54 @@ export interface NoduleRecord {
   updatedAt: number;
 }
 
+export interface TiradsFeatureInput {
+  id?: string;
+  noduleId: string;
+  systemName?: string;
+  features?: JsonObject;
+  confidence?: JsonObject;
+  sourceModel?: string;
+  requiresReview?: boolean;
+  now?: number;
+}
+
+export interface TiradsFeatureRecord {
+  id: string;
+  noduleId: string;
+  systemName: string;
+  features: JsonObject;
+  confidence: JsonObject;
+  sourceModel: string | null;
+  requiresReview: boolean;
+  createdAt: number;
+}
+
+export interface TiradsResultInput {
+  id?: string;
+  noduleId: string;
+  systemName?: string;
+  systemVersion?: string;
+  score?: number;
+  category?: string;
+  recommendation?: string;
+  evidenceRules?: unknown[];
+  warnings?: string[];
+  now?: number;
+}
+
+export interface TiradsResultRecord {
+  id: string;
+  noduleId: string;
+  systemName: string;
+  systemVersion: string;
+  score: number | null;
+  category: string | null;
+  recommendation: string | null;
+  evidenceRules: unknown[];
+  warnings: string[];
+  createdAt: number;
+}
+
 export interface StudyBundle {
   patient: PatientRecord | null;
   study: StudyRecord;
@@ -364,6 +412,30 @@ interface NoduleRow {
   status: string;
   created_at: number;
   updated_at: number;
+}
+
+interface TiradsFeatureRow {
+  id: string;
+  nodule_id: string;
+  system_name: string;
+  features: string;
+  confidence: string;
+  source_model: string | null;
+  requires_review: number;
+  created_at: number;
+}
+
+interface TiradsResultRow {
+  id: string;
+  nodule_id: string;
+  system_name: string;
+  system_version: string;
+  score: number | null;
+  category: string | null;
+  recommendation: string | null;
+  evidence_rules: string;
+  warnings: string;
+  created_at: number;
 }
 
 export class MedicalCaseRepo {
@@ -591,6 +663,53 @@ export class MedicalCaseRepo {
     return this.getNoduleByStudyIndex(input.studyId, input.noduleIndex)!;
   }
 
+  createTiradsFeature(input: TiradsFeatureInput): TiradsFeatureRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO tirads_feature(
+           id, nodule_id, system_name, features, confidence, source_model, requires_review, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.noduleId,
+        input.systemName ?? "ACR_TI_RADS",
+        stringifyJson(input.features ?? {}),
+        stringifyJson(input.confidence ?? {}),
+        input.sourceModel ?? null,
+        input.requiresReview ? 1 : 0,
+        now
+      );
+    return this.getTiradsFeature(id)!;
+  }
+
+  createTiradsResult(input: TiradsResultInput): TiradsResultRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO tirads_result(
+           id, nodule_id, system_name, system_version, score, category, recommendation,
+           evidence_rules, warnings, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.noduleId,
+        input.systemName ?? "ACR_TI_RADS",
+        input.systemVersion ?? "2017",
+        input.score ?? null,
+        input.category ?? null,
+        input.recommendation ?? null,
+        stringifyJsonValue(input.evidenceRules ?? []),
+        stringifyJsonValue(input.warnings ?? []),
+        now
+      );
+    return this.getTiradsResult(id)!;
+  }
+
   getPatient(id: string): PatientRecord | null {
     const row = this.db.prepare<[string], PatientRow>("SELECT * FROM patient WHERE id = ?").get(id);
     return row ? mapPatient(row) : null;
@@ -664,6 +783,46 @@ export class MedicalCaseRepo {
       )
       .all(studyId)
       .map(mapNodule);
+  }
+
+  getTiradsFeature(id: string): TiradsFeatureRecord | null {
+    const row = this.db
+      .prepare<[string], TiradsFeatureRow>("SELECT * FROM tirads_feature WHERE id = ?")
+      .get(id);
+    return row ? mapTiradsFeature(row) : null;
+  }
+
+  listTiradsFeaturesByStudy(studyId: string, systemName = "ACR_TI_RADS"): TiradsFeatureRecord[] {
+    return this.db
+      .prepare<[string, string], TiradsFeatureRow>(
+        `SELECT tf.*
+         FROM tirads_feature tf
+         JOIN nodule n ON n.id = tf.nodule_id
+         WHERE n.study_id = ? AND tf.system_name = ?
+         ORDER BY n.nodule_index ASC, tf.created_at DESC, tf.id DESC`
+      )
+      .all(studyId, systemName)
+      .map(mapTiradsFeature);
+  }
+
+  getTiradsResult(id: string): TiradsResultRecord | null {
+    const row = this.db
+      .prepare<[string], TiradsResultRow>("SELECT * FROM tirads_result WHERE id = ?")
+      .get(id);
+    return row ? mapTiradsResult(row) : null;
+  }
+
+  listTiradsResultsByStudy(studyId: string, systemName = "ACR_TI_RADS"): TiradsResultRecord[] {
+    return this.db
+      .prepare<[string, string], TiradsResultRow>(
+        `SELECT tr.*
+         FROM tirads_result tr
+         JOIN nodule n ON n.id = tr.nodule_id
+         WHERE n.study_id = ? AND tr.system_name = ?
+         ORDER BY n.nodule_index ASC, tr.created_at ASC, tr.id ASC`
+      )
+      .all(studyId, systemName)
+      .map(mapTiradsResult);
   }
 
   findModelJobByAgentTask(agentTaskId: string, jobType?: string): ModelJobRecord | null {
@@ -1041,6 +1200,34 @@ function mapNodule(row: NoduleRow): NoduleRecord {
   };
 }
 
+function mapTiradsFeature(row: TiradsFeatureRow): TiradsFeatureRecord {
+  return {
+    id: row.id,
+    noduleId: row.nodule_id,
+    systemName: row.system_name,
+    features: parseJson(row.features, {}),
+    confidence: parseJson(row.confidence, {}),
+    sourceModel: row.source_model,
+    requiresReview: row.requires_review === 1,
+    createdAt: row.created_at,
+  };
+}
+
+function mapTiradsResult(row: TiradsResultRow): TiradsResultRecord {
+  return {
+    id: row.id,
+    noduleId: row.nodule_id,
+    systemName: row.system_name,
+    systemVersion: row.system_version,
+    score: row.score,
+    category: row.category,
+    recommendation: row.recommendation,
+    evidenceRules: parseJsonArray(row.evidence_rules),
+    warnings: parseStringArray(row.warnings),
+    createdAt: row.created_at,
+  };
+}
+
 function stringifyJson(value: JsonObject): string {
   return JSON.stringify(value);
 }
@@ -1066,6 +1253,15 @@ function parseJsonValue(value: string | null | undefined): unknown {
   } catch {
     return null;
   }
+}
+
+function parseJsonArray(value: string | null | undefined): unknown[] {
+  const parsed = parseJsonValue(value);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function parseStringArray(value: string | null | undefined): string[] {
+  return parseJsonArray(value).filter((item): item is string => typeof item === "string");
 }
 
 function isJsonObject(value: unknown): value is JsonObject {

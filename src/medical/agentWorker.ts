@@ -2,7 +2,9 @@ import {
   MedicalCaseRepo,
   type AgentTaskRecord,
   type ModelJobRecord,
+  type TiradsFeatureRecord,
 } from "./storage";
+import { calculateAcrTirads, type TiradsInput } from "../../packages/medical-mcp/src/tirads";
 
 type JsonObject = Record<string, unknown>;
 
@@ -197,8 +199,9 @@ function processClaimedTask(
     };
   }
 
-  const output = buildSynchronousTaskOutput(repo, task, workerId);
-  repo.completeAgentTask(task.id, output, now());
+  const completedAt = now();
+  const output = buildSynchronousTaskOutput(repo, task, workerId, completedAt);
+  repo.completeAgentTask(task.id, output, completedAt);
   return {
     status: "succeeded",
     claimed: true,
@@ -221,7 +224,7 @@ async function processClaimedTaskAsync(
   const output =
     task.taskType === "image_qc"
       ? await buildImageQcTaskOutput(repo, task, workerId, options, now())
-      : buildSynchronousTaskOutput(repo, task, workerId);
+      : buildSynchronousTaskOutput(repo, task, workerId, now());
   repo.completeAgentTask(task.id, output, now());
   return {
     status: "succeeded",
@@ -401,7 +404,8 @@ async function callImageWorker(
 function buildSynchronousTaskOutput(
   repo: MedicalCaseRepo,
   task: AgentTaskRecord,
-  workerId: string
+  workerId: string,
+  now: number
 ): JsonObject {
   const studyId = optionalString(task.input.study_id);
   const imageId = optionalString(task.input.image_id);
@@ -436,14 +440,7 @@ function buildSynchronousTaskOutput(
         warnings: ["tirads_feature_model_not_configured"],
       };
     case "calculate_tirads":
-      return {
-        ...base,
-        result: {
-          tirads_results: [],
-          rule_status: "no_structured_features",
-        },
-        warnings: ["no_detected_nodules_or_features"],
-      };
+      return buildCalculateTiradsTaskOutput(repo, task, base, now);
     case "draft_report":
       return {
         ...base,
@@ -539,6 +536,107 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))];
 }
 
+function buildCalculateTiradsTaskOutput(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  base: JsonObject,
+  now: number
+): JsonObject {
+  const studyId = requiredString(task.input.study_id, "study_id");
+  const nodules = repo.listNodulesByStudy(studyId);
+  const noduleById = new Map(nodules.map((nodule) => [nodule.id, nodule]));
+  const features = latestFeaturePerNodule(repo.listTiradsFeaturesByStudy(studyId));
+  if (features.length === 0) {
+    return {
+      ...base,
+      result: {
+        tirads_results: [],
+        rule_status: "no_structured_features",
+        nodule_count: nodules.length,
+      },
+      warnings: ["no_structured_tirads_features"],
+    };
+  }
+
+  const tiradsResults = features.map((feature) => {
+    const nodule = noduleById.get(feature.noduleId);
+    const input = tiradsInputFromFeature(feature);
+    const calculated = calculateAcrTirads(input);
+    const result = repo.createTiradsResult({
+      noduleId: feature.noduleId,
+      systemName: calculated.result.system_name,
+      systemVersion: calculated.result.system_version,
+      score: calculated.result.score,
+      category: calculated.result.category,
+      recommendation: calculated.result.recommendation,
+      evidenceRules: calculated.result.evidence_rules,
+      warnings: calculated.warnings,
+      now,
+    });
+    return {
+      tirads_result_id: result.id,
+      nodule_id: feature.noduleId,
+      nodule_index: nodule?.noduleIndex ?? null,
+      feature_id: feature.id,
+      score: calculated.result.score,
+      category: calculated.result.category,
+      recommendation: calculated.result.recommendation,
+      recommendation_code: calculated.result.recommendation_code,
+      evidence_rules: calculated.result.evidence_rules,
+      warnings: calculated.warnings,
+    };
+  });
+
+  return {
+    ...base,
+    validation_mode: false,
+    result: {
+      tirads_results: tiradsResults,
+      rule_status: "calculated",
+      system_name: "ACR_TI_RADS",
+      system_version: "2017",
+    },
+    warnings: uniqueStrings(tiradsResults.flatMap((result) => result.warnings)),
+  };
+}
+
+function latestFeaturePerNodule(features: TiradsFeatureRecord[]): TiradsFeatureRecord[] {
+  const seen = new Set<string>();
+  const latest: TiradsFeatureRecord[] = [];
+  for (const feature of features) {
+    if (seen.has(feature.noduleId)) continue;
+    seen.add(feature.noduleId);
+    latest.push(feature);
+  }
+  return latest;
+}
+
+function tiradsInputFromFeature(feature: TiradsFeatureRecord): TiradsInput {
+  return {
+    system_name: feature.systemName,
+    system_version: optionalString(feature.features.system_version) ?? "2017",
+    features: {
+      composition: optionalString(feature.features.composition),
+      echogenicity: optionalString(feature.features.echogenicity),
+      shape: optionalString(feature.features.shape),
+      margin: optionalString(feature.features.margin),
+      echogenic_foci: optionalStringOrArray(feature.features.echogenic_foci),
+    },
+    size_mm: sizeMmFromValue(feature.features.size_mm),
+  };
+}
+
+function sizeMmFromValue(value: unknown): TiradsInput["size_mm"] | undefined {
+  const record = asJsonObject(value);
+  if (!record) return undefined;
+  const size = {
+    long_axis: optionalNumber(record.long_axis),
+    short_axis: optionalNumber(record.short_axis),
+    ap_axis: optionalNumber(record.ap_axis),
+  };
+  return size.long_axis || size.short_axis || size.ap_axis ? size : undefined;
+}
+
 function persistDetectorNodules(repo: MedicalCaseRepo, modelJob: ModelJobRecord, now: number): JsonObject[] {
   if (!modelJob.studyId) return [];
   const detections = asRecordArray(modelJob.output?.nodules ?? modelJob.output?.detections);
@@ -573,4 +671,16 @@ function optionalNumberArray(value: unknown): number[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const numbers = value.map(optionalNumber);
   return numbers.every((item): item is number => item !== undefined) ? numbers : undefined;
+}
+
+function optionalStringOrArray(value: unknown): string | string[] | undefined {
+  if (Array.isArray(value)) {
+    const values = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+    return values.length > 0 ? values : undefined;
+  }
+  return optionalString(value);
+}
+
+function asJsonObject(value: unknown): JsonObject | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonObject) : undefined;
 }

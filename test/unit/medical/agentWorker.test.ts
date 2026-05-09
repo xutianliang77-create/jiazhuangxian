@@ -210,6 +210,69 @@ describe("medical agent worker", () => {
     const second = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 5100 });
     expect(second).toMatchObject({ status: "waiting_model", claimed: true, taskType: "detect_nodules" });
   });
+
+  it("calculates ACR TI-RADS from persisted structured features", () => {
+    const { tasks } = seedAgentTaskChain(["calculate_tirads"]);
+    const studyId = String(tasks[0].input.study_id);
+    const imageId = String(tasks[0].input.image_id);
+    const nodule = repo.upsertNodule({
+      studyId,
+      imageId,
+      noduleIndex: 1,
+      bbox: [10, 20, 30, 40],
+      detectionConfidence: 0.91,
+      now: 6000,
+    });
+    const feature = repo.createTiradsFeature({
+      noduleId: nodule.id,
+      features: {
+        composition: "solid",
+        echogenicity: "hypoechoic",
+        shape: "taller_than_wide",
+        margin: "irregular",
+        echogenic_foci: ["punctate_echogenic_foci"],
+        size_mm: { long_axis: 12, short_axis: 8, ap_axis: 10 },
+      },
+      confidence: { composition: 0.93 },
+      sourceModel: "tc-vit-validation",
+      now: 6100,
+    });
+
+    const result = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 6200 });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "calculate_tirads",
+      output: {
+        validation_mode: false,
+        result: {
+          rule_status: "calculated",
+          system_name: "ACR_TI_RADS",
+          system_version: "2017",
+          tirads_results: [
+            {
+              nodule_id: nodule.id,
+              nodule_index: 1,
+              feature_id: feature.id,
+              score: 12,
+              category: "TR5",
+              recommendation_code: "fna",
+            },
+          ],
+        },
+      },
+    });
+    expect(repo.listTiradsResultsByStudy(studyId)).toMatchObject([
+      {
+        noduleId: nodule.id,
+        systemName: "ACR_TI_RADS",
+        systemVersion: "2017",
+        score: 12,
+        category: "TR5",
+      },
+    ]);
+  });
 });
 
 function seedAgentTaskChain(taskTypes: string[]): { sessionId: string; tasks: AgentTaskRecord[] } {

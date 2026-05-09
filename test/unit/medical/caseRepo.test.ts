@@ -233,4 +233,61 @@ describe("MedicalCaseRepo", () => {
       },
     ]);
   });
+
+  it("persists TI-RADS features and calculated results", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-TIRADS", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-TIRADS", now: 1100 });
+    const image = repo.addImage({
+      studyId: study.id,
+      fileUri: "artifact://raw/ACC-TIRADS/IMG.png",
+      fileType: "png",
+      now: 1200,
+    });
+    const nodule = repo.upsertNodule({
+      studyId: study.id,
+      imageId: image.id,
+      noduleIndex: 1,
+      now: 1300,
+    });
+
+    const feature = repo.createTiradsFeature({
+      noduleId: nodule.id,
+      features: { composition: "solid", size_mm: { long_axis: 12 } },
+      confidence: { composition: 0.92 },
+      sourceModel: "tc-vit-validation",
+      requiresReview: true,
+      now: 1400,
+    });
+    const result = repo.createTiradsResult({
+      noduleId: nodule.id,
+      score: 4,
+      category: "TR4",
+      recommendation: "TR4 nodule >=10 mm: ultrasound follow-up.",
+      evidenceRules: [{ rule_code: "ACR_2017_composition_solid" }],
+      warnings: ["missing_margin"],
+      now: 1500,
+    });
+
+    expect(repo.listTiradsFeaturesByStudy(study.id)).toMatchObject([
+      {
+        id: feature.id,
+        noduleId: nodule.id,
+        features: { composition: "solid", size_mm: { long_axis: 12 } },
+        confidence: { composition: 0.92 },
+        sourceModel: "tc-vit-validation",
+        requiresReview: true,
+      },
+    ]);
+    expect(repo.listTiradsResultsByStudy(study.id)).toMatchObject([
+      {
+        id: result.id,
+        noduleId: nodule.id,
+        score: 4,
+        category: "TR4",
+        evidenceRules: [{ rule_code: "ACR_2017_composition_solid" }],
+        warnings: ["missing_margin"],
+      },
+    ]);
+  });
 });

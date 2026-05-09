@@ -15,4 +15,8 @@ export type {
   StudyBundle,
   StudyInput,
   StudyRecord,
+  TiradsFeatureInput,
+  TiradsFeatureRecord,
+  TiradsResultInput,
+  TiradsResultRecord,
 } from "./caseRepo";
