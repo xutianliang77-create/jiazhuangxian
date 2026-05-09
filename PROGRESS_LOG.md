@@ -428,6 +428,9 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Fixed TN3K YOLO training dataset materialization so duplicated TN3K source filenames from `trainval` and `test` are written as unique `<source_split>_<image_id>` training files instead of overwriting each other.
 - `python3 -m unittest discover test/unit/scripts` passed after the TN3K training filename-collision fix: 5 tests.
 - Local corrected prepare-only materialization verified 2,794 train images/labels and 699 validation images/labels on disk, matching the split summary exactly.
+- Added YOLO training augmentation knobs for medical-image tuning: `mosaic`, `scale`, `translate`, `hsv_h/s/v`, `erasing`, and `auto_augment`.
+- Remote YOLO11m baseline run `tn3k-yolo11m-80-20-e120-i768-b16-fixed` was stopped at epoch 71 because it plateaued below target; best validation `metrics/mAP50(B)` was 0.89110 at epoch 53, so the 0.93 acceptance target was not met.
+- Remote tuned run `tn3k-yolo11m-80-20-e100-i896-b12-medaug` started with `imgsz=896`, `batch=12`, `mosaic=0`, weaker color/scale augmentation, and the same 0.93 mAP50 target.
 
 ### Background Tasks
 
@@ -440,7 +443,7 @@ None.
 ### Next Session Priorities
 
 1. Manually download TN5000 through the browser/Figshare page into `data/artifacts/datasets/tn5000/raw`, then convert its native detection annotations into the YOLO/COCO formats needed for YOLOv11 and RT-DETR/RF-DETR.
-2. Rerun YOLOv11m training on the 5090 host with the corrected TN3K 80/20 split and continue tuning until `metrics/mAP50(B) >= 0.93` or the failure mode is documented.
+2. Monitor the tuned YOLO11m medical-augmentation run on the 5090 host and continue tuning until `metrics/mAP50(B) >= 0.93` or the failure mode is documented.
 3. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Add batch case queue workflows for multi-case review, filtering, and bulk state transitions.

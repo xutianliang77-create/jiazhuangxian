@@ -39,6 +39,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--target-threshold", type=float, default=TARGET_THRESHOLD)
     parser.add_argument("--close-mosaic", type=int, default=15)
     parser.add_argument("--multi-scale", action="store_true")
+    parser.add_argument("--mosaic", type=float, default=1.0)
+    parser.add_argument("--scale", type=float, default=0.5)
+    parser.add_argument("--translate", type=float, default=0.1)
+    parser.add_argument("--hsv-h", type=float, default=0.015)
+    parser.add_argument("--hsv-s", type=float, default=0.7)
+    parser.add_argument("--hsv-v", type=float, default=0.4)
+    parser.add_argument("--erasing", type=float, default=0.4)
+    parser.add_argument("--auto-augment", default="randaugment")
     parser.add_argument("--copy-images", action="store_true", help="Copy images instead of symlinking them.")
     parser.add_argument("--prepare-only", action="store_true")
     return parser.parse_args(argv)
@@ -251,6 +259,14 @@ def train_yolo(
     cache: str,
     close_mosaic: int,
     multi_scale: bool,
+    mosaic: float,
+    scale: float,
+    translate: float,
+    hsv_h: float,
+    hsv_s: float,
+    hsv_v: float,
+    erasing: float,
+    auto_augment: str,
 ) -> dict[str, Any]:
     if not data_yaml.exists():
         raise FileNotFoundError(f"YOLO data.yaml not found: {data_yaml}")
@@ -278,6 +294,14 @@ def train_yolo(
         cos_lr=True,
         close_mosaic=close_mosaic,
         multi_scale=multi_scale,
+        mosaic=mosaic,
+        scale=scale,
+        translate=translate,
+        hsv_h=hsv_h,
+        hsv_s=hsv_s,
+        hsv_v=hsv_v,
+        erasing=erasing,
+        auto_augment=None if auto_augment == "none" else auto_augment,
         amp=True,
         project=str(project),
         name=name,
@@ -375,6 +399,14 @@ def main(argv: list[str] | None = None) -> int:
             "cache": args.cache,
             "close_mosaic": args.close_mosaic,
             "multi_scale": args.multi_scale,
+            "mosaic": args.mosaic,
+            "scale": args.scale,
+            "translate": args.translate,
+            "hsv_h": args.hsv_h,
+            "hsv_s": args.hsv_s,
+            "hsv_v": args.hsv_v,
+            "erasing": args.erasing,
+            "auto_augment": args.auto_augment,
             "target_metric": args.target_metric,
             "target_threshold": args.target_threshold,
         },
@@ -400,6 +432,14 @@ def main(argv: list[str] | None = None) -> int:
         cache=args.cache,
         close_mosaic=args.close_mosaic,
         multi_scale=args.multi_scale,
+        mosaic=args.mosaic,
+        scale=args.scale,
+        translate=args.translate,
+        hsv_h=args.hsv_h,
+        hsv_s=args.hsv_s,
+        hsv_v=args.hsv_v,
+        erasing=args.erasing,
+        auto_augment=args.auto_augment,
     )
     summary["target"] = target_result(
         summary["training"]["metrics"],
