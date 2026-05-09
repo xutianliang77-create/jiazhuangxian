@@ -431,6 +431,16 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added YOLO training augmentation knobs for medical-image tuning: `mosaic`, `scale`, `translate`, `hsv_h/s/v`, `erasing`, and `auto_augment`.
 - Remote YOLO11m baseline run `tn3k-yolo11m-80-20-e120-i768-b16-fixed` was stopped at epoch 71 because it plateaued below target; best validation `metrics/mAP50(B)` was 0.89110 at epoch 53, so the 0.93 acceptance target was not met.
 - Remote tuned run `tn3k-yolo11m-80-20-e100-i896-b12-medaug` started with `imgsz=896`, `batch=12`, `mosaic=0`, weaker color/scale augmentation, and the same 0.93 mAP50 target.
+- Remote tuned run `tn3k-yolo11m-80-20-e100-i896-b12-medaug` was stopped at epoch 33 after plateauing far below target; best validation `metrics/mAP50(B)` was 0.81093 at epoch 32.
+- Remote YOLO11l high-resolution run `tn3k-yolo11l-80-20-e150-i1024-b8-mildaug` was stopped after early plateau; best validation `metrics/mAP50(B)` was 0.80896 at epoch 30, so increasing model size/resolution did not solve the gap.
+- Added `scripts/hf_thyroid_dataset_inventory.py` and `npm run datasets:hf-thyroid:inventory` to inventory Hugging Face thyroid datasets, respect gated datasets, download public candidates, and write `inventory.json`/`evaluation.md` under `data/artifacts/datasets/hf-thyroid/`.
+- Remote 5090 downloaded and evaluated public Hugging Face datasets: TN5000 cropped classification (`Johnyquest7/TN5000-thyroid-nodule-classification`, 5,000 images), BTX24 thyroid cancer ultrasound classification (3,115 parquet images), and ROCOv2 thyroid (131 image-text rows). `FangDai/Thyroid_Ultrasound_Images` and `hunglc007/ThyroidXL` remain blocked by Hugging Face gated access.
+- Added `scripts/build_thyroid_detection_manifest.py` and `npm run datasets:thyroid:combined-manifest` to build explicit strict or auxiliary manifests with fixed training/validation splits.
+- Added fixed-split support to `scripts/train_tn3k_yolo.py` via `--fixed-split-field`, with unit coverage, so validation can remain true detector data while optional auxiliary data is restricted to train.
+- Built a mixed TN3K+TN5000-cropped auxiliary manifest on the 5090 host with 8,493 total samples, 7,794 train samples, and 699 validation samples. Validation contained only TN3K true mask-derived bboxes.
+- Remote mixed TN3K+TN5000-cropped YOLO11m run `thyroid-combined-yolo11m-tn3kval-e120-i896-b16-cropaux` was stopped at epoch 3 because validation mAP50 collapsed from 0.49218 to 0.14708, proving 224x224 cropped classification samples should not be mixed directly into detector training as full-image pseudo bboxes.
+- Added `scripts/build_btx24_pseudo_detection_manifest.py` and `npm run datasets:btx24:pseudo-detection` for semi-supervised pseudo-label experiments, but stopped the full BTX24 pseudo-label route after confirming the data-standard concern: pseudo-labeled classification data must not enter the detector training set until it passes the same acquisition/crop/annotation standard.
+- Current detector-training data standard is now strict: only original or near-original thyroid ultrasound frames with true segmentation masks or true bbox annotations are accepted for YOLO detector training/validation. Cropped classification datasets remain classification or external-validation resources, not detector-training data.
 
 ### Background Tasks
 
@@ -442,8 +452,8 @@ None.
 
 ### Next Session Priorities
 
-1. Manually download TN5000 through the browser/Figshare page into `data/artifacts/datasets/tn5000/raw`, then convert its native detection annotations into the YOLO/COCO formats needed for YOLOv11 and RT-DETR/RF-DETR.
-2. Monitor the tuned YOLO11m medical-augmentation run on the 5090 host and continue tuning until `metrics/mAP50(B) >= 0.93` or the failure mode is documented.
+1. Acquire a same-standard detector dataset with true labels: manual Figshare TN5000 detection archive or approved gated ThyroidXL access, then convert native annotations into YOLO/COCO without cropped-classification pseudo boxes.
+2. Re-run YOLOv11 training only on strict detector data with consistent source standard: original/near-original thyroid ultrasound frames, true mask/bbox annotations, and true-label validation.
 3. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Add batch case queue workflows for multi-case review, filtering, and bulk state transitions.

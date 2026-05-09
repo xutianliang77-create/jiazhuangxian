@@ -31,6 +31,7 @@ class TrainTn3kYoloTest(unittest.TestCase):
                 output_root=root / "out",
                 name="unit",
                 train_ratio=0.8,
+                fixed_split_field="",
                 seed=123,
                 copy_images=True,
             )
@@ -62,6 +63,7 @@ class TrainTn3kYoloTest(unittest.TestCase):
                 output_root=root / "out",
                 name="unit-duplicates",
                 train_ratio=0.5,
+                fixed_split_field="",
                 seed=123,
                 copy_images=True,
             )
@@ -76,6 +78,29 @@ class TrainTn3kYoloTest(unittest.TestCase):
                 for path in (dataset_root / "labels" / label_split).glob("*.txt")
             }
             self.assertEqual(label_paths, {"test_0000.txt", "trainval_0000.txt"})
+
+    def test_prepare_dataset_can_use_fixed_split_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = create_manifest(root, benign=3, malignant=1)
+            rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines()]
+            for index, row in enumerate(rows):
+                row["fixed_training_split"] = "val" if index == 0 else "train"
+            manifest.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            summary = train_tn3k_yolo.prepare_dataset(
+                manifest=manifest,
+                output_root=root / "out",
+                name="unit-fixed",
+                train_ratio=0.8,
+                fixed_split_field="fixed_training_split",
+                seed=123,
+                copy_images=True,
+            )
+
+            self.assertEqual(summary["splits"]["train"]["samples"], 3)
+            self.assertEqual(summary["splits"]["val"]["samples"], 1)
+            self.assertEqual(summary["fixed_split_field"], "fixed_training_split")
 
 
 def create_manifest(root: Path, *, benign: int, malignant: int) -> Path:

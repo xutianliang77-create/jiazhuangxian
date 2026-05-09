@@ -27,6 +27,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--name", default=f"tn3k-yolo11-80-20-{time.strftime('%Y%m%d%H%M%S')}")
     parser.add_argument("--train-ratio", type=float, default=TRAIN_RATIO)
+    parser.add_argument("--fixed-split-field", default="")
     parser.add_argument("--seed", type=int, default=20260509)
     parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--patience", type=int, default=30)
@@ -84,6 +85,20 @@ def stratified_split(rows: list[dict[str, Any]], *, train_ratio: float, seed: in
     return {"train": train, "val": val}
 
 
+def fixed_split(rows: list[dict[str, Any]], *, field: str) -> dict[str, list[dict[str, Any]]]:
+    splits = {"train": [], "val": []}
+    for row in rows:
+        value = str(row.get(field, "")).strip().lower()
+        if value not in splits:
+            raise ValueError(f"manifest row has invalid fixed split {field}={value!r}")
+        splits[value].append(row)
+    if not splits["train"] or not splits["val"]:
+        raise ValueError(f"fixed split field must provide non-empty train and val rows: {field}")
+    for split_rows in splits.values():
+        split_rows.sort(key=sample_key)
+    return splits
+
+
 def sample_key(row: dict[str, Any]) -> tuple[str, str, str]:
     return (str(row.get("split", "")), str(row.get("classification_label", "")), str(row.get("image_file", "")))
 
@@ -94,11 +109,14 @@ def prepare_dataset(
     output_root: Path,
     name: str,
     train_ratio: float,
+    fixed_split_field: str,
     seed: int,
     copy_images: bool,
 ) -> dict[str, Any]:
     rows = load_manifest(manifest)
-    splits = stratified_split(rows, train_ratio=train_ratio, seed=seed)
+    splits = fixed_split(rows, field=fixed_split_field) if fixed_split_field else stratified_split(
+        rows, train_ratio=train_ratio, seed=seed
+    )
     dataset_root = output_root / "datasets" / name
     replace_dir(dataset_root)
 
@@ -127,6 +145,7 @@ def prepare_dataset(
         "data_yaml": str(data_yaml),
         "source_manifest": str(manifest),
         "train_ratio": train_ratio,
+        "fixed_split_field": fixed_split_field or None,
         "seed": seed,
         "image_mode": "copy" if copy_images else "symlink",
         "total_samples": len(rows),
@@ -378,6 +397,7 @@ def main(argv: list[str] | None = None) -> int:
         output_root=args.output_root,
         name=args.name,
         train_ratio=args.train_ratio,
+        fixed_split_field=args.fixed_split_field,
         seed=args.seed,
         copy_images=args.copy_images,
     )
@@ -389,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         "output_root": str(args.output_root),
         "params": {
             "train_ratio": args.train_ratio,
+            "fixed_split_field": args.fixed_split_field or None,
             "seed": args.seed,
             "epochs": args.epochs,
             "patience": args.patience,
