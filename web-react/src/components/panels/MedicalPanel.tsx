@@ -10,11 +10,13 @@ import {
   medicalArtifactUrl,
   reviewMedicalReport,
   reviseMedicalNodule,
+  searchMedicalKnowledge,
   startMedicalAnalysis,
   type MedicalAgentTask,
   type MedicalAuditLog,
   type MedicalDoctorReview,
   type MedicalImage,
+  type MedicalKnowledgeSearchResult,
   type MedicalModelGatewayCheck,
   type MedicalModelJob,
   type MedicalNodule,
@@ -79,6 +81,10 @@ export default function MedicalPanel({ onError }: Props) {
   const [analysisBusyImageId, setAnalysisBusyImageId] = useState<string | null>(null);
   const [reviewBusyReportId, setReviewBusyReportId] = useState<string | null>(null);
   const [noduleBusyId, setNoduleBusyId] = useState<string | null>(null);
+  const [knowledgeQuery, setKnowledgeQuery] = useState("TI-RADS TR4");
+  const [knowledgeResult, setKnowledgeResult] = useState<MedicalKnowledgeSearchResult | null>(null);
+  const [knowledgeBusy, setKnowledgeBusy] = useState(false);
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
 
   async function refresh() {
     setBusy(true);
@@ -185,6 +191,27 @@ export default function MedicalPanel({ onError }: Props) {
       throw err;
     } finally {
       setNoduleBusyId(null);
+    }
+  }
+
+  async function searchKnowledgeEvidence(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = knowledgeQuery.trim();
+    if (!query) {
+      setKnowledgeError("请输入检索词。");
+      return;
+    }
+    setKnowledgeBusy(true);
+    setKnowledgeError(null);
+    try {
+      const result = await searchMedicalKnowledge(query, 5);
+      setKnowledgeResult(result);
+    } catch (err) {
+      const message = `Medical 证据检索失败：${(err as Error).message}`;
+      setKnowledgeError(message);
+      onError(message);
+    } finally {
+      setKnowledgeBusy(false);
     }
   }
 
@@ -299,6 +326,15 @@ export default function MedicalPanel({ onError }: Props) {
           message={formMessage}
           onChange={setManualCase}
           onSubmit={registerManualCase}
+        />
+
+        <KnowledgeEvidencePanel
+          query={knowledgeQuery}
+          busy={knowledgeBusy}
+          error={knowledgeError}
+          result={knowledgeResult}
+          onQueryChange={setKnowledgeQuery}
+          onSubmit={searchKnowledgeEvidence}
         />
 
         <StudyDetail
@@ -456,6 +492,79 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span>{label}</span>
       <div className="mt-1">{children}</div>
     </label>
+  );
+}
+
+function KnowledgeEvidencePanel({
+  query,
+  busy,
+  error,
+  result,
+  onQueryChange,
+  onSubmit,
+}: {
+  query: string;
+  busy: boolean;
+  error: string | null;
+  result: MedicalKnowledgeSearchResult | null;
+  onQueryChange(value: string): void;
+  onSubmit(event: FormEvent<HTMLFormElement>): void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="border border-border rounded p-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end">
+        <Field label="知识证据">
+          <input
+            className={inputClass}
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="TI-RADS TR4"
+          />
+        </Field>
+        <button type="submit" disabled={busy} className="btn-secondary md:mb-0.5">
+          {busy ? "检索中..." : "检索"}
+        </button>
+      </div>
+      {error && <div className="mt-3 text-sm text-danger">{error}</div>}
+      {result && (
+        <div className="mt-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+            <span>{result.mode}</span>
+            <span>{result.count} evidence</span>
+            {result.warnings.map((warning) => (
+              <span key={warning} className="text-warning">{warning}</span>
+            ))}
+          </div>
+          {result.evidence.length === 0 ? (
+            <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          ) : (
+            result.evidence.map((item) => (
+              <KnowledgeEvidenceRow key={item.chunkId} item={item} />
+            ))
+          )}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function KnowledgeEvidenceRow({ item }: { item: MedicalKnowledgeSearchResult["evidence"][number] }) {
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">{item.document.title}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{item.score.toFixed(2)}</span>
+      </div>
+      <div className="mt-1 text-muted">
+        {item.document.sourceName} · {item.document.version} · {item.metadata.sectionTitle ?? item.metadata.chunkType}
+      </div>
+      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg px-2 py-1.5">
+        {item.text}
+      </pre>
+      <div className="mt-2 font-mono text-[11px] text-muted">
+        {item.metadata.relPath}:{item.metadata.lineStart}-{item.metadata.lineEnd}
+      </div>
+    </div>
   );
 }
 

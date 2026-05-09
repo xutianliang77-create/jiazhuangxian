@@ -11,6 +11,7 @@ import {
   type ReportReviewAction,
   type StudyInput,
 } from "../../medical/storage/caseRepo";
+import { searchMedicalKnowledge } from "../../medical/knowledge/search";
 import { authenticate, jsonResponse, readJsonBody, type HandlerDeps } from "./handlers";
 
 type JsonObject = Record<string, unknown>;
@@ -164,6 +165,42 @@ export async function handleMedicalModelGatewayCheck(
     });
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export async function handleMedicalKnowledgeSearch(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps
+): Promise<void> {
+  if (!authenticate(req, res, deps)) return;
+  if (!deps.dataDb) {
+    jsonResponse(res, 200, {
+      enabled: false,
+      mode: "bm25",
+      query: "",
+      count: 0,
+      evidence: [],
+      warnings: ["data_db_not_configured"],
+    });
+    return;
+  }
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const query = requiredString(body, "query");
+    const result = searchMedicalKnowledge({
+      query,
+      topK: numberField(body, "topK", "top_k"),
+      filters: medicalKnowledgeFilters(body),
+    }, {
+      dataDb: deps.dataDb,
+      dataDbPath: deps.dataDbPath,
+      workspace: deps.workspace,
+    });
+    jsonResponse(res, 200, result);
+  } catch (err) {
+    medicalWriteError(res, err);
   }
 }
 
@@ -726,6 +763,29 @@ function objectField(body: JsonObject, camelKey: string, snakeKey?: string): Jso
     throw new MedicalRequestError(400, "invalid-request", `${camelKey} must be an object`);
   }
   return value as JsonObject;
+}
+
+function medicalKnowledgeFilters(body: JsonObject): {
+  documentId?: string;
+  sourceType?: string;
+  chunkType?: string;
+  topic?: string;
+  evidenceLevel?: string;
+  tiradsSystem?: string;
+  bodyPart?: string;
+} | undefined {
+  const raw = objectField(body, "filters");
+  if (!raw) return undefined;
+  const filters = {
+    documentId: stringField(raw, "documentId", "document_id"),
+    sourceType: stringField(raw, "sourceType", "source_type"),
+    chunkType: stringField(raw, "chunkType", "chunk_type"),
+    topic: stringField(raw, "topic"),
+    evidenceLevel: stringField(raw, "evidenceLevel", "evidence_level"),
+    tiradsSystem: stringField(raw, "tiradsSystem", "tirads_system"),
+    bodyPart: stringField(raw, "bodyPart", "body_part"),
+  };
+  return Object.values(filters).some(Boolean) ? filters : undefined;
 }
 
 function requiredBbox(body: JsonObject): number[] {

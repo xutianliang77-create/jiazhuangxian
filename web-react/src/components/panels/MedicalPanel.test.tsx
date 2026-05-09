@@ -13,6 +13,7 @@ vi.mock("@/api/endpoints", () => ({
   createMedicalImage: vi.fn(),
   reviewMedicalReport: vi.fn(),
   reviseMedicalNodule: vi.fn(),
+  searchMedicalKnowledge: vi.fn(),
   startMedicalAnalysis: vi.fn(),
 }));
 
@@ -26,6 +27,7 @@ import {
   getMedicalSummary,
   reviewMedicalReport,
   reviseMedicalNodule,
+  searchMedicalKnowledge,
   startMedicalAnalysis,
 } from "@/api/endpoints";
 
@@ -231,6 +233,48 @@ describe("MedicalPanel", () => {
       warnings: ["cuda_unavailable"],
     });
     vi.mocked(getMedicalStudy).mockResolvedValue({ bundle: studyBundle });
+    vi.mocked(searchMedicalKnowledge).mockResolvedValue({
+      enabled: true,
+      mode: "bm25",
+      query: "TR4",
+      count: 1,
+      warnings: [],
+      evidence: [
+        {
+          chunkId: "medical/doc-acr-tirads-2017/tr4",
+          score: 1.23,
+          hits: ["tr4"],
+          text: "TR4 nodules require size-based follow-up or FNA according to ACR TI-RADS.",
+          document: {
+            id: "doc-acr-tirads-2017",
+            title: "ACR TI-RADS 2017",
+            sourceType: "guideline",
+            sourceName: "ACR",
+            version: "2017",
+            language: "en",
+            effectiveDate: "2017-01-01",
+            fileUri: "artifact://knowledge/acr.pdf",
+            reviewStatus: "approved",
+            approvedBy: "unit-test",
+            approvedAt: 1778245200000,
+          },
+          metadata: {
+            sectionTitle: "TR4",
+            chunkType: "guideline",
+            topic: "tirads",
+            pageNo: 1,
+            evidenceLevel: "guideline",
+            tiradsSystem: "ACR_TI_RADS",
+            bodyPart: "thyroid",
+            reviewStatus: "approved",
+            relPath: "examples/medical-knowledge/acr.md",
+            lineStart: 10,
+            lineEnd: 20,
+            indexedAt: 1778245200000,
+          },
+        },
+      ],
+    });
     vi.mocked(reviewMedicalReport).mockResolvedValue({
       report: {
         ...studyBundle.reports[0],
@@ -477,6 +521,20 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("Model Gateway")).toBeInTheDocument();
     expect(screen.getByText("yolov11")).toBeInTheDocument();
     expect(screen.getByText("Manual Case")).toBeInTheDocument();
+    expect(screen.getByText("知识证据")).toBeInTheDocument();
+  });
+
+  it("searches approved medical knowledge evidence", async () => {
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("知识证据")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("知识证据"), { target: { value: "TR4" } });
+    fireEvent.click(screen.getByRole("button", { name: "检索" }));
+
+    await waitFor(() => expect(searchMedicalKnowledge).toHaveBeenCalledWith("TR4", 5));
+    expect(await screen.findByText("ACR TI-RADS 2017")).toBeInTheDocument();
+    expect(screen.getByText(/TR4 nodules require/)).toBeInTheDocument();
+    expect(screen.getByText("examples/medical-knowledge/acr.md:10-20")).toBeInTheDocument();
   });
 
   it("opens study detail and starts analysis for an image", async () => {

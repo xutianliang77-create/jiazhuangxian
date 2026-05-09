@@ -86,6 +86,7 @@ import {
   handleCreateMedicalImage,
   handleCreateMedicalPatient,
   handleCreateMedicalStudy,
+  handleMedicalKnowledgeSearch,
   handleMedicalModelGatewayCheck,
   handleMedicalSummary,
   handleReadMedicalArtifact,
@@ -412,6 +413,9 @@ async function dispatch(
   if (url.pathname === "/v1/web/medical/model-gateway/check" && method === "GET") {
     return handleMedicalModelGatewayCheck(req, res, deps);
   }
+  if (url.pathname === "/v1/web/medical/knowledge/search" && method === "POST") {
+    return handleMedicalKnowledgeSearch(req, res, deps);
+  }
   if (url.pathname === "/v1/web/medical/artifacts" && method === "GET") {
     return handleReadMedicalArtifact(req, res, deps, url);
   }
@@ -579,6 +583,7 @@ export function startWebServer(opts: StartWebServerOptions): Promise<WebServerHa
     store,
     auth,
     dataDb,
+    ...(dataDbPath ? { dataDbPath } : {}),
     providers: {
       current: opts.engineDefaults.currentProvider ?? null,
       fallback: opts.engineDefaults.fallbackProvider ?? null,

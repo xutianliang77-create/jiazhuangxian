@@ -65,6 +65,8 @@ export interface HandlerDeps {
    * 不注入则相关功能（ingress dedup / cost dashboard）静默禁用。
    */
   dataDb?: Database.Database;
+  /** Shared data.db path when available; medical knowledge search uses sibling rag.db by default. */
+  dataDbPath?: string;
   /** server 启动时快照的 provider 配置（设置中心只读视图） */
   providers?: {
     current: ProviderStatus | null;

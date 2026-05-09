@@ -32,7 +32,9 @@ cp examples/mcp.medical.validation.json .mcp.json
       "args": ["--silent", "run", "medical:mcp"],
       "env": {
         "JZX_IMAGE_WORKER_URL": "http://127.0.0.1:8765",
-        "JZX_MODEL_GATEWAY_URL": "http://127.0.0.1:8766"
+        "JZX_MODEL_GATEWAY_URL": "http://127.0.0.1:8766",
+        "JZX_DATA_DB": "/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/data.db",
+        "JZX_RAG_DB": "/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/rag.db"
       },
       "disabled": false
     }
@@ -53,7 +55,9 @@ CodeClaw 的 MCP 配置优先级是 `<workspace>/.mcp.json` 高于 `~/.codeclaw/
       "cwd": "/Users/xutianliang/Downloads/jiazhuangxian",
       "env": {
         "JZX_IMAGE_WORKER_URL": "http://127.0.0.1:8765",
-        "JZX_MODEL_GATEWAY_URL": "http://127.0.0.1:8766"
+        "JZX_MODEL_GATEWAY_URL": "http://127.0.0.1:8766",
+        "JZX_DATA_DB": "/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/data.db",
+        "JZX_RAG_DB": "/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/rag.db"
       }
     }
   }
@@ -66,8 +70,9 @@ CodeClaw 的 MCP 配置优先级是 `<workspace>/.mcp.json` 高于 `~/.codeclaw/
 
 ```bash
 cd /Users/xutianliang/Downloads/jiazhuangxian
-npm run medical:init-db -- --data-db data/artifacts/medical/data.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge
+npm run medical:init-db -- --data-db data/artifacts/medical/data.db --rag-db data/artifacts/medical/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge
 export JZX_DATA_DB=/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/data.db
+export JZX_RAG_DB=/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/rag.db
 ```
 
 终端 1：启动图像服务。
@@ -134,10 +139,11 @@ JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1
 /mcp call medical thyroid.CalculateTirads {"features":{"composition":"solid","echogenicity":"hypoechoic","shape":"taller_than_wide","margin":"irregular","echogenic_foci":["punctate_echogenic_foci"]},"size_mm":{"long_axis":12,"short_axis":8,"ap_axis":10}}
 ```
 
-术语和模板工具读取医学 SQLite 知识表。默认读取 `~/.codeclaw/data.db`；如需指定验证数据库，可在 `.mcp.json` 的 `env` 中增加 `JZX_DATA_DB`，但该数据库必须已经跑过 `src/storage/migrations/data` 迁移。
+术语、模板和证据检索工具读取医学 SQLite 知识表。默认读取 `~/.codeclaw/data.db`；如需指定验证数据库，可在 `.mcp.json` 的 `env` 中增加 `JZX_DATA_DB` 和 `JZX_RAG_DB`，其中 `JZX_DATA_DB` 必须已经跑过 `src/storage/migrations/data` 迁移，`JZX_RAG_DB` 应包含已导入的医学 `rag_chunks`。
 
 ```text
 /mcp call medical medical.NormalizeTerm {"text":"低回声实性结节","category":"tirads_feature"}
+/mcp call medical medical.SearchGuideline {"query":"solid composition","top_k":5,"filters":{"body_part":"thyroid"}}
 /mcp call medical medical.GetTiradsRule {"rule_code":"ACR_2017_composition_solid"}
 /mcp call medical medical.GetReportTemplate {"scene":"thyroid_ultrasound_draft","category":"TR4"}
 ```
@@ -161,8 +167,9 @@ JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1
 9. `draft_report` 会读取同一病例下已持久化的结节和最新 TI-RADS 结果，按验证版模板生成 AI 辅助报告草稿并写入 `report` 表；草稿状态为 `draft`，输出始终带 `doctor_review_required`，必须由医生审核后才可生效。
 10. `safety_review` 会读取最新报告草稿、`safety_rules`、图像质量和结节置信度，检查最终诊断表述、缺证据 FNA/随访建议、低质量/低置信度、缺少标定的毫米级表述和 PHI 泄露风险，并把审核摘要写入 `audit_log`。
 11. 病例详情接口和医生工作台会展示同一病例下的 `model_job`、`nodule`、`tirads_feature`、`tirads_result`、`report` 和 `audit_log`，其中检测成功的 `model_job.artifact_uri` 会指向标准化检测产物 JSON；如果源图像可读取且请求允许 overlay，模型输出还会包含同目录 `overlay.png` 复核图 URI，并通过 `GET /v1/web/medical/artifacts?uri=<artifact-uri>` 在医生工作台内预览。
-12. 医生工作台可对 AI 结节 bbox 执行数字修订；修订会更新 `nodule.bbox`、将 `source` 标记为 `doctor`、将状态改为 `doctor_revised`，同时追加 `medical.nodule.revise` 审计日志。
-13. 医生工作台可对 `draft` / `pending_review` 报告执行确认或驳回；确认会写入 `report.final_text`、`confirmed_by`、`confirmed_at` 和 `doctor_review`，同时追加 `audit_log`。
+12. 医生工作台的 `知识证据` 面板可调用 `POST /v1/web/medical/knowledge/search` 检索已审核指南证据；返回结果来自 CodeClaw RAG chunk，并带 `medical_documents` / `medical_chunk_metadata` provenance。
+13. 医生工作台可对 AI 结节 bbox 执行数字修订；修订会更新 `nodule.bbox`、将 `source` 标记为 `doctor`、将状态改为 `doctor_revised`，同时追加 `medical.nodule.revise` 审计日志。
+14. 医生工作台可对 `draft` / `pending_review` 报告执行确认或驳回；确认会写入 `report.final_text`、`confirmed_by`、`confirmed_at` 和 `doctor_review`，同时追加 `audit_log`。
 
 如果 `image-worker` 未启动，`image_qc` 不会阻断验证链路；任务会以 `validation_mode=true` 成功完成，并在输出中写入 `image_worker_qc_unavailable` 与具体错误码，便于本地分步验证。
 
@@ -174,6 +181,7 @@ JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1
 | `image_worker_qc_unavailable` | `medical-agent-worker` 无法访问 image-worker，或 image-worker 返回非标准响应 | 检查 `JZX_IMAGE_WORKER_URL`、`npm run image-worker` 和图像 `artifact://` 路径 |
 | `model_gateway_unreachable` | model-gateway 未启动 | 检查 `JZX_MODEL_GATEWAY_URL` 和 `npm run model-gateway` |
 | `knowledge_db_unavailable` | `JZX_DATA_DB` 指向的 SQLite 不存在或未迁移 | 使用默认 `~/.codeclaw/data.db`，或先初始化带医学迁移的验证数据库 |
+| `rag_db_unavailable` | 医学 RAG 库未生成或 `JZX_RAG_DB` 未指向正确文件 | 运行 `npm run medical:init-db -- --rag-db ... --ingest-sample-knowledge` 或 `npm run medical:ingest -- --rag-db ...` |
 | `detector_not_configured` | 当前验证 worker 尚未接真实 YOLOv11/RT-DETR 权重 | 这是当前预期行为；后续替换 detector adapter |
 | `agent_task` 长时间 `queued` | `medical-agent-worker` 未启动，或父任务未完成 | 先运行 `npm run medical-agent-worker:once` 查看 JSON 输出 |
 | `detect_nodules` 长时间 `waiting_model` | `model-worker` 未启动，或 `JZX_DATA_DB` 不是同一个 SQLite 文件 | 确认 model-gateway、model-worker、medical-agent-worker 使用同一个 `JZX_DATA_DB` |

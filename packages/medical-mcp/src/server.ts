@@ -146,6 +146,33 @@ const TOOLS: ToolDescriptor[] = [
     },
   },
   {
+    name: "medical.SearchGuideline",
+    description: "Search approved medical guideline evidence chunks from CodeClaw RAG plus medical provenance tables.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        top_k: { type: "number", minimum: 1, maximum: 20 },
+        topK: { type: "number", minimum: 1, maximum: 20 },
+        filters: {
+          type: "object",
+          properties: {
+            document_id: { type: "string" },
+            source_type: { type: "string" },
+            chunk_type: { type: "string" },
+            topic: { type: "string" },
+            evidence_level: { type: "string" },
+            tirads_system: { type: "string" },
+            body_part: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "medical.GetTiradsRule",
     description: "Read active TI-RADS rules from the medical SQLite knowledge tables.",
     inputSchema: {
@@ -251,6 +278,8 @@ export class MedicalMcpServer {
           return json(notConfigured("model_gateway_not_configured", "TI-RADS feature classification model gateway is not wired yet."));
         case "thyroid.CalculateTirads":
           return json(calculateAcrTirads(asTiradsInput(input)));
+        case "medical.SearchGuideline":
+          return json(this.knowledgeStore.searchGuideline(input));
         case "medical.GetTiradsRule":
           return json(this.knowledgeStore.getTiradsRule(input));
         case "medical.GetReportTemplate":

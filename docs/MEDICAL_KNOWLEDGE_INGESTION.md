@@ -88,6 +88,33 @@ npm run medical:ingest -- \
   --workspace /Users/xutianliang/Downloads/jiazhuangxian
 ```
 
+## 证据检索
+
+医学证据检索只返回 `medical_documents.review_status = approved` 且 `medical_chunk_metadata.review_status = approved` 的 chunk。检索使用 CodeClaw RAG 的 `rag_chunks` / `rag_terms`，再通过医学 metadata 表补齐文档来源、版本、章节、证据等级和审核信息。
+
+MCP 工具：
+
+```text
+/mcp call medical medical.SearchGuideline {"query":"solid composition","top_k":5,"filters":{"body_part":"thyroid"}}
+```
+
+医生工作台 Web API：
+
+```bash
+curl -s http://127.0.0.1:7180/v1/web/medical/knowledge/search \
+  -H "authorization: Bearer $CODECLAW_WEB_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"query":"TI-RADS TR4","topK":5,"filters":{"bodyPart":"thyroid"}}'
+```
+
+RAG DB 路径优先级：
+
+1. 显式配置 `JZX_RAG_DB`
+2. `JZX_DATA_DB` 同目录下的 `rag.db`
+3. 当前 workspace 对应的默认 CodeClaw RAG 库
+
+医生工作台中的 `知识证据` 面板调用同一个 Web API，定位是“报告依据/规则解释/安全复核”的证据包展示，不作为自由问答模块。
+
 ## 数据写入规则
 
 - `medical_documents` 保存文档级 provenance，包括来源、版本、审核状态和审批人。

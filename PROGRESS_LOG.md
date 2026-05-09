@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, and doctor-side nodule bbox revision with audit history in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, approved medical RAG evidence search, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, and doctor-side nodule bbox revision with audit history in the doctor workstation.
 
 ### Completed
 
@@ -153,6 +153,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `POST /v1/web/medical/nodules/:noduleId/revise` to update a nodule bbox/location/status, mark the source as `doctor`, return the refreshed study bundle, and write a `medical.nodule.revise` audit log with before/after snapshots.
 - MedicalPanel nodule cards now include a compact numeric `bbox xyxy` editor and save action, then refresh the detail bundle and audit log view after a doctor correction.
 - Updated the medical MCP setup guide so the local validation workflow includes doctor-side nodule bbox revision before final report review.
+- Added `src/medical/knowledge/search.ts` to search approved medical RAG chunks with `medical_documents` and `medical_chunk_metadata` provenance, filtering out unapproved knowledge.
+- Added MCP tool `medical.SearchGuideline` for evidence-pack retrieval from CodeClaw `rag_chunks` plus medical metadata.
+- Added `POST /v1/web/medical/knowledge/search` so the doctor workstation can query approved guideline evidence through the Web API.
+- Added a `知识证据` panel to MedicalPanel that displays evidence text, document source/version, section, score, and source line provenance.
+- Updated the medical MCP example and knowledge documentation with `JZX_RAG_DB`, the evidence search API, and the `medical.SearchGuideline` call.
 
 ### Verification
 
@@ -297,6 +302,16 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after doctor bbox revision: 10 tests.
 - CLI smoke test passed after doctor bbox revision: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - `git diff --check` passed after doctor bbox revision.
+- Targeted medical knowledge search tests passed: `npm test -- --run test/unit/medical/knowledgeSearch.test.ts test/unit/medical/mcp-server.test.ts test/unit/medical/mcp-config-example.test.ts test/unit/channels/web/server.test.ts` with 62 tests.
+- Targeted MedicalPanel knowledge evidence test passed: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 9 tests.
+- Root `npm run typecheck` and frontend `cd web-react && npm run typecheck` passed after medical evidence search.
+- Targeted lint passed for medical knowledge search, Web API, MCP, endpoint, and MedicalPanel files.
+- Full web-react tests passed after medical evidence search: `cd web-react && npm test` with 11 files passed and 42 tests passed.
+- `npm run build:web` passed after medical evidence search; Vite still reports the existing Monaco chunk-size warning.
+- `python3 -m unittest discover services/image-worker/tests` passed after medical evidence search: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after medical evidence search: 10 tests.
+- CLI smoke test passed after medical evidence search: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after medical evidence search.
 - Full web-react tests passed after detector overlay generation: `cd web-react && npm test` with 11 files passed and 40 tests passed.
 - `npm run build:web` passed after detector overlay generation; Vite still reports the existing Monaco chunk-size warning.
 - `python3 -m unittest discover services/image-worker/tests` passed after detector overlay generation: 3 tests.

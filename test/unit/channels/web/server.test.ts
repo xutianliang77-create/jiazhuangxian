@@ -19,6 +19,8 @@ import type { WebServerHandle } from "../../../../src/channels/web/server";
 import { startWebServer } from "../../../../src/channels/web/server";
 import type { McpManager } from "../../../../src/mcp/manager";
 import { closeDataDb } from "../../../../src/storage/db";
+import { ingestMedicalKnowledgeManifest, type MedicalKnowledgeManifest } from "../../../../src/medical/knowledge/ingestion";
+import { openRagDb } from "../../../../src/rag/store";
 
 const TOKEN = "test-token-aaaa1111";
 
@@ -673,6 +675,73 @@ describe("Web server · medical API", () => {
     }
   });
 
+  it("POST /v1/web/medical/knowledge/search returns approved evidence", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-knowledge-"));
+    const dbPath = path.join(dir, "data.db");
+    const ragPath = path.join(dir, "rag.db");
+    let medicalHandle: WebServerHandle | null = null;
+    let localDb: Database.Database | null = null;
+    let ragHandle: ReturnType<typeof openRagDb> | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      localDb = new Database(dbPath);
+      localDb.pragma("foreign_keys = ON");
+      ragHandle = openRagDb(dir, { path: ragPath });
+      ingestMedicalKnowledgeManifest(localDb, ragHandle.db, webKnowledgeManifest(), {
+        jobId: "job-web-knowledge-search-1",
+        now: 1778245200000,
+        workspaceRelPath: "examples/medical-knowledge/web-search.md",
+      });
+      localDb.close();
+      localDb = null;
+      ragHandle.close();
+      ragHandle = null;
+
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const response = await fetch(`${medicalBaseUrl}/v1/web/medical/knowledge/search`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ query: "solid composition", topK: 5, filters: { bodyPart: "thyroid" } }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        enabled: boolean;
+        count: number;
+        evidence: Array<{
+          chunkId: string;
+          document: { title: string; reviewStatus: string };
+          metadata: { relPath: string; bodyPart: string };
+          text: string;
+        }>;
+      };
+      expect(body.enabled).toBe(true);
+      expect(body.count).toBe(1);
+      expect(body.evidence[0]).toMatchObject({
+        chunkId: "medical/doc-web-knowledge-search-v1/composition",
+        document: { title: "Web Knowledge Search", reviewStatus: "approved" },
+        metadata: { relPath: "examples/medical-knowledge/web-search.md", bodyPart: "thyroid" },
+      });
+      expect(body.evidence[0]?.text).toContain("Solid composition");
+    } finally {
+      ragHandle?.close();
+      localDb?.close();
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("GET /v1/web/medical/model-gateway/check proxies model-gateway config", async () => {
     const gateway = http.createServer((req, res) => {
       if (req.url !== "/model/v1/config/check") {
@@ -1217,3 +1286,31 @@ describe("Web server · medical API", () => {
     expect(r.status).toBe(401);
   });
 });
+
+function webKnowledgeManifest(): MedicalKnowledgeManifest {
+  return {
+    document: {
+      id: "doc-web-knowledge-search-v1",
+      title: "Web Knowledge Search",
+      source_type: "guideline_summary",
+      source_name: "unit_test_web",
+      version: "v1",
+      language: "en",
+      review_status: "approved",
+      approved_by: "unit_test",
+      approved_at: 1778245200000,
+    },
+    chunks: [
+      {
+        id: "composition",
+        text: "Solid composition is part of ACR TI-RADS scoring evidence for thyroid ultrasound validation.",
+        section_title: "Composition",
+        chunk_type: "guideline_summary",
+        topic: "tirads",
+        evidence_level: "guideline",
+        tirads_system: "ACR_TI_RADS",
+        body_part: "thyroid",
+      },
+    ],
+  };
+}

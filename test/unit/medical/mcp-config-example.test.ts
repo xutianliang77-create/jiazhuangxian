@@ -16,6 +16,8 @@ describe("medical MCP config example", () => {
       env: {
         JZX_IMAGE_WORKER_URL: "http://127.0.0.1:8765",
         JZX_MODEL_GATEWAY_URL: "http://127.0.0.1:8766",
+        JZX_DATA_DB: "data/artifacts/medical/data.db",
+        JZX_RAG_DB: "data/artifacts/medical/rag.db",
       },
       disabled: false,
     });
@@ -28,5 +30,7 @@ describe("medical MCP config example", () => {
     expect(medical.args).toEqual(["--silent", "run", "medical:mcp"]);
     expect(medical.env?.JZX_IMAGE_WORKER_URL).toMatch(/^http:\/\/127\.0\.0\.1:/);
     expect(medical.env?.JZX_MODEL_GATEWAY_URL).toMatch(/^http:\/\/127\.0\.0\.1:/);
+    expect(medical.env?.JZX_DATA_DB).toBe("data/artifacts/medical/data.db");
+    expect(medical.env?.JZX_RAG_DB).toBe("data/artifacts/medical/rag.db");
   });
 });

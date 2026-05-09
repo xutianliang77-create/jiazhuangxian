@@ -7,6 +7,8 @@ import os from "node:os";
 import { MedicalKnowledgeStore } from "../../../packages/medical-mcp/src/knowledgeStore";
 import { MedicalMcpServer } from "../../../packages/medical-mcp/src/server";
 import { calculateAcrTirads } from "../../../packages/medical-mcp/src/tirads";
+import { ingestMedicalKnowledgeManifest, type MedicalKnowledgeManifest } from "../../../src/medical/knowledge/ingestion";
+import { openRagDb } from "../../../src/rag/store";
 import { migrateIfNeeded } from "../../../src/storage/migrate";
 
 describe("medical MCP tool surface", () => {
@@ -24,6 +26,7 @@ describe("medical MCP tool surface", () => {
       "thyroid.DetectNodules",
       "thyroid.ClassifyTiradsFeatures",
       "thyroid.CalculateTirads",
+      "medical.SearchGuideline",
       "medical.GetTiradsRule",
       "medical.GetReportTemplate",
       "medical.NormalizeTerm",
@@ -159,6 +162,36 @@ describe("medical MCP tool surface", () => {
 });
 
 describe("medical knowledge MCP tools", () => {
+  it("searches approved guideline evidence from medical RAG", async () => {
+    await withSearchKnowledgeServer(async (server) => {
+      const result = await server.callTool("medical.SearchGuideline", {
+        query: "solid composition",
+        top_k: 5,
+        filters: { body_part: "thyroid" },
+      });
+
+      expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+        status: "ok",
+        result: {
+          count: 1,
+          evidence: [
+            {
+              chunkId: "medical/doc-mcp-search-v1/composition",
+              document: {
+                title: "MCP Search Knowledge",
+                reviewStatus: "approved",
+              },
+              metadata: {
+                bodyPart: "thyroid",
+                relPath: "examples/medical-knowledge/mcp-search.md",
+              },
+            },
+          ],
+        },
+      });
+    });
+  });
+
   it("returns seeded TI-RADS rules with version and evidence metadata", async () => {
     await withKnowledgeServer(async (server) => {
       const result = await server.callTool("medical.GetTiradsRule", {
@@ -294,4 +327,55 @@ async function withKnowledgeServer(callback: (server: MedicalMcpServer) => void 
     db.close();
     rmSync(tmpRoot, { recursive: true, force: true });
   }
+}
+
+async function withSearchKnowledgeServer(callback: (server: MedicalMcpServer) => void | Promise<void>): Promise<void> {
+  const tmpRoot = mkdtempSync(path.join(os.tmpdir(), "jzx-mcp-knowledge-search-"));
+  const db = new Database(path.join(tmpRoot, "data.db"));
+  const ragHandle = openRagDb(tmpRoot, { path: path.join(tmpRoot, "rag.db") });
+  try {
+    db.pragma("foreign_keys = ON");
+    migrateIfNeeded(db, "data");
+    ingestMedicalKnowledgeManifest(db, ragHandle.db, mcpSearchManifest(), {
+      jobId: "job-mcp-search-1",
+      now: 1778245200000,
+      workspaceRelPath: "examples/medical-knowledge/mcp-search.md",
+    });
+    const server = new MedicalMcpServer({
+      knowledgeStore: new MedicalKnowledgeStore({ db, ragDb: ragHandle.db, workspace: tmpRoot }),
+    });
+    await callback(server);
+  } finally {
+    ragHandle.close();
+    db.close();
+    rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+function mcpSearchManifest(): MedicalKnowledgeManifest {
+  return {
+    document: {
+      id: "doc-mcp-search-v1",
+      title: "MCP Search Knowledge",
+      source_type: "guideline_summary",
+      source_name: "unit_test_mcp",
+      version: "v1",
+      language: "en",
+      review_status: "approved",
+      approved_by: "unit_test",
+      approved_at: 1778245200000,
+    },
+    chunks: [
+      {
+        id: "composition",
+        text: "Solid composition contributes to ACR TI-RADS scoring evidence.",
+        section_title: "Composition",
+        chunk_type: "guideline_summary",
+        topic: "tirads",
+        evidence_level: "guideline",
+        tirads_system: "ACR_TI_RADS",
+        body_part: "thyroid",
+      },
+    ],
+  };
 }

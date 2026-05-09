@@ -5,7 +5,9 @@
       "args": ["--silent", "run", "medical:mcp"],
       "env": {
         "JZX_IMAGE_WORKER_URL": "http://127.0.0.1:8765",
-        "JZX_MODEL_GATEWAY_URL": "http://127.0.0.1:8766"
+        "JZX_MODEL_GATEWAY_URL": "http://127.0.0.1:8766",
+        "JZX_DATA_DB": "data/artifacts/medical/data.db",
+        "JZX_RAG_DB": "data/artifacts/medical/rag.db"
       },
       "disabled": false
     }

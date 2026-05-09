@@ -2,9 +2,14 @@ import Database from "better-sqlite3";
 import os from "node:os";
 import path from "node:path";
 
+import { searchMedicalKnowledge } from "../../../src/medical/knowledge/search";
+
 export interface MedicalKnowledgeStoreOptions {
   db?: Database.Database;
   dbPath?: string;
+  ragDb?: Database.Database;
+  ragDbPath?: string;
+  workspace?: string;
 }
 
 export interface ToolResponse {
@@ -65,12 +70,42 @@ interface MedicalTermRow {
 
 export class MedicalKnowledgeStore {
   private readonly externalDb?: Database.Database;
+  private readonly externalRagDb?: Database.Database;
   private readonly dbPath: string;
+  private readonly ragDbPath?: string;
+  private readonly workspace?: string;
   private db?: Database.Database;
 
   constructor(options: MedicalKnowledgeStoreOptions = {}) {
     this.externalDb = options.db;
+    this.externalRagDb = options.ragDb;
     this.dbPath = options.dbPath ?? process.env.JZX_DATA_DB ?? path.join(os.homedir(), ".codeclaw", "data.db");
+    this.ragDbPath = options.ragDbPath;
+    this.workspace = options.workspace;
+  }
+
+  searchGuideline(input: Record<string, unknown>): ToolResponse {
+    const query = optionalString(input.query);
+    if (!query) return err("invalid_request", "query is required");
+    return this.withDb((db) => {
+      const result = searchMedicalKnowledge({
+        query,
+        topK: numberField(input.top_k) ?? numberField(input.topK),
+        filters: filtersField(input.filters),
+      }, {
+        dataDb: db,
+        dataDbPath: this.dbPath,
+        ragDb: this.externalRagDb,
+        ragDbPath: this.ragDbPath,
+        workspace: this.workspace ?? process.cwd(),
+      });
+      return ok({
+        mode: result.mode,
+        query: result.query,
+        count: result.count,
+        evidence: result.evidence,
+      }, result.warnings);
+    });
   }
 
   getTiradsRule(input: Record<string, unknown>): ToolResponse {
@@ -260,6 +295,33 @@ function err(code: string, message: string, detail?: Record<string, unknown>): T
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function filtersField(value: unknown): {
+  documentId?: string;
+  sourceType?: string;
+  chunkType?: string;
+  topic?: string;
+  evidenceLevel?: string;
+  tiradsSystem?: string;
+  bodyPart?: string;
+} | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const filters = {
+    documentId: optionalString(record.document_id) ?? optionalString(record.documentId),
+    sourceType: optionalString(record.source_type) ?? optionalString(record.sourceType),
+    chunkType: optionalString(record.chunk_type) ?? optionalString(record.chunkType),
+    topic: optionalString(record.topic),
+    evidenceLevel: optionalString(record.evidence_level) ?? optionalString(record.evidenceLevel),
+    tiradsSystem: optionalString(record.tirads_system) ?? optionalString(record.tiradsSystem),
+    bodyPart: optionalString(record.body_part) ?? optionalString(record.bodyPart),
+  };
+  return Object.values(filters).some(Boolean) ? filters : undefined;
 }
 
 function clampLimit(value: unknown, fallback: number): number {

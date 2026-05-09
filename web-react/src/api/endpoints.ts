@@ -394,6 +394,49 @@ export interface MedicalModelGatewayCheck {
   error?: { code: string; message: string };
 }
 
+export interface MedicalKnowledgeEvidence {
+  chunkId: string;
+  score: number;
+  hits: string[];
+  text: string;
+  document: {
+    id: string;
+    title: string;
+    sourceType: string;
+    sourceName: string;
+    version: string;
+    language: string;
+    effectiveDate: string | null;
+    fileUri: string | null;
+    reviewStatus: string;
+    approvedBy: string | null;
+    approvedAt: number | null;
+  };
+  metadata: {
+    sectionTitle: string | null;
+    chunkType: string;
+    topic: string | null;
+    pageNo: number | null;
+    evidenceLevel: string | null;
+    tiradsSystem: string | null;
+    bodyPart: string | null;
+    reviewStatus: string;
+    relPath: string;
+    lineStart: number;
+    lineEnd: number;
+    indexedAt: number;
+  };
+}
+
+export interface MedicalKnowledgeSearchResult {
+  enabled: boolean;
+  mode: "bm25" | "like" | "mixed";
+  query: string;
+  count: number;
+  evidence: MedicalKnowledgeEvidence[];
+  warnings: string[];
+}
+
 export interface MedicalNodule {
   id: string;
   studyId: string;
@@ -666,6 +709,15 @@ export const getMedicalModelGatewayCheck = () =>
 
 export const medicalArtifactUrl = (uri: string) =>
   withAuthQuery(`/v1/web/medical/artifacts?uri=${encodeURIComponent(uri)}`);
+
+export const searchMedicalKnowledge = (query: string, topK = 5) =>
+  api<MedicalKnowledgeSearchResult>("POST", "/v1/web/medical/knowledge/search", {
+    query,
+    topK,
+    filters: {
+      bodyPart: "thyroid",
+    },
+  });
 
 export const getMedicalStudy = (studyId: string) =>
   api<{ bundle: MedicalStudyBundle }>("GET", `/v1/web/medical/studies/${encodeURIComponent(studyId)}`);
