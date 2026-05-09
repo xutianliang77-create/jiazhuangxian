@@ -4,6 +4,7 @@ import {
   type ModelJobRecord,
   type NoduleRecord,
   type TiradsFeatureRecord,
+  type TiradsResultRecord,
 } from "./storage";
 import { calculateAcrTirads, type TiradsInput } from "../../packages/medical-mcp/src/tirads";
 
@@ -29,6 +30,25 @@ export interface MedicalAgentWorkerResult {
 
 const DETECT_JOB_TYPE = "thyroid.detect_nodules";
 const IMAGE_QC_PATH = "/image/v1/image-quality-check";
+const THYROID_REPORT_TEMPLATE_ID = "tpl-thyroid-ultrasound-draft-v1";
+const THYROID_REPORT_TEMPLATE = `甲状腺超声AI辅助报告（草稿）
+
+检查所见：
+{thyroid_description}
+
+结节描述：
+{nodule_descriptions}
+
+AI辅助分级：
+{tirads_summary}
+
+建议：
+{recommendation}
+
+证据：
+{evidence_summary}
+
+提示：本报告为AI辅助草稿，需医生审核确认后生效。`;
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -435,17 +455,7 @@ function buildSynchronousTaskOutput(
     case "calculate_tirads":
       return buildCalculateTiradsTaskOutput(repo, task, base, now);
     case "draft_report":
-      return {
-        ...base,
-        result: {
-          report_status: "draft_placeholder",
-          sections: {
-            finding: "验证版流程已创建报告草稿，待真实检测、特征识别与医生审核补全。",
-            impression: "AI 结果仅用于辅助验证，不能作为最终诊断。",
-          },
-        },
-        warnings: ["report_generation_model_not_connected"],
-      };
+      return buildDraftReportTaskOutput(repo, task, base, workerId, now);
     case "safety_review":
       return {
         ...base,
@@ -458,6 +468,78 @@ function buildSynchronousTaskOutput(
     default:
       throw new Error(`unsupported medical agent task type: ${task.taskType}`);
   }
+}
+
+function buildDraftReportTaskOutput(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  base: JsonObject,
+  workerId: string,
+  now: number
+): JsonObject {
+  const studyId = requiredString(task.input.study_id, "study_id");
+  const nodules = repo.listNodulesByStudy(studyId);
+  const noduleById = new Map(nodules.map((nodule) => [nodule.id, nodule]));
+  const tiradsResults = latestTiradsResultPerNodule(repo.listTiradsResultsByStudy(studyId), noduleById);
+  const reportNodules = tiradsResults.map((result) => {
+    const nodule = noduleById.get(result.noduleId);
+    return {
+      nodule_id: result.noduleId,
+      nodule_index: nodule?.noduleIndex ?? null,
+      tirads_result_id: result.id,
+      score: result.score,
+      category: result.category,
+      recommendation: result.recommendation,
+      evidence_rules: result.evidenceRules,
+    };
+  });
+  const sections = buildReportSections(nodules, tiradsResults, noduleById);
+  const template = repo.getActiveReportTemplateText(THYROID_REPORT_TEMPLATE_ID) ?? THYROID_REPORT_TEMPLATE;
+  const draftText = fillReportTemplate(template, sections);
+  const evidence = reportNodules.map((item) => ({
+    source: "tirads_result",
+    nodule_id: item.nodule_id,
+    tirads_result_id: item.tirads_result_id,
+    evidence_rules: item.evidence_rules,
+  }));
+  const report = repo.createReport({
+    studyId,
+    analysisSessionId: task.analysisSessionId,
+    reportType: "thyroid_ultrasound",
+    status: "draft",
+    templateId: THYROID_REPORT_TEMPLATE_ID,
+    draftText,
+    structured: {
+      study_id: studyId,
+      analysis_session_id: task.analysisSessionId,
+      generator: "structured_template_validation",
+      generated_at: now,
+      sections,
+      nodules: reportNodules,
+      review_required: true,
+    },
+    evidence,
+    createdByAgent: workerId,
+    now,
+  });
+
+  return {
+    ...base,
+    validation_mode: false,
+    result: {
+      report_id: report.id,
+      report_status: report.status,
+      report_type: report.reportType,
+      template_id: report.templateId,
+      draft_text: report.draftText,
+      structured: report.structured,
+      evidence: report.evidence,
+    },
+    warnings: uniqueStrings([
+      "doctor_review_required",
+      tiradsResults.length === 0 ? "no_tirads_results_for_report" : undefined,
+    ]),
+  };
 }
 
 function detectorSuccessOutput(
@@ -527,6 +609,85 @@ function isWorkerResponse(value: unknown): value is WorkerResponse {
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))];
+}
+
+function latestTiradsResultPerNodule(
+  results: TiradsResultRecord[],
+  noduleById: Map<string, NoduleRecord>
+): TiradsResultRecord[] {
+  const latest = new Map<string, TiradsResultRecord>();
+  for (const result of results) {
+    latest.set(result.noduleId, result);
+  }
+  return [...latest.values()].sort((left, right) => {
+    const leftIndex = noduleById.get(left.noduleId)?.noduleIndex ?? Number.MAX_SAFE_INTEGER;
+    const rightIndex = noduleById.get(right.noduleId)?.noduleIndex ?? Number.MAX_SAFE_INTEGER;
+    return leftIndex - rightIndex || left.createdAt - right.createdAt || left.id.localeCompare(right.id);
+  });
+}
+
+function buildReportSections(
+  nodules: NoduleRecord[],
+  tiradsResults: TiradsResultRecord[],
+  noduleById: Map<string, NoduleRecord>
+): Record<string, string> {
+  const noduleDescriptions =
+    tiradsResults.length > 0
+      ? tiradsResults.map((result) => formatNoduleDescription(result, noduleById.get(result.noduleId))).join("\n")
+      : formatUnclassifiedNodules(nodules);
+  const tiradsSummary =
+    tiradsResults.length > 0
+      ? tiradsResults
+          .map((result) => {
+            const nodule = noduleById.get(result.noduleId);
+            const category = result.category ?? "未分级";
+            const score = result.score ?? "未计算";
+            return `结节${nodule?.noduleIndex ?? "未知"}：${category}，评分${score}分。`;
+          })
+          .join("\n")
+      : "暂无可用TI-RADS结构化分级。";
+  const recommendations = uniqueStrings(tiradsResults.map((result) => result.recommendation ?? undefined));
+  const evidenceCodes = uniqueStrings(tiradsResults.flatMap((result) => evidenceRuleCodes(result.evidenceRules)));
+
+  return {
+    thyroid_description: "甲状腺超声图像已进入AI辅助分析流程；以下内容仅汇总已结构化AI结果。",
+    nodule_descriptions: noduleDescriptions,
+    tirads_summary: tiradsSummary,
+    recommendation: recommendations.length > 0 ? recommendations.join("\n") : "暂无自动建议，需医生审核。",
+    evidence_summary: evidenceCodes.length > 0 ? evidenceCodes.join("、") : "暂无规则证据。",
+  };
+}
+
+function formatUnclassifiedNodules(nodules: NoduleRecord[]): string {
+  if (nodules.length === 0) return "未检测到结构化结节结果，需医生结合图像复核。";
+  return nodules
+    .map((nodule) => `结节${nodule.noduleIndex}：AI已检测到结节，尚无可用TI-RADS结构化分级。`)
+    .join("\n");
+}
+
+function formatNoduleDescription(result: TiradsResultRecord, nodule: NoduleRecord | undefined): string {
+  const confidenceValue = nodule?.detectionConfidence;
+  const confidence = confidenceValue === null || confidenceValue === undefined ? "未记录" : confidenceValue.toFixed(2);
+  const noduleIndex = nodule?.noduleIndex ?? "未知";
+  const category = result.category ?? "未分级";
+  const score = result.score ?? "未计算";
+  return `结节${noduleIndex}：AI检测结节，检测置信度${confidence}，TI-RADS ${category}，评分${score}分。`;
+}
+
+function evidenceRuleCodes(evidenceRules: unknown[]): string[] {
+  return evidenceRules.flatMap((rule) => {
+    const record = asJsonObject(rule);
+    const code = optionalString(record?.rule_code) ?? optionalString(record?.code);
+    return code ? [code] : [];
+  });
+}
+
+function fillReportTemplate(template: string, sections: Record<string, string>): string {
+  let text = template;
+  for (const [key, value] of Object.entries(sections)) {
+    text = text.split(`{${key}}`).join(value);
+  }
+  return text;
 }
 
 function buildCalculateTiradsTaskOutput(

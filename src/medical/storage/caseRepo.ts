@@ -288,6 +288,41 @@ export interface TiradsResultRecord {
   createdAt: number;
 }
 
+export interface ReportInput {
+  id?: string;
+  studyId: string;
+  analysisSessionId?: string | null;
+  reportType?: string;
+  status?: string;
+  templateId?: string | null;
+  draftText?: string | null;
+  finalText?: string | null;
+  structured?: JsonObject;
+  evidence?: unknown[];
+  createdByAgent?: string | null;
+  confirmedBy?: string | null;
+  confirmedAt?: number | null;
+  now?: number;
+}
+
+export interface ReportRecord {
+  id: string;
+  studyId: string;
+  analysisSessionId: string | null;
+  reportType: string;
+  status: string;
+  templateId: string | null;
+  draftText: string | null;
+  finalText: string | null;
+  structured: JsonObject;
+  evidence: unknown[];
+  createdByAgent: string | null;
+  confirmedBy: string | null;
+  confirmedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface StudyBundle {
   patient: PatientRecord | null;
   study: StudyRecord;
@@ -436,6 +471,24 @@ interface TiradsResultRow {
   evidence_rules: string;
   warnings: string;
   created_at: number;
+}
+
+interface ReportRow {
+  id: string;
+  study_id: string;
+  analysis_session_id: string | null;
+  report_type: string;
+  status: string;
+  template_id: string | null;
+  draft_text: string | null;
+  final_text: string | null;
+  structured_json: string;
+  evidence_json: string;
+  created_by_agent: string | null;
+  confirmed_by: string | null;
+  confirmed_at: number | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export class MedicalCaseRepo {
@@ -710,6 +763,37 @@ export class MedicalCaseRepo {
     return this.getTiradsResult(id)!;
   }
 
+  createReport(input: ReportInput): ReportRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO report(
+           id, study_id, analysis_session_id, report_type, status, template_id,
+           draft_text, final_text, structured_json, evidence_json, created_by_agent,
+           confirmed_by, confirmed_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.studyId,
+        input.analysisSessionId ?? null,
+        input.reportType ?? "thyroid_ultrasound",
+        input.status ?? "draft",
+        input.templateId ?? null,
+        input.draftText ?? null,
+        input.finalText ?? null,
+        stringifyJson(input.structured ?? {}),
+        stringifyJsonValue(input.evidence ?? []),
+        input.createdByAgent ?? null,
+        input.confirmedBy ?? null,
+        input.confirmedAt ?? null,
+        now,
+        now
+      );
+    return this.getReport(id)!;
+  }
+
   getPatient(id: string): PatientRecord | null {
     const row = this.db.prepare<[string], PatientRow>("SELECT * FROM patient WHERE id = ?").get(id);
     return row ? mapPatient(row) : null;
@@ -823,6 +907,29 @@ export class MedicalCaseRepo {
       )
       .all(studyId, systemName)
       .map(mapTiradsResult);
+  }
+
+  getReport(id: string): ReportRecord | null {
+    const row = this.db.prepare<[string], ReportRow>("SELECT * FROM report WHERE id = ?").get(id);
+    return row ? mapReport(row) : null;
+  }
+
+  listReportsByStudy(studyId: string): ReportRecord[] {
+    return this.db
+      .prepare<[string], ReportRow>(
+        "SELECT * FROM report WHERE study_id = ? ORDER BY created_at ASC, id ASC"
+      )
+      .all(studyId)
+      .map(mapReport);
+  }
+
+  getActiveReportTemplateText(templateId: string): string | null {
+    const row = this.db
+      .prepare<[string], { template_text: string }>(
+        "SELECT template_text FROM report_templates WHERE id = ? AND status = 'active'"
+      )
+      .get(templateId);
+    return row?.template_text ?? null;
   }
 
   findModelJobByAgentTask(agentTaskId: string, jobType?: string): ModelJobRecord | null {
@@ -1225,6 +1332,26 @@ function mapTiradsResult(row: TiradsResultRow): TiradsResultRecord {
     evidenceRules: parseJsonArray(row.evidence_rules),
     warnings: parseStringArray(row.warnings),
     createdAt: row.created_at,
+  };
+}
+
+function mapReport(row: ReportRow): ReportRecord {
+  return {
+    id: row.id,
+    studyId: row.study_id,
+    analysisSessionId: row.analysis_session_id,
+    reportType: row.report_type,
+    status: row.status,
+    templateId: row.template_id,
+    draftText: row.draft_text,
+    finalText: row.final_text,
+    structured: parseJson(row.structured_json, {}),
+    evidence: parseJsonArray(row.evidence_json),
+    createdByAgent: row.created_by_agent,
+    confirmedBy: row.confirmed_by,
+    confirmedAt: row.confirmed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

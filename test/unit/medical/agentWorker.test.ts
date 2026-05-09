@@ -274,6 +274,89 @@ describe("medical agent worker", () => {
     ]);
   });
 
+  it("persists a draft report from structured TI-RADS results", () => {
+    const { tasks } = seedAgentTaskChain(["draft_report"]);
+    const studyId = String(tasks[0].input.study_id);
+    const imageId = String(tasks[0].input.image_id);
+    const nodule = repo.upsertNodule({
+      studyId,
+      imageId,
+      noduleIndex: 1,
+      bbox: [10, 20, 30, 40],
+      detectionConfidence: 0.91,
+      now: 8000,
+    });
+    const tiradsResult = repo.createTiradsResult({
+      noduleId: nodule.id,
+      score: 4,
+      category: "TR4",
+      recommendation: "TR4 nodule >=10 mm: ultrasound follow-up.",
+      evidenceRules: [{ rule_code: "ACR_2017_category_TR4" }],
+      warnings: [],
+      now: 8100,
+    });
+
+    const result = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 8200 });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "draft_report",
+      output: {
+        validation_mode: false,
+        result: {
+          report_status: "draft",
+          template_id: "tpl-thyroid-ultrasound-draft-v1",
+          structured: {
+            generator: "structured_template_validation",
+            review_required: true,
+            nodules: [
+              {
+                nodule_id: nodule.id,
+                nodule_index: 1,
+                tirads_result_id: tiradsResult.id,
+                score: 4,
+                category: "TR4",
+              },
+            ],
+          },
+          evidence: [
+            {
+              source: "tirads_result",
+              nodule_id: nodule.id,
+              tirads_result_id: tiradsResult.id,
+              evidence_rules: [{ rule_code: "ACR_2017_category_TR4" }],
+            },
+          ],
+        },
+        warnings: ["doctor_review_required"],
+      },
+    });
+    const outputResult = result.output?.result as Record<string, unknown>;
+    expect(String(outputResult.draft_text)).toContain("甲状腺超声AI辅助报告（草稿）");
+    expect(String(outputResult.draft_text)).toContain("TI-RADS TR4");
+    expect(String(outputResult.draft_text)).toContain("需医生审核确认后生效");
+
+    expect(repo.listReportsByStudy(studyId)).toMatchObject([
+      {
+        studyId,
+        analysisSessionId: tasks[0].analysisSessionId,
+        status: "draft",
+        templateId: "tpl-thyroid-ultrasound-draft-v1",
+        createdByAgent: "worker-test",
+        structured: {
+          nodules: [
+            {
+              nodule_id: nodule.id,
+              tirads_result_id: tiradsResult.id,
+              category: "TR4",
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   it("persists structured TI-RADS feature candidates from classify task input", () => {
     const { tasks } = seedAgentTaskChain(["classify_tirads_features"], {
       classify_tirads_features: {

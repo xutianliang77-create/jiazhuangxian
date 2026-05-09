@@ -290,4 +290,47 @@ describe("MedicalCaseRepo", () => {
       },
     ]);
   });
+
+  it("persists report drafts with structured evidence", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-REPORT", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-REPORT", now: 1100 });
+    const session = repo.createAnalysisSession({ studyId: study.id, status: "running", now: 1200 });
+
+    const report = repo.createReport({
+      studyId: study.id,
+      analysisSessionId: session.id,
+      templateId: "tpl-thyroid-ultrasound-draft-v1",
+      draftText: "甲状腺超声AI辅助报告（草稿）",
+      structured: {
+        nodules: [{ nodule_index: 1, category: "TR4" }],
+        review_required: true,
+      },
+      evidence: [{ source: "tirads_result", rule_code: "ACR_2017_category_TR4" }],
+      createdByAgent: "worker-test",
+      now: 1300,
+    });
+
+    expect(repo.getReport(report.id)).toMatchObject({
+      id: report.id,
+      studyId: study.id,
+      analysisSessionId: session.id,
+      reportType: "thyroid_ultrasound",
+      status: "draft",
+      templateId: "tpl-thyroid-ultrasound-draft-v1",
+      draftText: "甲状腺超声AI辅助报告（草稿）",
+      structured: {
+        nodules: [{ nodule_index: 1, category: "TR4" }],
+        review_required: true,
+      },
+      evidence: [{ source: "tirads_result", rule_code: "ACR_2017_category_TR4" }],
+      createdByAgent: "worker-test",
+      createdAt: 1300,
+      updatedAt: 1300,
+    });
+    expect(repo.listReportsByStudy(study.id).map((item) => item.id)).toEqual([report.id]);
+    expect(repo.getActiveReportTemplateText("tpl-thyroid-ultrasound-draft-v1")).toContain(
+      "甲状腺超声AI辅助报告（草稿）"
+    );
+  });
 });

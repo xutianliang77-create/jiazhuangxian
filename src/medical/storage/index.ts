@@ -12,6 +12,8 @@ export type {
   NoduleRecord,
   PatientInput,
   PatientRecord,
+  ReportInput,
+  ReportRecord,
   StudyBundle,
   StudyInput,
   StudyRecord,

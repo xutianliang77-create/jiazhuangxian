@@ -156,6 +156,7 @@ JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1
 6. `medical-agent-worker` 再次同步 `waiting_model`；如果检测成功，会把模型返回的结节框写入 `nodule` 表并继续推进下游任务；如果检测失败，会将检测任务标记为失败并阻断下游任务。
 7. `classify_tirads_features` 当前支持验证版结构化输入：如果 task input 带 `feature_candidates` / `tirads_features` / `features`，会绑定 `nodule_id` 或 `nodule_index` 并写入 `tirads_feature`；未接真实特征模型时会返回明确未配置 warning。
 8. 当 `tirads_feature` 表已有结构化特征时，`calculate_tirads` 会调用本地 ACR TI-RADS 2017 规则引擎，并把分值、分级、建议和证据规则写入 `tirads_result`。
+9. `draft_report` 会读取同一病例下已持久化的结节和最新 TI-RADS 结果，按验证版模板生成 AI 辅助报告草稿并写入 `report` 表；草稿状态为 `draft`，输出始终带 `doctor_review_required`，必须由医生审核后才可生效。
 
 如果 `image-worker` 未启动，`image_qc` 不会阻断验证链路；任务会以 `validation_mode=true` 成功完成，并在输出中写入 `image_worker_qc_unavailable` 与具体错误码，便于本地分步验证。
 

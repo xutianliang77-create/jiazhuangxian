@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, and TI-RADS rule calculation persistence.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, and structured report draft persistence.
 
 ### Completed
 
@@ -128,6 +128,9 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `MedicalCaseRepo.createTiradsFeature()`, `listTiradsFeaturesByStudy()`, `createTiradsResult()`, and `listTiradsResultsByStudy()` for structured TI-RADS storage.
 - `calculate_tirads` agent tasks now read persisted structured features, call the existing ACR TI-RADS 2017 rule engine, write `tirads_result`, and return persisted result ids plus evidence rules.
 - `classify_tirads_features` agent tasks now persist validation structured feature candidates from task input into `tirads_feature` when candidates are provided, while preserving a clear not-configured warning when no feature model/input exists.
+- Added `MedicalCaseRepo.createReport()`, `getReport()`, `listReportsByStudy()`, and active report-template text lookup for report draft storage.
+- `draft_report` agent tasks now read persisted nodules and the latest TI-RADS results, render the validation thyroid ultrasound report template, write a `draft` row to `report`, and return structured evidence.
+- Report drafts are explicitly AI-assisted validation drafts and always carry `doctor_review_required`; final confirmation remains outside the current no-permissions validation scope.
 
 ### Verification
 
@@ -209,6 +212,14 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after TI-RADS feature persistence: 10 tests.
 - CLI smoke test passed after TI-RADS feature persistence: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - `git diff --check` passed after TI-RADS feature persistence.
+- Targeted report draft persistence tests passed: `npm test -- --run test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts test/unit/medical/mcp-server.test.ts test/unit/medical/seed-data.test.ts` with 29 tests.
+- Root `npm run typecheck` passed after report draft persistence.
+- Targeted lint passed for report draft persistence files.
+- `npm test` passed after report draft persistence: 176 files passed, 1 skipped; 1683 tests passed, 3 skipped.
+- `python3 -m unittest discover services/image-worker/tests` passed after report draft persistence: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after report draft persistence: 10 tests.
+- CLI smoke test passed after report draft persistence: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after report draft persistence.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
