@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import {
   createMedicalImage,
@@ -155,13 +155,14 @@ export default function MedicalPanel({ onError }: Props) {
     }
   }
 
-  async function reviewReport(report: MedicalReport, action: "approve" | "reject") {
+  async function reviewReport(report: MedicalReport, action: "approve" | "reject", finalText?: string, comment?: string) {
     setReviewBusyReportId(report.id);
     setDetailError(null);
     try {
       const result = await reviewMedicalReport(report.id, {
         action,
-        finalText: action === "approve" ? report.finalText ?? report.draftText ?? undefined : undefined,
+        finalText: action === "approve" ? finalText ?? report.finalText ?? report.draftText ?? undefined : undefined,
+        comment,
       });
       setStudyBundle(result.bundle);
       await refresh();
@@ -640,7 +641,7 @@ function StudyDetail({
   reviewingReportId: string | null;
   revisingNoduleId: string | null;
   onStartAnalysis(imageId: string): void;
-  onReviewReport(report: MedicalReport, action: "approve" | "reject"): void;
+  onReviewReport(report: MedicalReport, action: "approve" | "reject", finalText?: string, comment?: string): void;
   onReviseNodule(nodule: MedicalNodule, bbox: number[]): Promise<void>;
 }) {
   if (!bundle) {
@@ -710,6 +711,17 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
+        <OverlayRevisionWorkspace
+          images={images}
+          nodules={nodules}
+          modelJobs={modelJobs}
+          busy={busy || revisingNoduleId !== null}
+          revisingNoduleId={revisingNoduleId}
+          onRevise={onReviseNodule}
+        />
+      </div>
+
+      <div className="mt-4">
         <h4 className="text-xs uppercase text-muted mb-2">AI Results</h4>
         {nodules.length === 0 && tiradsResults.length === 0 ? (
           <div className="text-sm text-muted border border-border rounded p-2">none</div>
@@ -741,7 +753,7 @@ function StudyDetail({
                 report={report}
                 busy={busy || reviewingReportId !== null}
                 reviewing={reviewingReportId === report.id}
-                onReview={(action) => onReviewReport(report, action)}
+                onReview={(action, finalText, comment) => onReviewReport(report, action, finalText, comment)}
               />
             ))}
           </div>
@@ -799,6 +811,198 @@ function StudyDetail({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+interface OverlaySelection {
+  image: MedicalImage;
+  overlayUri: string;
+  nodules: MedicalNodule[];
+}
+
+interface ImagePoint {
+  x: number;
+  y: number;
+}
+
+function OverlayRevisionWorkspace({
+  images,
+  nodules,
+  modelJobs,
+  busy,
+  revisingNoduleId,
+  onRevise,
+}: {
+  images: MedicalImage[];
+  nodules: MedicalNodule[];
+  modelJobs: MedicalModelJob[];
+  busy: boolean;
+  revisingNoduleId: string | null;
+  onRevise(nodule: MedicalNodule, bbox: number[]): Promise<void>;
+}) {
+  const overlay = firstOverlaySelection(images, nodules, modelJobs);
+  const [selectedNoduleId, setSelectedNoduleId] = useState<string | null>(null);
+  const [draftBbox, setDraftBbox] = useState<number[] | null>(null);
+  const [dragStart, setDragStart] = useState<ImagePoint | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const selectedNodule = overlay?.nodules.find((nodule) => nodule.id === selectedNoduleId)
+    ?? overlay?.nodules[0]
+    ?? null;
+  const displayBbox = draftBbox ?? selectedNodule?.bbox ?? null;
+
+  useEffect(() => {
+    if (!overlay) {
+      setSelectedNoduleId(null);
+      setDraftBbox(null);
+      return;
+    }
+    if (!selectedNoduleId || !overlay.nodules.some((nodule) => nodule.id === selectedNoduleId)) {
+      setSelectedNoduleId(overlay.nodules[0]?.id ?? null);
+      setDraftBbox(null);
+    }
+  }, [overlay?.image.id, overlay?.nodules, selectedNoduleId]);
+
+  useEffect(() => {
+    setDraftBbox(null);
+    setEditError(null);
+  }, [selectedNodule?.id, selectedNodule?.updatedAt]);
+
+  if (!overlay || overlay.nodules.length === 0) return null;
+
+  function beginDrag(event: ReactMouseEvent<HTMLDivElement>) {
+    if (busy || !overlay) return;
+    const point = mousePointToImagePoint(event, overlay.image);
+    if (!point) return;
+    setDragStart(point);
+    setDraftBbox([point.x, point.y, point.x, point.y]);
+    setEditError(null);
+  }
+
+  function updateDrag(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!dragStart || !overlay) return;
+    const point = mousePointToImagePoint(event, overlay.image);
+    if (!point) return;
+    setDraftBbox(bboxFromPoints(dragStart, point));
+  }
+
+  function endDrag(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!dragStart || !overlay) return;
+    const point = mousePointToImagePoint(event, overlay.image);
+    if (point) setDraftBbox(bboxFromPoints(dragStart, point));
+    setDragStart(null);
+  }
+
+  async function saveOverlayRevision() {
+    if (!selectedNodule) return;
+    if (!isNumberTuple4(draftBbox)) {
+      setEditError("请先在 overlay 上拖拽框选新 bbox。");
+      return;
+    }
+    setEditError(null);
+    try {
+      await onRevise(selectedNodule, normalizedBbox(draftBbox));
+    } catch {
+      // Parent surface already shows the API error.
+    }
+  }
+
+  return (
+    <div className="border border-border rounded p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h4 className="text-xs uppercase text-muted">Overlay Revision</h4>
+          <div className="mt-1 text-xs text-muted">拖拽图像区域生成新 bbox，再保存到选中的结节。</div>
+        </div>
+        <button type="button" className="btn-secondary" disabled={busy} onClick={saveOverlayRevision}>
+          {selectedNodule && revisingNoduleId === selectedNodule.id ? "保存中..." : "保存 overlay 修订"}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {overlay.nodules.map((nodule) => (
+          <button
+            key={nodule.id}
+            type="button"
+            className={`rounded border px-2 py-1 text-xs ${
+              selectedNodule?.id === nodule.id ? "border-accent bg-accent/10" : "border-border"
+            }`}
+            onClick={() => {
+              setSelectedNoduleId(nodule.id);
+              setDraftBbox(null);
+            }}
+          >
+            N{nodule.noduleIndex}
+          </button>
+        ))}
+      </div>
+
+      <div
+        role="img"
+        aria-label="overlay bbox revision canvas"
+        data-testid="overlay-revision-canvas"
+        className="relative mt-3 max-h-[520px] overflow-hidden rounded border border-border bg-bg select-none cursor-crosshair"
+        onMouseDown={beginDrag}
+        onMouseMove={updateDrag}
+        onMouseUp={endDrag}
+        onMouseLeave={() => setDragStart(null)}
+      >
+        <img
+          src={medicalArtifactUrl(overlay.overlayUri)}
+          alt="overlay revision preview"
+          className="block h-auto w-full object-contain"
+          draggable={false}
+        />
+        {overlay.nodules.map((nodule) => (
+          <BboxOverlay
+            key={nodule.id}
+            bbox={nodule.bbox}
+            image={overlay.image}
+            active={selectedNodule?.id === nodule.id}
+            label={`N${nodule.noduleIndex}`}
+          />
+        ))}
+        {isNumberTuple4(displayBbox) && (
+          <BboxOverlay bbox={displayBbox} image={overlay.image} active label="draft" dashed />
+        )}
+      </div>
+
+      <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+        <Metric label="image" value={overlay.image.id} />
+        <Metric label="current bbox" value={formatBbox(selectedNodule?.bbox)} />
+        <Metric label="draft bbox" value={formatBbox(draftBbox)} />
+      </div>
+      {editError && <div className="mt-2 text-xs text-danger">{editError}</div>}
+    </div>
+  );
+}
+
+function BboxOverlay({
+  bbox,
+  image,
+  active,
+  label,
+  dashed = false,
+}: {
+  bbox: unknown;
+  image: MedicalImage;
+  active: boolean;
+  label: string;
+  dashed?: boolean;
+}) {
+  const style = bboxStyle(bbox, image);
+  if (!style) return null;
+  return (
+    <div
+      className={`pointer-events-none absolute border-2 ${
+        active ? "border-accent" : "border-warning"
+      } ${dashed ? "border-dashed" : ""}`}
+      style={style}
+    >
+      <span className="absolute left-0 top-0 bg-bg/90 px-1 py-0.5 text-[10px] font-semibold text-fg">
+        {label}
+      </span>
     </div>
   );
 }
@@ -926,10 +1130,22 @@ function ReportRow({
   report: MedicalReport;
   busy: boolean;
   reviewing: boolean;
-  onReview(action: "approve" | "reject"): void;
+  onReview(action: "approve" | "reject", finalText?: string, comment?: string): void;
 }) {
   const text = report.finalText ?? report.draftText ?? "";
+  const [editedText, setEditedText] = useState(text);
+  const [comment, setComment] = useState("");
   const canReview = report.status === "draft" || report.status === "pending_review";
+
+  useEffect(() => {
+    setEditedText(text);
+    setComment("");
+  }, [report.id, report.updatedAt, text]);
+
+  function submit(action: "approve" | "reject") {
+    onReview(action, action === "approve" ? editedText : undefined, optionalText(comment));
+  }
+
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -939,17 +1155,42 @@ function ReportRow({
       <div className="text-muted mt-1">
         {report.reportType} · {report.templateId ?? "no template"} · {formatTime(report.updatedAt)}
       </div>
-      {text && (
+      {canReview ? (
+        <div className="mt-2 space-y-2">
+          <label className="block text-muted">
+            报告正文
+            <textarea
+              className={`${inputClass} mt-1 min-h-32 font-mono text-xs`}
+              value={editedText}
+              onChange={(event) => setEditedText(event.target.value)}
+            />
+          </label>
+          <label className="block text-muted">
+            审核意见
+            <input
+              className={`${inputClass} mt-1 text-xs`}
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="可选"
+            />
+          </label>
+          {text !== editedText && (
+            <div className="rounded border border-warning/40 px-2 py-1 text-warning">
+              已修改草稿：{text.length} → {editedText.length} 字符
+            </div>
+          )}
+        </div>
+      ) : text ? (
         <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg px-2 py-1.5 text-xs">
           {text}
         </pre>
-      )}
+      ) : null}
       {canReview && (
         <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" className="btn-primary" disabled={busy} onClick={() => onReview("approve")}>
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => submit("approve")}>
             {reviewing ? "处理中..." : "确认报告"}
           </button>
-          <button type="button" className="btn-secondary" disabled={busy} onClick={() => onReview("reject")}>
+          <button type="button" className="btn-secondary" disabled={busy} onClick={() => submit("reject")}>
             驳回
           </button>
         </div>
@@ -959,6 +1200,13 @@ function ReportRow({
 }
 
 function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
+  const before = review.before ?? {};
+  const after = review.after ?? {};
+  const beforeStatus = stringValue(before.status) ?? "unknown";
+  const afterStatus = stringValue(after.status) ?? "unknown";
+  const beforeText = stringValue(before.final_text) ?? stringValue(before.draft_text) ?? "";
+  const afterText = stringValue(after.final_text) ?? stringValue(after.draft_text) ?? "";
+  const textChanged = beforeText !== afterText;
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -968,6 +1216,10 @@ function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
       <div className="text-muted mt-1">
         {review.reportId} · {formatTime(review.createdAt)}
       </div>
+      <div className="mt-2 rounded border border-border px-2 py-1">
+        {beforeStatus} → {afterStatus}
+        {textChanged && <span className="ml-2 text-warning">文本 {beforeText.length} → {afterText.length}</span>}
+      </div>
       {review.comment && <div className="mt-2 text-muted">{review.comment}</div>}
     </div>
   );
@@ -976,6 +1228,7 @@ function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
 function AuditRow({ audit }: { audit: MedicalAuditLog }) {
   const safetyStatus = stringValue(audit.detail.safety_status) ?? audit.action;
   const issues = Array.isArray(audit.detail.issues) ? audit.detail.issues : [];
+  const bboxChange = bboxChangeLabel(audit.detail);
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -985,6 +1238,11 @@ function AuditRow({ audit }: { audit: MedicalAuditLog }) {
       <div className="text-muted mt-1">
         {audit.actorType}:{audit.actorId ?? "unknown"} · {formatTime(audit.createdAt)}
       </div>
+      {bboxChange && (
+        <div className="mt-2 rounded border border-border px-2 py-1 font-mono text-[11px] text-muted">
+          {bboxChange}
+        </div>
+      )}
       {issues.length > 0 && (
         <div className="mt-2 space-y-1">
           {issues.map((issue, index) => (
@@ -1105,11 +1363,78 @@ function parseBboxInput(value: string): number[] | string {
   if (parts.length !== 4) return "bbox 需要 4 个数字：x1, y1, x2, y2";
   const numbers = parts.map(Number);
   if (!numbers.every(Number.isFinite)) return "bbox 只能包含有限数字";
-  return numbers;
+  return normalizedBbox(numbers);
 }
 
 function isNumberTuple4(value: unknown): value is number[] {
   return Array.isArray(value) && value.length === 4 && value.every((item) => typeof item === "number" && Number.isFinite(item));
+}
+
+function firstOverlaySelection(
+  images: MedicalImage[],
+  nodules: MedicalNodule[],
+  modelJobs: MedicalModelJob[]
+): OverlaySelection | null {
+  for (const job of modelJobs) {
+    const artifacts = objectValue(job.output?.artifacts);
+    const overlayUri = stringValue(artifacts?.overlay_image);
+    if (!overlayUri) continue;
+    const image = images.find((item) => item.id === job.imageId) ?? images[0];
+    if (!image) continue;
+    const imageNodules = nodules.filter((nodule) => nodule.imageId === image.id);
+    if (imageNodules.length > 0) return { image, overlayUri, nodules: imageNodules };
+  }
+  return null;
+}
+
+function bboxStyle(bbox: unknown, image: MedicalImage): CSSProperties | null {
+  if (!isNumberTuple4(bbox) || !image.width || !image.height) return null;
+  const [x1, y1, x2, y2] = normalizedBbox(bbox);
+  const left = clampNumber(x1, 0, image.width);
+  const top = clampNumber(y1, 0, image.height);
+  const right = clampNumber(x2, 0, image.width);
+  const bottom = clampNumber(y2, 0, image.height);
+  return {
+    left: `${(left / image.width) * 100}%`,
+    top: `${(top / image.height) * 100}%`,
+    width: `${(Math.max(0, right - left) / image.width) * 100}%`,
+    height: `${(Math.max(0, bottom - top) / image.height) * 100}%`,
+  };
+}
+
+function mousePointToImagePoint(event: ReactMouseEvent<HTMLDivElement>, image: MedicalImage): ImagePoint | null {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const imageWidth = image.width ?? rect.width;
+  const imageHeight = image.height ?? rect.height;
+  if (rect.width <= 0 || rect.height <= 0 || imageWidth <= 0 || imageHeight <= 0) return null;
+  const x = ((event.clientX - rect.left) / rect.width) * imageWidth;
+  const y = ((event.clientY - rect.top) / rect.height) * imageHeight;
+  return {
+    x: clampNumber(round2(x), 0, imageWidth),
+    y: clampNumber(round2(y), 0, imageHeight),
+  };
+}
+
+function bboxFromPoints(start: ImagePoint, end: ImagePoint): number[] {
+  return normalizedBbox([start.x, start.y, end.x, end.y]);
+}
+
+function normalizedBbox(value: number[]): number[] {
+  const [x1, y1, x2, y2] = value;
+  return [
+    round2(Math.min(x1, x2)),
+    round2(Math.min(y1, y2)),
+    round2(Math.max(x1, x2)),
+    round2(Math.max(y1, y2)),
+  ];
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -1139,6 +1464,13 @@ function issueLabel(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) return String(value);
   const record = value as Record<string, unknown>;
   return [record.rule_code, record.severity, record.message].filter((item) => typeof item === "string").join(" · ");
+}
+
+function bboxChangeLabel(detail: Record<string, unknown>): string | null {
+  const before = objectValue(detail.before);
+  const after = objectValue(detail.after);
+  if (!isNumberTuple4(before?.bbox) || !isNumberTuple4(after?.bbox)) return null;
+  return `bbox ${formatBbox(before.bbox)} -> ${formatBbox(after.bbox)}`;
 }
 
 const inputClass = "w-full min-w-0 rounded border border-border bg-bg px-2 py-1.5 text-sm text-fg";

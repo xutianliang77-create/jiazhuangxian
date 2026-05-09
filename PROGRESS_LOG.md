@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, and doctor-side nodule bbox revision with audit history in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
 
 ### Completed
 
@@ -161,6 +161,9 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `examples/medical-knowledge/thyroid-guidelines-v1.manifest.json` as the first-version thyroid knowledge base with ACR TI-RADS 2017, ATA 2015, EU-TIRADS 2017, C-TIRADS reference boundary, cross-guideline conflict policy, and report evidence safety constraints.
 - Changed `medical:init-db --ingest-sample-knowledge` to default to the first-version thyroid guideline knowledge base while keeping the older ACR validation sample available for focused ingestion tests.
 - Updated medical knowledge ingestion and MCP setup documentation so local validation initialization now creates the guideline evidence pack in SQLite and CodeClaw RAG by default.
+- Added an Overlay Revision workspace in MedicalPanel that displays detector overlay images, lets doctors select a nodule, drag a new bbox on the overlay, and save it through the existing `POST /v1/web/medical/nodules/:noduleId/revise` endpoint.
+- Enhanced the report card with editable report text and optional review comments before confirm/reject, using the existing report review endpoint.
+- Enhanced doctor review and safety audit rendering so report status/text changes and bbox before/after changes are visible in the workstation.
 
 ### Verification
 
@@ -358,6 +361,13 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Medical knowledge search smoke test passed after the first-version KB: query `TR5 FNA 1.0 cm` returned `medical/doc-thyroid-guidelines-v1/acr-tirads-size-actions` from a temporary SQLite/RAG pair.
 - `git diff --check` passed after the first-version KB.
 - GitHub push succeeded after retry: `41c9c5c Add first thyroid knowledge base` reached `origin/main`.
+- Targeted MedicalPanel tests passed after workstation enhancement: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 10 tests.
+- Frontend typecheck passed after workstation enhancement: `cd web-react && npm run typecheck`.
+- Root `npm run typecheck` passed after workstation enhancement.
+- Targeted frontend lint passed after workstation enhancement: `cd web-react && npx eslint src/components/panels/MedicalPanel.tsx src/components/panels/MedicalPanel.test.tsx`.
+- Full web-react tests passed after workstation enhancement: `cd web-react && npm test` with 11 files and 43 tests.
+- `npm run build:web` passed after workstation enhancement; Vite still reports the existing Monaco chunk-size warning.
+- `git diff --check` passed after workstation enhancement.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.
@@ -376,7 +386,7 @@ None.
 
 1. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
 2. Add PDF-to-manifest parsing when representative guideline PDFs are available.
-3. Add drag-based bbox editing on the overlay preview if numeric bbox revision is not enough for validation users.
+3. Add batch case queue workflows for multi-case review, filtering, and bulk state transitions.
 4. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist

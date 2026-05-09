@@ -548,10 +548,15 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("Nodule 1")).toBeInTheDocument();
     expect(screen.getByText("TR4")).toBeInTheDocument();
     expect(screen.getByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
+    expect(screen.getByText("Overlay Revision")).toBeInTheDocument();
     expect(screen.getByText("needs_doctor_review")).toBeInTheDocument();
     expect(screen.getByText("thyroid.detect_nodules")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/detections.json")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/overlay.png")).toBeInTheDocument();
+    expect(screen.getByAltText("overlay revision preview")).toHaveAttribute(
+      "src",
+      "/v1/web/medical/artifacts?uri=artifact%3A%2F%2Fmodel-output%2FS1%2FIMG1%2FMJ1%2Foverlay.png&token=test-token"
+    );
     expect(screen.getByAltText("detector overlay preview")).toHaveAttribute(
       "src",
       "/v1/web/medical/artifacts?uri=artifact%3A%2F%2Fmodel-output%2FS1%2FIMG1%2FMJ1%2Foverlay.png&token=test-token"
@@ -572,17 +577,63 @@ describe("MedicalPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
     expect(await screen.findByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("报告正文"), {
+      target: { value: "医生修订后的甲状腺超声报告" },
+    });
+    fireEvent.change(screen.getByLabelText("审核意见"), {
+      target: { value: "医生已核对图像与证据" },
+    });
+    expect(screen.getByText(/已修改草稿/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认报告" }));
 
     await waitFor(() =>
       expect(reviewMedicalReport).toHaveBeenCalledWith("R1", {
         action: "approve",
-        finalText: "甲状腺超声AI辅助报告（草稿）\nTI-RADS TR4，需医生审核确认后生效。",
+        finalText: "医生修订后的甲状腺超声报告",
+        comment: "医生已核对图像与证据",
       })
     );
     expect(await screen.findByText("confirmed")).toBeInTheDocument();
     expect(screen.getByText("approve")).toBeInTheDocument();
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("draws a bbox on the overlay preview and saves the selected nodule revision", async () => {
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    const canvas = await screen.findByTestId("overlay-revision-canvas");
+    Object.defineProperty(canvas, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        left: 0,
+        top: 0,
+        width: 640,
+        height: 480,
+        right: 640,
+        bottom: 480,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+    fireEvent.mouseDown(canvas, { clientX: 12, clientY: 22 });
+    fireEvent.mouseMove(canvas, { clientX: 32, clientY: 42 });
+    fireEvent.mouseUp(canvas, { clientX: 32, clientY: 42 });
+    expect(screen.getByText("12, 22, 32, 42")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "保存 overlay 修订" }));
+
+    await waitFor(() =>
+      expect(reviseMedicalNodule).toHaveBeenCalledWith("N1", {
+        bbox: [12, 22, 32, 42],
+        status: "doctor_revised",
+      })
+    );
+    expect(await screen.findByText("doctor_revised")).toBeInTheDocument();
+    expect(screen.getByText("bbox 10, 20, 30, 40 -> 12, 22, 32, 42")).toBeInTheDocument();
   });
 
   it("saves a doctor bbox revision for a nodule", async () => {
@@ -603,6 +654,7 @@ describe("MedicalPanel", () => {
     );
     expect(await screen.findByText("doctor_revised")).toBeInTheDocument();
     expect(screen.getAllByText("medical.nodule.revise").length).toBeGreaterThan(0);
+    expect(screen.getByText("bbox 10, 20, 30, 40 -> 12, 22, 32, 42")).toBeInTheDocument();
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
   });
 
