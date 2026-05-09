@@ -89,6 +89,7 @@ artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_
 
 - 当检测请求 `return_overlay = true` 且 `source_image_uri` 能解析为可读取的 PNG/JPEG 等栅格图时，model-worker 会在同一目录写入 `overlay.png`。
 - Overlay 使用检测 JSON 中的像素 bbox 直接绘制，只用于医生快速复核候选框位置。
+- 医生工作台通过 `GET /v1/web/medical/artifacts?uri=<artifact-uri>` 读取 overlay；该路由需要 Web 鉴权，并且只允许解析到 artifact root 内的 `artifact://` 路径。
 - Overlay 不是诊断依据，不替代原始图像、DICOM 图像、测量结果或医生修订记录。
 - 如果 Pillow 缺失、源图像不存在或源图像格式无法打开，检测 JSON 仍会写入，`warnings` 会包含 `overlay_unavailable:*`，`artifacts.overlay_image` 为 `null`。
 

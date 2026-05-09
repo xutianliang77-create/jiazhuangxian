@@ -5,7 +5,7 @@
  * 类型故意保留 `unknown` / 宽松，避免双仓库 schema 漂移。
  */
 
-import { api } from "./client";
+import { api, withAuthQuery } from "./client";
 
 export interface SessionMeta {
   sessionId: string;
@@ -663,6 +663,9 @@ export const getMedicalSummary = (limit = 12) =>
 
 export const getMedicalModelGatewayCheck = () =>
   api<MedicalModelGatewayCheck>("GET", "/v1/web/medical/model-gateway/check");
+
+export const medicalArtifactUrl = (uri: string) =>
+  withAuthQuery(`/v1/web/medical/artifacts?uri=${encodeURIComponent(uri)}`);
 
 export const getMedicalStudy = (studyId: string) =>
   api<{ bundle: MedicalStudyBundle }>("GET", `/v1/web/medical/studies/${encodeURIComponent(studyId)}`);

@@ -7,6 +7,7 @@ import {
   getMedicalStudy,
   getMedicalModelGatewayCheck,
   getMedicalSummary,
+  medicalArtifactUrl,
   reviewMedicalReport,
   startMedicalAnalysis,
   type MedicalAgentTask,
@@ -683,6 +684,13 @@ function ModelJobRow({ job }: { job: MedicalModelJob }) {
       )}
       {overlayUri && (
         <ArtifactLine label="overlay" value={overlayUri} />
+      )}
+      {overlayUri && (
+        <img
+          src={medicalArtifactUrl(overlayUri)}
+          alt="detector overlay preview"
+          className="mt-2 max-h-48 w-full rounded border border-border object-contain bg-bg"
+        />
       )}
       {job.error && (
         <div className="mt-2 rounded border border-danger/40 px-2 py-1 text-danger">

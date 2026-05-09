@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -718,6 +718,47 @@ describe("Web server · medical API", () => {
         process.env.JZX_MODEL_GATEWAY_URL = previousUrl;
       }
       await new Promise<void>((resolve, reject) => gateway.close((err) => err ? reject(err) : resolve()));
+    }
+  });
+
+  it("GET /v1/web/medical/artifacts serves artifact previews inside artifact root", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-artifact-"));
+    const artifactRoot = path.join(dir, "artifacts");
+    const artifactRel = path.join("model-output", "thyroid-detect-nodules", "S1", "IMG1", "MJ1");
+    mkdirSync(path.join(artifactRoot, artifactRel), { recursive: true });
+    const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
+    writeFileSync(path.join(artifactRoot, artifactRel, "overlay.png"), pngBytes);
+    let medicalHandle: WebServerHandle | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        artifactsRoot: artifactRoot,
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const uri = "artifact://model-output/thyroid-detect-nodules/S1/IMG1/MJ1/overlay.png";
+      const response = await fetch(
+        `${medicalBaseUrl}/v1/web/medical/artifacts?uri=${encodeURIComponent(uri)}`,
+        { headers: authHeaders() }
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/png");
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(pngBytes);
+
+      const escapeResponse = await fetch(
+        `${medicalBaseUrl}/v1/web/medical/artifacts?uri=${encodeURIComponent("artifact://../outside.png")}`,
+        { headers: authHeaders() }
+      );
+      expect(escapeResponse.status).toBe(400);
+    } finally {
+      await medicalHandle?.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

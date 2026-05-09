@@ -88,6 +88,7 @@ import {
   handleCreateMedicalStudy,
   handleMedicalModelGatewayCheck,
   handleMedicalSummary,
+  handleReadMedicalArtifact,
   handleReadMedicalStudy,
   handleReviewMedicalReport,
   handleStartMedicalAnalysis,
@@ -409,6 +410,9 @@ async function dispatch(
   }
   if (url.pathname === "/v1/web/medical/model-gateway/check" && method === "GET") {
     return handleMedicalModelGatewayCheck(req, res, deps);
+  }
+  if (url.pathname === "/v1/web/medical/artifacts" && method === "GET") {
+    return handleReadMedicalArtifact(req, res, deps, url);
   }
   if (url.pathname === "/v1/web/medical/patients" && method === "POST") {
     return handleCreateMedicalPatient(req, res, deps);

@@ -61,3 +61,10 @@ export function openEventSource(path: string): EventSource {
   const sep = path.includes("?") ? "&" : "?";
   return new EventSource(`${path}${sep}token=${encodeURIComponent(token)}`);
 }
+
+export function withAuthQuery(path: string): string {
+  const token = useAuthStore.getState().token;
+  if (!token) throw makeApiError(401, "missing-token", "Not connected; set token first");
+  const sep = path.includes("?") ? "&" : "?";
+  return `${path}${sep}token=${encodeURIComponent(token)}`;
+}

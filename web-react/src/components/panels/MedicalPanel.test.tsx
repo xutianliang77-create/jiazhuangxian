@@ -7,6 +7,7 @@ vi.mock("@/api/endpoints", () => ({
   getMedicalSummary: vi.fn(),
   getMedicalModelGatewayCheck: vi.fn(),
   getMedicalStudy: vi.fn(),
+  medicalArtifactUrl: vi.fn((uri: string) => `/v1/web/medical/artifacts?uri=${encodeURIComponent(uri)}&token=test-token`),
   createMedicalPatient: vi.fn(),
   createMedicalStudy: vi.fn(),
   createMedicalImage: vi.fn(),
@@ -20,6 +21,7 @@ import {
   createMedicalStudy,
   getMedicalModelGatewayCheck,
   getMedicalStudy,
+  medicalArtifactUrl,
   getMedicalSummary,
   reviewMedicalReport,
   startMedicalAnalysis,
@@ -436,6 +438,11 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("thyroid.detect_nodules")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/detections.json")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/overlay.png")).toBeInTheDocument();
+    expect(screen.getByAltText("detector overlay preview")).toHaveAttribute(
+      "src",
+      "/v1/web/medical/artifacts?uri=artifact%3A%2F%2Fmodel-output%2FS1%2FIMG1%2FMJ1%2Foverlay.png&token=test-token"
+    );
+    expect(medicalArtifactUrl).toHaveBeenCalledWith("artifact://model-output/S1/IMG1/MJ1/overlay.png");
 
     fireEvent.click(screen.getByRole("button", { name: "启动分析" }));
 

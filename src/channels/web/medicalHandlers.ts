@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
 
@@ -53,6 +55,15 @@ const MEDICAL_ANALYSIS_TASKS = [
   { agentName: "ReportDraftAgent", taskType: "draft_report", toolName: "medical.GetReportTemplate" },
   { agentName: "SafetyReviewAgent", taskType: "safety_review", toolName: "medical.SearchGuideline" },
 ] as const;
+
+const MEDICAL_ARTIFACT_MAX_BYTES = 32 * 1024 * 1024;
+const MEDICAL_ARTIFACT_MIME: Record<string, string> = {
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+};
 
 export async function handleMedicalSummary(
   req: IncomingMessage,
@@ -153,6 +164,43 @@ export async function handleMedicalModelGatewayCheck(
     });
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export async function handleReadMedicalArtifact(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  url: URL
+): Promise<void> {
+  if (!authenticate(req, res, deps)) return;
+
+  try {
+    const artifactUri = url.searchParams.get("uri")?.trim();
+    if (!artifactUri) {
+      throw new MedicalRequestError(400, "invalid-request", "uri is required");
+    }
+    const artifactPath = resolveMedicalArtifactPath(artifactUri, deps);
+    let stat;
+    try {
+      stat = statSync(artifactPath);
+    } catch {
+      throw new MedicalRequestError(404, "artifact-not-found", "artifact was not found");
+    }
+    if (!stat.isFile()) {
+      throw new MedicalRequestError(404, "artifact-not-found", "artifact was not found");
+    }
+    if (stat.size > MEDICAL_ARTIFACT_MAX_BYTES) {
+      throw new MedicalRequestError(413, "artifact-too-large", "artifact exceeds validation preview size limit");
+    }
+    const ext = path.extname(artifactPath).toLowerCase();
+    res.statusCode = 200;
+    res.setHeader("content-type", MEDICAL_ARTIFACT_MIME[ext] ?? "application/octet-stream");
+    res.setHeader("content-length", String(stat.size));
+    res.setHeader("cache-control", "no-store");
+    res.end(readFileSync(artifactPath));
+  } catch (err) {
+    medicalWriteError(res, err);
   }
 }
 
@@ -482,6 +530,22 @@ function modelGatewayBaseUrl(): string {
   if (configured) return configured.replace(/\/+$/, "");
   const port = process.env.JZX_MODEL_GATEWAY_PORT?.trim() || "8766";
   return `http://127.0.0.1:${port}`;
+}
+
+function resolveMedicalArtifactPath(artifactUri: string, deps: HandlerDeps): string {
+  if (!artifactUri.startsWith("artifact://")) {
+    throw new MedicalRequestError(400, "invalid-request", "uri must start with artifact://");
+  }
+  const relative = artifactUri.slice("artifact://".length).replace(/^\/+/, "");
+  if (!relative) {
+    throw new MedicalRequestError(400, "invalid-request", "artifact URI must include a path");
+  }
+  const root = path.resolve(deps.artifactsRoot || process.env.JZX_ARTIFACT_ROOT?.trim() || "data/artifacts");
+  const target = path.resolve(root, relative);
+  if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+    throw new MedicalRequestError(400, "invalid-request", "artifact URI cannot escape artifact root");
+  }
+  return target;
 }
 
 function authenticateMedicalWrite(
