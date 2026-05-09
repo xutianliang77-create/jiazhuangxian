@@ -131,12 +131,39 @@ describe("MedicalCaseRepo", () => {
     expect(bundle?.reports).toEqual([]);
     expect(bundle?.auditLogs).toEqual([]);
     expect(bundle?.doctorReviews).toEqual([]);
+    expect(bundle?.modelJobs).toEqual([]);
     expect(task).toMatchObject({
       agentName: "CaseCoordinatorAgent",
       taskType: "orchestrate",
       status: "queued",
       input: { study_id: study.id },
     });
+  });
+
+  it("lists model jobs and artifact URIs in study bundles", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-MJ", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-MJ", now: 1100 });
+    const image = repo.addImage({
+      studyId: study.id,
+      fileUri: "artifact://raw/ACC-MJ/IMG1.png",
+      fileType: "png",
+      now: 1200,
+    });
+    const modelJob = repo.createModelJob({
+      studyId: study.id,
+      imageId: image.id,
+      jobType: "thyroid.detect_nodules",
+      status: "succeeded",
+      output: { artifacts: { detections_json: "artifact://model-output/ACC-MJ/IMG1/MJ1/detections.json" } },
+      modelName: "yolov11-thyroid-detector",
+      modelVersion: "validation",
+      artifactUri: "artifact://model-output/ACC-MJ/IMG1/MJ1/detections.json",
+      now: 1300,
+    });
+
+    expect(repo.listModelJobsByStudy(study.id)).toEqual([modelJob]);
+    expect(repo.getStudyBundle(study.id)?.modelJobs).toEqual([modelJob]);
   });
 
   it("upserts patient records by external patient id", () => {

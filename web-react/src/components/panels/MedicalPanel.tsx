@@ -5,6 +5,7 @@ import {
   createMedicalPatient,
   createMedicalStudy,
   getMedicalStudy,
+  getMedicalModelGatewayCheck,
   getMedicalSummary,
   reviewMedicalReport,
   startMedicalAnalysis,
@@ -12,6 +13,8 @@ import {
   type MedicalAuditLog,
   type MedicalDoctorReview,
   type MedicalImage,
+  type MedicalModelGatewayCheck,
+  type MedicalModelJob,
   type MedicalNodule,
   type MedicalRecentStudy,
   type MedicalReport,
@@ -60,6 +63,7 @@ const EMPTY_MANUAL_CASE: ManualCaseFormState = {
 
 export default function MedicalPanel({ onError }: Props) {
   const [summary, setSummary] = useState<MedicalSummary | null>(null);
+  const [gatewayCheck, setGatewayCheck] = useState<MedicalModelGatewayCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -77,7 +81,21 @@ export default function MedicalPanel({ onError }: Props) {
     setBusy(true);
     setLocalError(null);
     try {
-      setSummary(await getMedicalSummary());
+      const [nextSummary, nextGatewayCheck] = await Promise.all([
+        getMedicalSummary(),
+        getMedicalModelGatewayCheck().catch((err): MedicalModelGatewayCheck => ({
+          gatewayUrl: "unknown",
+          reachable: false,
+          httpStatus: null,
+          checkedAt: Date.now(),
+          durationMs: 0,
+          result: null,
+          warnings: ["model_gateway_check_failed"],
+          error: { code: "model-gateway-check-failed", message: (err as Error).message },
+        })),
+      ]);
+      setSummary(nextSummary);
+      setGatewayCheck(nextGatewayCheck);
     } catch (err) {
       const message = `Medical 加载失败：${(err as Error).message}`;
       setLocalError(message);
@@ -218,6 +236,7 @@ export default function MedicalPanel({ onError }: Props) {
         <div className="border border-warning rounded p-3 text-sm text-warning">
           {summary.message ?? "medical storage disabled"}
         </div>
+        <ModelGatewayStatus check={gatewayCheck} />
       </div>
     );
   }
@@ -246,6 +265,7 @@ export default function MedicalPanel({ onError }: Props) {
 
         <QueueBlock title="Model Jobs" values={summary.queues.modelJobs} />
         <QueueBlock title="Agent Tasks" values={summary.queues.agentTasks} />
+        <ModelGatewayStatus check={gatewayCheck} />
       </aside>
 
       <section className="p-4 overflow-y-auto space-y-4">
@@ -435,6 +455,39 @@ function QueueBlock({ title, values }: { title: string; values: Record<string, n
   );
 }
 
+function ModelGatewayStatus({ check }: { check: MedicalModelGatewayCheck | null }) {
+  const result = check?.result ?? null;
+  const readyDetectors = stringList(result?.ready_detectors);
+  const status = !check
+    ? "checking"
+    : check.reachable
+      ? stringValue(result?.status) ?? "reachable"
+      : "unreachable";
+  return (
+    <div>
+      <h3 className="text-xs uppercase text-muted mb-2">Model Gateway</h3>
+      <div className="border border-border rounded p-2 text-xs space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium">{status}</span>
+          <span className="border border-border rounded px-1.5 py-0.5">
+            {check?.reachable ? "online" : "offline"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Metric label="ready" value={readyDetectors.length > 0 ? readyDetectors.join(", ") : "none"} />
+          <Metric label="gpu" value={gpuLabel(result)} />
+          <Metric label="latency" value={check ? `${check.durationMs}ms` : "pending"} />
+          <Metric label="checked" value={check ? formatTime(check.checkedAt) : "pending"} />
+        </div>
+        {check?.gatewayUrl && <div className="font-mono text-[11px] text-muted truncate">{check.gatewayUrl}</div>}
+        {check?.warnings && check.warnings.length > 0 && (
+          <div className="text-warning">{check.warnings.join(", ")}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StudyDetail({
   bundle,
   busy,
@@ -469,6 +522,7 @@ function StudyDetail({
     reports,
     auditLogs,
     doctorReviews,
+    modelJobs,
     analysisSessions,
     agentTasks,
   } = bundle;
@@ -493,6 +547,7 @@ function StudyDetail({
         <Metric label="nodules" value={String(nodules.length)} />
         <Metric label="reports" value={String(reports.length)} />
         <Metric label="audits" value={String(auditLogs.length)} />
+        <Metric label="model jobs" value={String(modelJobs.length)} />
         <Metric label="analysis" value={String(analysisSessions.length)} />
         <Metric label="tasks" value={String(agentTasks.length)} />
       </div>
@@ -579,6 +634,19 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
+        <h4 className="text-xs uppercase text-muted mb-2">Model Jobs</h4>
+        {modelJobs.length === 0 ? (
+          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {modelJobs.map((job) => (
+              <ModelJobRow key={job.id} job={job} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4">
         <h4 className="text-xs uppercase text-muted mb-2">Agent Tasks</h4>
         {agentTasks.length === 0 ? (
           <div className="text-sm text-muted border border-border rounded p-2">none</div>
@@ -590,6 +658,32 @@ function StudyDetail({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ModelJobRow({ job }: { job: MedicalModelJob }) {
+  const artifactUri = job.artifactUri ?? stringValue(objectValue(job.output?.artifacts)?.detections_json);
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium truncate">{job.jobType}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{job.status}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <Metric label="model" value={job.modelName ?? "unknown"} />
+        <Metric label="version" value={job.modelVersion ?? "unknown"} />
+        <Metric label="attempts" value={`${job.attempts}/${job.maxAttempts}`} />
+        <Metric label="updated" value={formatTime(job.updatedAt)} />
+      </div>
+      {artifactUri && (
+        <div className="mt-2 font-mono text-[11px] text-muted break-all">{artifactUri}</div>
+      )}
+      {job.error && (
+        <div className="mt-2 rounded border border-danger/40 px-2 py-1 text-danger">
+          {stringValue(job.error.code) ?? "model_job_error"}
+        </div>
+      )}
     </div>
   );
 }
@@ -793,6 +887,25 @@ function formatOptionalNumber(value: number | null | undefined): string {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function gpuLabel(result: Record<string, unknown> | null): string {
+  const runtime = objectValue(result?.runtime);
+  const gpu = objectValue(runtime?.gpu);
+  if (!gpu) return "unknown";
+  if (gpu.cuda_available === true) {
+    const count = typeof gpu.device_count === "number" ? gpu.device_count : 0;
+    return `cuda:${count}`;
+  }
+  return "no cuda";
 }
 
 function issueLabel(value: unknown): string {

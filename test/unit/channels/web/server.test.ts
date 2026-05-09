@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -672,6 +673,54 @@ describe("Web server · medical API", () => {
     }
   });
 
+  it("GET /v1/web/medical/model-gateway/check proxies model-gateway config", async () => {
+    const gateway = http.createServer((req, res) => {
+      if (req.url !== "/model/v1/config/check") {
+        res.statusCode = 404;
+        res.end("not found");
+        return;
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        status: "ok",
+        result: {
+          status: "degraded",
+          ready_detectors: ["yolov11"],
+          runtime: { gpu: { cuda_available: false, device_count: 0 } },
+        },
+        warnings: ["cuda_unavailable"],
+      }));
+    });
+    await new Promise<void>((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+    const address = gateway.address();
+    const previousUrl = process.env.JZX_MODEL_GATEWAY_URL;
+    process.env.JZX_MODEL_GATEWAY_URL = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+    try {
+      const response = await fetch(`${baseUrl}/v1/web/medical/model-gateway/check`, {
+        headers: authHeaders(),
+      });
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        reachable: boolean;
+        httpStatus: number;
+        result: Record<string, unknown>;
+        warnings: string[];
+      };
+      expect(body.reachable).toBe(true);
+      expect(body.httpStatus).toBe(200);
+      expect(body.result.status).toBe("degraded");
+      expect(body.result.ready_detectors).toEqual(["yolov11"]);
+      expect(body.warnings).toContain("cuda_unavailable");
+    } finally {
+      if (previousUrl === undefined) {
+        delete process.env.JZX_MODEL_GATEWAY_URL;
+      } else {
+        process.env.JZX_MODEL_GATEWAY_URL = previousUrl;
+      }
+      await new Promise<void>((resolve, reject) => gateway.close((err) => err ? reject(err) : resolve()));
+    }
+  });
+
   it("POST medical patients/studies/images registers a manual validation case", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-write-"));
     const dbPath = path.join(dir, "data.db");
@@ -797,6 +846,32 @@ describe("Web server · medical API", () => {
         }),
       });
       const imageBody = (await imageResponse.json()) as { image: { id: string } };
+      const db = new Database(dbPath);
+      try {
+        const now = Date.now();
+        db.prepare(
+          `INSERT INTO model_job(
+             id, study_id, image_id, job_type, status, input_json, output_json,
+             model_name, model_version, artifact_uri, created_at, updated_at
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          "MJ-DETAIL-1",
+          studyBody.study.id,
+          imageBody.image.id,
+          "thyroid.detect_nodules",
+          "succeeded",
+          "{}",
+          JSON.stringify({ artifacts: { detections_json: "artifact://model-output/S1/IMG1/MJ-DETAIL-1/detections.json" } }),
+          "yolov11-thyroid-detector",
+          "validation",
+          "artifact://model-output/S1/IMG1/MJ-DETAIL-1/detections.json",
+          now,
+          now
+        );
+      } finally {
+        db.close();
+      }
 
       const detail = await fetch(`${medicalBaseUrl}/v1/web/medical/studies/${studyBody.study.id}`, {
         headers: authHeaders(),
@@ -809,6 +884,7 @@ describe("Web server · medical API", () => {
           tiradsResults: unknown[];
           reports: unknown[];
           auditLogs: unknown[];
+          modelJobs: Array<{ artifactUri: string | null; modelName: string | null; status: string }>;
           agentTasks: unknown[];
         };
       };
@@ -817,6 +893,12 @@ describe("Web server · medical API", () => {
       expect(detailBody.bundle.tiradsResults).toHaveLength(0);
       expect(detailBody.bundle.reports).toHaveLength(0);
       expect(detailBody.bundle.auditLogs).toHaveLength(0);
+      expect(detailBody.bundle.modelJobs).toHaveLength(1);
+      expect(detailBody.bundle.modelJobs[0]).toMatchObject({
+        status: "succeeded",
+        modelName: "yolov11-thyroid-detector",
+        artifactUri: "artifact://model-output/S1/IMG1/MJ-DETAIL-1/detections.json",
+      });
       expect(detailBody.bundle.agentTasks).toHaveLength(0);
 
       const analyze = await fetch(`${medicalBaseUrl}/v1/web/medical/studies/${studyBody.study.id}/analyze`, {

@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, and doctor review confirmation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, and model-gateway/artifact visibility in the doctor workstation.
 
 ### Completed
 
@@ -140,6 +140,9 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `POST /v1/web/medical/reports/:reportId/review` so the doctor workstation can confirm or reject draft reports without introducing RBAC.
 - Confirming a report now writes `report.final_text`, `confirmed_by`, `confirmed_at`, a `doctor_review` row, and a `medical.report.approve` audit log; rejecting writes `doctor_review`, report status `rejected`, and audit.
 - Extended `MedicalPanel` report cards with `确认报告` and `驳回` actions and a Doctor Reviews section.
+- Added `MedicalCaseRepo.listModelJobsByStudy()` and extended study detail bundles with `modelJobs`, including detector `artifactUri` values.
+- Added `GET /v1/web/medical/model-gateway/check` as a Web-authenticated proxy for model-gateway `/model/v1/config/check`, returning reachable/error status without requiring medical storage.
+- Extended `MedicalPanel` with a Model Gateway status block and a study-detail Model Jobs section that displays model job status, model name/version, attempts, and detection artifact URI.
 
 ### Verification
 
@@ -259,6 +262,16 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - CLI smoke test passed after doctor review confirmation: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - `git diff --check` passed after doctor review confirmation.
 - Full `npm test` was attempted after doctor review confirmation, but currently times out in unrelated `test/query-engine.test.ts` `/fix` orchestration cases; targeted medical/Web/frontend checks passed.
+- Targeted model-gateway visibility tests passed: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts` with 54 tests.
+- Targeted MedicalPanel model-gateway/artifact visibility test passed: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 7 tests.
+- Root `npm run typecheck` and frontend `cd web-react && npm run typecheck` passed after model-gateway/artifact visibility.
+- Targeted lint passed for the modified storage, Web API, endpoint, and MedicalPanel files after model-gateway/artifact visibility.
+- Full web-react tests passed after model-gateway/artifact visibility: `cd web-react && npm test` with 11 files passed and 40 tests passed.
+- `npm run build:web` passed after model-gateway/artifact visibility; Vite still reports the existing Monaco chunk-size warning.
+- `python3 -m unittest discover services/image-worker/tests` passed after model-gateway/artifact visibility: 3 tests.
+- `python3 -m unittest discover services/model-gateway/tests` passed after model-gateway/artifact visibility: 10 tests.
+- CLI smoke test passed after model-gateway/artifact visibility: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after model-gateway/artifact visibility.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.

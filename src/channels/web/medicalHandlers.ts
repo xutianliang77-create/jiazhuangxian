@@ -92,6 +92,70 @@ export async function handleMedicalSummary(
   }
 }
 
+export async function handleMedicalModelGatewayCheck(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps
+): Promise<void> {
+  if (!authenticate(req, res, deps)) return;
+
+  const gatewayUrl = modelGatewayBaseUrl();
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${gatewayUrl}/model/v1/config/check`, {
+      method: "GET",
+      signal: controller.signal,
+      headers: { accept: "application/json" },
+    });
+    const payload = await response.json().catch(() => null) as unknown;
+    const payloadObject = isJsonObject(payload) ? payload : {};
+    const warnings = stringArray(payloadObject.warnings);
+    if (!response.ok) {
+      jsonResponse(res, 200, {
+        gatewayUrl,
+        reachable: true,
+        httpStatus: response.status,
+        checkedAt: Date.now(),
+        durationMs: Date.now() - startedAt,
+        result: null,
+        warnings: [...warnings, "model_gateway_http_error"],
+        error: {
+          code: "model-gateway-http-error",
+          message: `model-gateway config check returned HTTP ${response.status}`,
+        },
+      });
+      return;
+    }
+    jsonResponse(res, 200, {
+      gatewayUrl,
+      reachable: true,
+      httpStatus: response.status,
+      checkedAt: Date.now(),
+      durationMs: Date.now() - startedAt,
+      result: isJsonObject(payloadObject.result) ? payloadObject.result : payloadObject,
+      warnings,
+    });
+  } catch (err) {
+    jsonResponse(res, 200, {
+      gatewayUrl,
+      reachable: false,
+      httpStatus: null,
+      checkedAt: Date.now(),
+      durationMs: Date.now() - startedAt,
+      result: null,
+      warnings: ["model_gateway_unreachable"],
+      error: {
+        code: "model-gateway-unreachable",
+        message: err instanceof Error ? err.message : String(err),
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function handleReadMedicalStudy(
   req: IncomingMessage,
   res: ServerResponse,
@@ -413,6 +477,13 @@ function emptyQueues(): Record<string, Record<string, number>> {
   };
 }
 
+function modelGatewayBaseUrl(): string {
+  const configured = process.env.JZX_MODEL_GATEWAY_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const port = process.env.JZX_MODEL_GATEWAY_PORT?.trim() || "8766";
+  return `http://127.0.0.1:${port}`;
+}
+
 function authenticateMedicalWrite(
   req: IncomingMessage,
   res: ServerResponse,
@@ -542,6 +613,14 @@ function objectField(body: JsonObject, camelKey: string, snakeKey?: string): Jso
     throw new MedicalRequestError(400, "invalid-request", `${camelKey} must be an object`);
   }
   return value as JsonObject;
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function medicalWriteError(res: ServerResponse, err: unknown): void {

@@ -5,6 +5,7 @@ import { useAuthStore } from "@/store/auth";
 
 vi.mock("@/api/endpoints", () => ({
   getMedicalSummary: vi.fn(),
+  getMedicalModelGatewayCheck: vi.fn(),
   getMedicalStudy: vi.fn(),
   createMedicalPatient: vi.fn(),
   createMedicalStudy: vi.fn(),
@@ -17,6 +18,7 @@ import {
   createMedicalImage,
   createMedicalPatient,
   createMedicalStudy,
+  getMedicalModelGatewayCheck,
   getMedicalStudy,
   getMedicalSummary,
   reviewMedicalReport,
@@ -173,6 +175,30 @@ const studyBundle = {
     },
   ],
   doctorReviews: [],
+  modelJobs: [
+    {
+      id: "MJ1",
+      studyId: "S1",
+      imageId: "IMG1",
+      agentTaskId: "AT-DETECT",
+      jobType: "thyroid.detect_nodules",
+      status: "succeeded",
+      priority: 100,
+      attempts: 1,
+      maxAttempts: 1,
+      input: {},
+      output: { artifacts: { detections_json: "artifact://model-output/S1/IMG1/MJ1/detections.json" } },
+      error: null,
+      modelName: "yolov11-thyroid-detector",
+      modelVersion: "validation",
+      weightsHash: null,
+      artifactUri: "artifact://model-output/S1/IMG1/MJ1/detections.json",
+      createdAt: 1778245200000,
+      updatedAt: 1778245300000,
+      startedAt: 1778245200000,
+      completedAt: 1778245300000,
+    },
+  ],
   analysisSessions: [],
   agentTasks: [],
 };
@@ -182,6 +208,19 @@ describe("MedicalPanel", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     useAuthStore.setState({ token: "test-token", connected: true });
     vi.mocked(getMedicalSummary).mockResolvedValue(summary);
+    vi.mocked(getMedicalModelGatewayCheck).mockResolvedValue({
+      gatewayUrl: "http://127.0.0.1:8766",
+      reachable: true,
+      httpStatus: 200,
+      checkedAt: 1778245300000,
+      durationMs: 12,
+      result: {
+        status: "degraded",
+        ready_detectors: ["yolov11"],
+        runtime: { gpu: { cuda_available: true, device_count: 1 } },
+      },
+      warnings: ["cuda_unavailable"],
+    });
     vi.mocked(getMedicalStudy).mockResolvedValue({ bundle: studyBundle });
     vi.mocked(reviewMedicalReport).mockResolvedValue({
       report: {
@@ -372,6 +411,8 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("draft")).toBeInTheDocument();
     expect(screen.getByText("Model Jobs")).toBeInTheDocument();
     expect(screen.getByText("Agent Tasks")).toBeInTheDocument();
+    expect(screen.getByText("Model Gateway")).toBeInTheDocument();
+    expect(screen.getByText("yolov11")).toBeInTheDocument();
     expect(screen.getByText("Manual Case")).toBeInTheDocument();
   });
 
@@ -387,6 +428,8 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("TR4")).toBeInTheDocument();
     expect(screen.getByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
     expect(screen.getByText("needs_doctor_review")).toBeInTheDocument();
+    expect(screen.getByText("thyroid.detect_nodules")).toBeInTheDocument();
+    expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/detections.json")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "启动分析" }));
 

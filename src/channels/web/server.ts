@@ -86,6 +86,7 @@ import {
   handleCreateMedicalImage,
   handleCreateMedicalPatient,
   handleCreateMedicalStudy,
+  handleMedicalModelGatewayCheck,
   handleMedicalSummary,
   handleReadMedicalStudy,
   handleReviewMedicalReport,
@@ -405,6 +406,9 @@ async function dispatch(
   // ===== Medical validation HTTP API =====
   if (url.pathname === "/v1/web/medical/summary" && method === "GET") {
     return handleMedicalSummary(req, res, deps, url);
+  }
+  if (url.pathname === "/v1/web/medical/model-gateway/check" && method === "GET") {
+    return handleMedicalModelGatewayCheck(req, res, deps);
   }
   if (url.pathname === "/v1/web/medical/patients" && method === "POST") {
     return handleCreateMedicalPatient(req, res, deps);

@@ -395,6 +395,7 @@ export interface StudyBundle {
   reports: ReportRecord[];
   auditLogs: AuditLogRecord[];
   doctorReviews: DoctorReviewRecord[];
+  modelJobs: ModelJobRecord[];
   analysisSessions: AnalysisSessionRecord[];
   agentTasks: AgentTaskRecord[];
 }
@@ -1147,6 +1148,15 @@ export class MedicalCaseRepo {
       .map(mapDoctorReview);
   }
 
+  listModelJobsByStudy(studyId: string): ModelJobRecord[] {
+    return this.db
+      .prepare<[string], ModelJobRow>(
+        "SELECT * FROM model_job WHERE study_id = ? ORDER BY created_at ASC, id ASC"
+      )
+      .all(studyId)
+      .map(mapModelJob);
+  }
+
   findModelJobByAgentTask(agentTaskId: string, jobType?: string): ModelJobRecord | null {
     const row = jobType
       ? this.db
@@ -1334,6 +1344,7 @@ export class MedicalCaseRepo {
       reports: this.listReportsByStudy(studyId),
       auditLogs: this.listAuditLogsByStudy(studyId),
       doctorReviews: this.listDoctorReviewsByStudy(studyId),
+      modelJobs: this.listModelJobsByStudy(studyId),
       analysisSessions,
       agentTasks,
     };

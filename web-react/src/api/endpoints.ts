@@ -360,6 +360,40 @@ export interface MedicalAgentTask {
   updatedAt: number;
 }
 
+export interface MedicalModelJob {
+  id: string;
+  studyId: string | null;
+  imageId: string | null;
+  agentTaskId: string | null;
+  jobType: string;
+  status: string;
+  priority: number;
+  attempts: number;
+  maxAttempts: number;
+  input: Record<string, unknown>;
+  output: Record<string, unknown> | null;
+  error: Record<string, unknown> | null;
+  modelName: string | null;
+  modelVersion: string | null;
+  weightsHash: string | null;
+  artifactUri: string | null;
+  createdAt: number;
+  updatedAt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+}
+
+export interface MedicalModelGatewayCheck {
+  gatewayUrl: string;
+  reachable: boolean;
+  httpStatus: number | null;
+  checkedAt: number;
+  durationMs: number;
+  result: Record<string, unknown> | null;
+  warnings: string[];
+  error?: { code: string; message: string };
+}
+
 export interface MedicalNodule {
   id: string;
   studyId: string;
@@ -451,6 +485,7 @@ export interface MedicalStudyBundle {
   reports: MedicalReport[];
   auditLogs: MedicalAuditLog[];
   doctorReviews: MedicalDoctorReview[];
+  modelJobs: MedicalModelJob[];
   analysisSessions: MedicalAnalysisSession[];
   agentTasks: MedicalAgentTask[];
 }
@@ -625,6 +660,9 @@ export const validateDashboard = (dashboardId: string) =>
 
 export const getMedicalSummary = (limit = 12) =>
   api<MedicalSummary>("GET", `/v1/web/medical/summary?limit=${encodeURIComponent(String(limit))}`);
+
+export const getMedicalModelGatewayCheck = () =>
+  api<MedicalModelGatewayCheck>("GET", "/v1/web/medical/model-gateway/check");
 
 export const getMedicalStudy = (studyId: string) =>
   api<{ bundle: MedicalStudyBundle }>("GET", `/v1/web/medical/studies/${encodeURIComponent(studyId)}`);

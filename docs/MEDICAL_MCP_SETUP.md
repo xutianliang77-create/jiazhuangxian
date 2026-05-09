@@ -97,6 +97,8 @@ JZX_DATA_DB=data/artifacts/medical/data.db npm run model-gateway:check
 curl -s http://127.0.0.1:8766/model/v1/config/check
 ```
 
+医生工作台会通过 Web API 代理同一个检查结果：`GET /v1/web/medical/model-gateway/check`。如果 Web 进程没有设置 `JZX_MODEL_GATEWAY_URL`，默认检查 `http://127.0.0.1:8766`。
+
 终端 3：启动验证 worker。
 
 ```bash
@@ -158,7 +160,7 @@ JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1
 8. 当 `tirads_feature` 表已有结构化特征时，`calculate_tirads` 会调用本地 ACR TI-RADS 2017 规则引擎，并把分值、分级、建议和证据规则写入 `tirads_result`。
 9. `draft_report` 会读取同一病例下已持久化的结节和最新 TI-RADS 结果，按验证版模板生成 AI 辅助报告草稿并写入 `report` 表；草稿状态为 `draft`，输出始终带 `doctor_review_required`，必须由医生审核后才可生效。
 10. `safety_review` 会读取最新报告草稿、`safety_rules`、图像质量和结节置信度，检查最终诊断表述、缺证据 FNA/随访建议、低质量/低置信度、缺少标定的毫米级表述和 PHI 泄露风险，并把审核摘要写入 `audit_log`。
-11. 病例详情接口和医生工作台会展示同一病例下的 `nodule`、`tirads_feature`、`tirads_result`、`report` 和 `audit_log`，用于验证从图像到报告再到安全审核的闭环结果。
+11. 病例详情接口和医生工作台会展示同一病例下的 `model_job`、`nodule`、`tirads_feature`、`tirads_result`、`report` 和 `audit_log`，其中检测成功的 `model_job.artifact_uri` 会指向标准化检测产物 JSON。
 12. 医生工作台可对 `draft` / `pending_review` 报告执行确认或驳回；确认会写入 `report.final_text`、`confirmed_by`、`confirmed_at` 和 `doctor_review`，同时追加 `audit_log`。
 
 如果 `image-worker` 未启动，`image_qc` 不会阻断验证链路；任务会以 `validation_mode=true` 成功完成，并在输出中写入 `image_worker_qc_unavailable` 与具体错误码，便于本地分步验证。
