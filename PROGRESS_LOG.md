@@ -392,6 +392,12 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `git diff --check` passed after remote GPU setup scripts and config-check enhancement.
 - Remote GPU check passed on `beelink@100.110.127.117`: Torch `2.11.0+cu128`, CUDA runtime `12.8`, `cuda_available=true`, RTX 5090 detected with capability `12.0` and ~32 GB VRAM.
 - Remote model-gateway config check now reports base runtime packages and Ultralytics ready, but detector readiness remains `degraded` because `JZX_YOLOV11_WEIGHTS` and `JZX_RTDETR_WEIGHTS` are not configured yet.
+- Installed a user-local Node.js 22 runtime on the remote 5090 host under `~/.local/node/node-v22.9.0-linux-x64` and ran `npm ci --registry=https://registry.npmmirror.com`.
+- Remote `npm ci` installed dependencies and built the React frontend, but exposed that `src/reports/` and `test/unit/reports/` were accidentally ignored by the broad `.gitignore` `reports/` rule and therefore missing from the remote clone.
+- Fixed the ignore rule to `/reports/` so generated root reports remain ignored while source/test report modules are tracked.
+- Added the previously ignored `src/reports/` report product modules and `test/unit/reports/` tests to the repository.
+- Local `npm run build` passed after restoring tracked report source files.
+- Local targeted report/dashboard tests passed after restoring tracked report files: `npm test -- --run test/unit/reports test/unit/dashboards` with 11 files and 45 tests.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.

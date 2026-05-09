@@ -34,7 +34,7 @@ coverage/
 .venv-lsp/
 
 # Generated validation reports and copied upstream heavy fixtures.
-reports/
+/reports/
 test/golden/reports/
 test/golden/fix/**/node_modules/
 
