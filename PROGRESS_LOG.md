@@ -357,6 +357,7 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - CLI smoke test passed after the first-version KB: `npm run medical:init-db -- --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge` wrote 13 chunks and 2 templates.
 - Medical knowledge search smoke test passed after the first-version KB: query `TR5 FNA 1.0 cm` returned `medical/doc-thyroid-guidelines-v1/acr-tirads-size-actions` from a temporary SQLite/RAG pair.
 - `git diff --check` passed after the first-version KB.
+- GitHub push succeeded after retry: `41c9c5c Add first thyroid knowledge base` reached `origin/main`.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.
@@ -369,7 +370,7 @@ None.
 
 ### Blocking Issues
 
-- The local first-version KB commit is ready, but GitHub push is blocked by network connectivity to `github.com:443`; retries failed with `Empty reply from server` and `Couldn't connect to server`.
+None.
 
 ### Next Session Priorities
 
