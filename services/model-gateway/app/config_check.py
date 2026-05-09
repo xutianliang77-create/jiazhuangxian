@@ -6,6 +6,8 @@ import importlib.util
 import json
 import os
 import platform
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -170,12 +172,16 @@ def package_status(import_name: str, package_name: str, *, required: bool = True
 
 
 def gpu_status() -> JsonDict:
+    nvidia = nvidia_smi_status()
     if importlib.util.find_spec("torch") is None:
         return {
             "torch_installed": False,
+            "torch_version": None,
+            "torch_cuda_version": None,
             "cuda_available": False,
             "device_count": 0,
             "devices": [],
+            "nvidia_smi": nvidia,
             "reason": "torch_not_installed",
         }
     try:
@@ -191,23 +197,100 @@ def gpu_status() -> JsonDict:
                     "index": index,
                     "name": props.name,
                     "total_memory_mb": int(props.total_memory // (1024 * 1024)),
+                    "capability": ".".join(str(item) for item in torch.cuda.get_device_capability(index)),
                 }
             )
         return {
             "torch_installed": True,
             "torch_version": getattr(torch, "__version__", None),
+            "torch_cuda_version": getattr(getattr(torch, "version", None), "cuda", None),
             "cuda_available": cuda_available,
             "device_count": device_count,
             "devices": devices,
+            "nvidia_smi": nvidia,
         }
     except Exception as exc:
         return {
             "torch_installed": True,
+            "torch_version": None,
+            "torch_cuda_version": None,
             "cuda_available": False,
             "device_count": 0,
             "devices": [],
+            "nvidia_smi": nvidia,
             "reason": str(exc),
         }
+
+
+def nvidia_smi_status() -> JsonDict:
+    executable = shutil.which("nvidia-smi")
+    if executable is None:
+        return {
+            "available": False,
+            "executable": None,
+            "gpus": [],
+            "driver_version": None,
+            "cuda_version": None,
+            "reason": "nvidia_smi_not_found",
+        }
+    try:
+        query = subprocess.run(
+            [
+                executable,
+                "--query-gpu=index,name,memory.total,driver_version",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        gpus = []
+        driver_version = None
+        for raw_line in query.stdout.splitlines():
+            parts = [part.strip() for part in raw_line.split(",")]
+            if len(parts) < 4:
+                continue
+            index, name, memory_total, driver_version = parts[:4]
+            gpus.append(
+                {
+                    "index": int(index),
+                    "name": name,
+                    "memory_total_mb": int(float(memory_total)),
+                    "driver_version": driver_version,
+                }
+            )
+        summary = subprocess.run(
+            [executable],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return {
+            "available": True,
+            "executable": executable,
+            "gpus": gpus,
+            "driver_version": driver_version,
+            "cuda_version": parse_nvidia_smi_cuda_version(summary.stdout),
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "executable": executable,
+            "gpus": [],
+            "driver_version": None,
+            "cuda_version": None,
+            "reason": str(exc),
+        }
+
+
+def parse_nvidia_smi_cuda_version(output: str) -> str | None:
+    marker = "CUDA Version:"
+    if marker not in output:
+        return None
+    tail = output.split(marker, 1)[1].strip()
+    return tail.split()[0] if tail else None
 
 
 def main(argv: list[str] | None = None) -> int:

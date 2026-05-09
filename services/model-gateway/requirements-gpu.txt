@@ -1,0 +1,14 @@
+# GPU detector runtime packages for the remote RTX 5090 model worker.
+#
+# Install CUDA PyTorch first through the setup script, then install this file
+# from the normal PyPI index:
+#
+#   bash scripts/setup-remote-5090-gpu.sh
+
+-r requirements.txt
+
+ultralytics>=8.3,<9.0
+
+# RF-DETR is intentionally optional for the first detector baseline. Enable it
+# from scripts/setup-remote-5090-gpu.sh with --install-rfdetr after confirming
+# the exact package version to use on the target 5090 host.

@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, public thyroid ultrasound dataset bootstrap, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, remote RTX 5090 GPU runtime setup scripts, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, public thyroid ultrasound dataset bootstrap, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
 
 ### Completed
 
@@ -170,6 +170,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `docs/PUBLIC_THYROID_ULTRASOUND_DATASETS.md` documenting downloaded paths, access blockers, and recommended model-development use.
 - Marked all not-yet-downloaded public datasets as explicit TODO items with priority, blocker, target path, and next action in both the dataset manifest and public dataset documentation.
 - Added `data/artifacts/datasets/.gitkeep` and updated `data/README.md` so the local dataset artifact directory is explicit while real data stays out of Git.
+- Added `scripts/setup-remote-5090-gpu.sh` for remote RTX 5090 setup: create a Python 3.12 virtualenv, install CUDA PyTorch from the CUDA 12.8 wheel index, install model-gateway GPU requirements, verify CUDA visibility, and run the model-gateway config check.
+- Added `scripts/check-remote-5090-gpu.sh` for repeatable remote GPU diagnostics covering `nvidia-smi`, Python packages, Torch CUDA, devices, and model-gateway readiness.
+- Added `services/model-gateway/requirements-gpu.txt` for the YOLOv11/RT-DETR detector runtime and updated base model-gateway requirements with numpy, OpenCV, and Pillow 12 compatibility.
+- Enhanced `services/model-gateway/app/config_check.py` so config reports now include `nvidia-smi`, NVIDIA driver/CUDA summary, Torch CUDA runtime version, GPU memory, and device capability.
+- Added `docs/GPU_INFERENCE_SETUP.md` and linked it from README/model-gateway docs as the remote 5090 setup guide.
 
 ### Verification
 
@@ -379,6 +384,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Sample-of-UD-TN local fetch verified with 27 files including 26 JPG images.
 - JSON validation passed for `examples/datasets/thyroid-ultrasound-public.manifest.json`.
 - `git diff --check` passed after public dataset bootstrap.
+- Shell syntax validation passed for `scripts/setup-remote-5090-gpu.sh` and `scripts/check-remote-5090-gpu.sh`.
+- `python3 -m unittest discover services/model-gateway/tests` passed after GPU config-check enhancement: 12 tests.
+- `npm run model-gateway:check` passed locally in degraded mode, correctly reporting no `nvidia-smi`, no Torch, and no detector runtime on the Mac development host.
+- `git diff --check` passed after remote GPU setup scripts and config-check enhancement.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.

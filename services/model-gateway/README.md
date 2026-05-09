@@ -45,6 +45,12 @@ python3 -m pip install -r requirements.txt
 JZX_DATA_DB=../../data/artifacts/model-gateway/model-gateway.db python3 -m app
 ```
 
+远程 RTX 5090 GPU 推理环境见：
+
+```text
+docs/GPU_INFERENCE_SETUP.md
+```
+
 处理一条队列任务：
 
 ```bash

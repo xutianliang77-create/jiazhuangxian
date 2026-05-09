@@ -37,6 +37,7 @@ data/artifacts/          本地验证版图像与 AI 产物目录
 - [医学 MCP 本地验证配置](docs/MEDICAL_MCP_SETUP.md)
 - [医学知识库导入验证流程](docs/MEDICAL_KNOWLEDGE_INGESTION.md)
 - [模型产物规范](docs/MODEL_ARTIFACT_CONVENTIONS.md)
+- [远程 RTX 5090 GPU 推理环境配置](docs/GPU_INFERENCE_SETUP.md)
 - [进度日志](PROGRESS_LOG.md)
 
 ## 当前阶段

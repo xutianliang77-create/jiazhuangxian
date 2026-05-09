@@ -17,7 +17,7 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
 
 from app.detectors import build_detector_request, select_detector_adapter  # noqa: E402
-from app.config_check import build_config_report  # noqa: E402
+from app.config_check import build_config_report, parse_nvidia_smi_cuda_version  # noqa: E402
 from app.schemas import DetectNodulesRequest  # noqa: E402
 from app.server import create_server  # noqa: E402
 from app.store import ModelJobStore  # noqa: E402
@@ -81,6 +81,21 @@ class ModelGatewayTest(unittest.TestCase):
 
         rtdetr = next(item for item in report["detectors"] if item["model_family"] == "rt-detr")
         self.assertIn("weights_env_missing", [issue["code"] for issue in rtdetr["issues"]])
+
+    def test_config_report_includes_nvidia_smi_and_torch_cuda_fields(self) -> None:
+        report = build_config_report(env={})
+
+        gpu = report["runtime"]["gpu"]
+        self.assertIn("nvidia_smi", gpu)
+        self.assertIn("torch_cuda_version", gpu)
+        self.assertIn("devices", gpu)
+
+    def test_parse_nvidia_smi_cuda_version(self) -> None:
+        self.assertEqual(
+            parse_nvidia_smi_cuda_version("| NVIDIA-SMI 580.00    Driver Version: 580.00    CUDA Version: 12.8 |"),
+            "12.8",
+        )
+        self.assertIsNone(parse_nvidia_smi_cuda_version("nvidia-smi output without cuda marker"))
 
     def test_detect_nodules_enqueues_model_job(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
