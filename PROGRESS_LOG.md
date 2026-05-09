@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, and artifact conventions, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, and model-gateway/artifact visibility in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, and model-gateway/artifact visibility in the doctor workstation.
 
 ### Completed
 
@@ -143,6 +143,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `MedicalCaseRepo.listModelJobsByStudy()` and extended study detail bundles with `modelJobs`, including detector `artifactUri` values.
 - Added `GET /v1/web/medical/model-gateway/check` as a Web-authenticated proxy for model-gateway `/model/v1/config/check`, returning reachable/error status without requiring medical storage.
 - Extended `MedicalPanel` with a Model Gateway status block and a study-detail Model Jobs section that displays model job status, model name/version, attempts, and detection artifact URI.
+- Model-worker now generates `overlay.png` beside detector `detections.json` when `return_overlay=true` and the source image is a readable raster artifact.
+- Detector artifact JSON now records `artifacts.overlay_image`; overlay generation failures are non-blocking and appear as `overlay_unavailable:*` warnings.
+- Added Pillow to model-gateway requirements because overlay rendering needs raster image read/write support.
+- Extended the MedicalPanel model-job view to show both detection JSON and overlay artifact URIs.
 
 ### Verification
 
@@ -272,6 +276,16 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after model-gateway/artifact visibility: 10 tests.
 - CLI smoke test passed after model-gateway/artifact visibility: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
 - `git diff --check` passed after model-gateway/artifact visibility.
+- `python3 -m unittest discover services/model-gateway/tests` passed after detector overlay generation: 10 tests.
+- Targeted MedicalPanel overlay URI test passed: `cd web-react && npm test -- --run src/components/panels/MedicalPanel.test.tsx` with 7 tests.
+- Frontend `cd web-react && npm run typecheck` and root `npm run typecheck` passed after detector overlay generation.
+- Targeted medical Web/API tests passed after detector overlay generation: `npm test -- --run test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts` with 54 tests.
+- Targeted lint passed for modified MedicalPanel files after detector overlay generation.
+- Full web-react tests passed after detector overlay generation: `cd web-react && npm test` with 11 files passed and 40 tests passed.
+- `npm run build:web` passed after detector overlay generation; Vite still reports the existing Monaco chunk-size warning.
+- `python3 -m unittest discover services/image-worker/tests` passed after detector overlay generation: 3 tests.
+- CLI smoke test passed after detector overlay generation: `npm run medical-agent-worker:once -- --data-db <tmp>/data.db` returned idle JSON after migrating a temporary DB.
+- `git diff --check` passed after detector overlay generation.
 - Targeted medical knowledge ingestion tests passed: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts`.
 - Targeted lint for the new ingestion files passed: `npx eslint src/medical/knowledge/ingestion.ts scripts/medical-ingest.ts test/unit/medical/knowledgeIngestion.test.ts`.
 - CLI smoke test passed with a temporary SQLite/RAG DB: `npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian`.
@@ -305,10 +319,9 @@ None.
 ### Next Session Priorities
 
 1. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
-2. Add UI/API visibility for model-gateway config check results and detector artifacts in the Medical workstation.
-3. Add overlay image generation for detector bbox results.
-4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
-5. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
+2. Add PDF-to-manifest parsing when representative guideline PDFs are available.
+3. Add a Web artifact-serving/preview route if the doctor workstation needs to render `artifact://` overlay images directly instead of only showing URI provenance.
+4. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
 

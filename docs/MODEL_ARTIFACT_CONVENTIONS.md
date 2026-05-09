@@ -10,12 +10,14 @@
 
 ```text
 artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_id>/detections.json
+artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_id>/overlay.png
 ```
 
 本地文件路径对应：
 
 ```text
 <JZX_ARTIFACT_ROOT>/model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_id>/detections.json
+<JZX_ARTIFACT_ROOT>/model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_id>/overlay.png
 ```
 
 `study_id`、`image_id`、`model_job_id` 会经过路径安全清洗，只保留字母、数字、下划线、点和短横线。
@@ -57,7 +59,7 @@ artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_
   },
   "artifacts": {
     "detections_json": "artifact://model-output/thyroid-detect-nodules/S1/IMG1/MJ1/detections.json",
-    "overlay_image": null,
+    "overlay_image": "artifact://model-output/thyroid-detect-nodules/S1/IMG1/MJ1/overlay.png",
     "model_comparison_json": null
   },
   "detections": [
@@ -82,6 +84,13 @@ artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_
 - 坐标原点为图像左上角。
 - 单位为像素。
 - 后续测量换算毫米时必须使用图像表中的 `pixel_spacing` 或人工标定结果，不能直接把像素当毫米。
+
+## Overlay 图
+
+- 当检测请求 `return_overlay = true` 且 `source_image_uri` 能解析为可读取的 PNG/JPEG 等栅格图时，model-worker 会在同一目录写入 `overlay.png`。
+- Overlay 使用检测 JSON 中的像素 bbox 直接绘制，只用于医生快速复核候选框位置。
+- Overlay 不是诊断依据，不替代原始图像、DICOM 图像、测量结果或医生修订记录。
+- 如果 Pillow 缺失、源图像不存在或源图像格式无法打开，检测 JSON 仍会写入，`warnings` 会包含 `overlay_unavailable:*`，`artifacts.overlay_image` 为 `null`。
 
 ## 双模型对比预留
 

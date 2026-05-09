@@ -188,8 +188,13 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertFalse(idle["claimed"])
 
     def test_worker_writes_standard_detector_artifact_on_success(self) -> None:
+        from PIL import Image
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "artifacts"
+            source_path = root / "model-ready" / "S1" / "IMG1.png"
+            source_path.parent.mkdir(parents=True)
+            Image.new("RGB", (96, 72), (20, 20, 20)).save(source_path)
             store = ModelJobStore(Path(tmp) / "model.db")
             queued = store.enqueue_detect_nodules(
                 DetectNodulesRequest(
@@ -239,6 +244,10 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertEqual(artifact["detections"][0]["bbox"], [10.0, 20.0, 30.0, 40.0])
             self.assertEqual(artifact["detectors"]["consensus"]["status"], "single_model_only")
             self.assertEqual(artifact["artifacts"]["detections_json"], artifact_uri)
+            overlay_uri = artifact["artifacts"]["overlay_image"]
+            self.assertTrue(overlay_uri.startswith("artifact://model-output/thyroid-detect-nodules/S1/IMG1/"))
+            overlay_path = root / overlay_uri.removeprefix("artifact://")
+            self.assertTrue(overlay_path.is_file())
 
             completed = store.get_job(queued["id"])
             self.assertIsNotNone(completed)
@@ -247,6 +256,7 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertEqual(completed["artifact_uri"], artifact_uri)
             stored_output = json.loads(completed["output_json"])
             self.assertEqual(stored_output["artifacts"]["detections_json"], artifact_uri)
+            self.assertEqual(stored_output["artifacts"]["overlay_image"], overlay_uri)
 
     def test_detector_adapter_selection_supports_yolo_and_transformer_detectors(self) -> None:
         yolo = select_detector_adapter({"model_name": "yolov11-thyroid-detector"}, env={})

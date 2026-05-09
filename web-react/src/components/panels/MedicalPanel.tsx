@@ -663,7 +663,9 @@ function StudyDetail({
 }
 
 function ModelJobRow({ job }: { job: MedicalModelJob }) {
-  const artifactUri = job.artifactUri ?? stringValue(objectValue(job.output?.artifacts)?.detections_json);
+  const artifacts = objectValue(job.output?.artifacts);
+  const detectionsJsonUri = job.artifactUri ?? stringValue(artifacts?.detections_json);
+  const overlayUri = stringValue(artifacts?.overlay_image);
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
@@ -676,14 +678,26 @@ function ModelJobRow({ job }: { job: MedicalModelJob }) {
         <Metric label="attempts" value={`${job.attempts}/${job.maxAttempts}`} />
         <Metric label="updated" value={formatTime(job.updatedAt)} />
       </div>
-      {artifactUri && (
-        <div className="mt-2 font-mono text-[11px] text-muted break-all">{artifactUri}</div>
+      {detectionsJsonUri && (
+        <ArtifactLine label="detections" value={detectionsJsonUri} />
+      )}
+      {overlayUri && (
+        <ArtifactLine label="overlay" value={overlayUri} />
       )}
       {job.error && (
         <div className="mt-2 rounded border border-danger/40 px-2 py-1 text-danger">
           {stringValue(job.error.code) ?? "model_job_error"}
         </div>
       )}
+    </div>
+  );
+}
+
+function ArtifactLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mt-2 min-w-0">
+      <span className="text-muted">{label}: </span>
+      <span className="font-mono text-[11px] text-muted break-all">{value}</span>
     </div>
   );
 }

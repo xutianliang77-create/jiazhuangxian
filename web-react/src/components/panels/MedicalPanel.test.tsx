@@ -187,7 +187,12 @@ const studyBundle = {
       attempts: 1,
       maxAttempts: 1,
       input: {},
-      output: { artifacts: { detections_json: "artifact://model-output/S1/IMG1/MJ1/detections.json" } },
+      output: {
+        artifacts: {
+          detections_json: "artifact://model-output/S1/IMG1/MJ1/detections.json",
+          overlay_image: "artifact://model-output/S1/IMG1/MJ1/overlay.png",
+        },
+      },
       error: null,
       modelName: "yolov11-thyroid-detector",
       modelVersion: "validation",
@@ -430,6 +435,7 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("needs_doctor_review")).toBeInTheDocument();
     expect(screen.getByText("thyroid.detect_nodules")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/detections.json")).toBeInTheDocument();
+    expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/overlay.png")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "启动分析" }));
 

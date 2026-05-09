@@ -29,9 +29,10 @@ def run_detector_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: s
         artifact_result = write_detector_artifact(job, output, worker_id=worker_id)
         enriched_output = {
             **output,
+            "warnings": artifact_result["artifact"].get("warnings", output.get("warnings", [])),
             "artifacts": {
                 "detections_json": artifact_result["artifact_uri"],
-                "overlay_image": output.get("overlay_uri"),
+                "overlay_image": artifact_result["overlay_uri"],
                 "model_comparison_json": None,
             },
         }
@@ -43,6 +44,7 @@ def run_detector_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: s
             "job_id": job["id"],
             "job_type": job["job_type"],
             "artifact_uri": artifact_result["artifact_uri"],
+            "overlay_uri": artifact_result["overlay_uri"],
             "output": enriched_output,
         }
     except DetectorAdapterError as exc:
