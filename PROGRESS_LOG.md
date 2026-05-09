@@ -420,6 +420,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Full local TN3K conversion passed: 3,493 images converted, 0 skipped, 0 missing classification labels; split counts are 2,879 trainval and 614 test bboxes.
 - Added unit tests for TN3K mask-to-bbox conversion covering YOLO label math, COCO bbox output, JSONL manifest output, and empty-mask skipping.
 - Updated `docs/PUBLIC_THYROID_ULTRASOUND_DATASETS.md` and `examples/datasets/thyroid-ultrasound-public.manifest.json` with the derived detection output paths and counts.
+- Added `scripts/train_tn3k_yolo.py` and `npm run datasets:tn3k:train-yolo` for YOLOv11 training on the TN3K mask-derived detection manifest.
+- The TN3K YOLO training script now creates a deterministic stratified 80/20 split from all 3,493 samples, preserving benign/malignant proportions.
+- Local prepare-only split check passed: train 2,794 samples and validation 699 samples, with train labels 1,826 benign / 968 malignant and validation labels 457 benign / 242 malignant.
+- The YOLOv11 training acceptance gate is `metrics/mAP50(B) >= 0.93`; training summaries record `target_met` so runs below 93% are visibly rejected.
 
 ### Background Tasks
 
@@ -432,7 +436,7 @@ None.
 ### Next Session Priorities
 
 1. Manually download TN5000 through the browser/Figshare page into `data/artifacts/datasets/tn5000/raw`, then convert its native detection annotations into the YOLO/COCO formats needed for YOLOv11 and RT-DETR/RF-DETR.
-2. Use the generated TN3K YOLO dataset for first detector-training smoke tests on the 5090 host, then record metrics and trained weight paths outside Git.
+2. Run YOLOv11m training on the 5090 host with the generated TN3K 80/20 split and continue tuning until `metrics/mAP50(B) >= 0.93` or the failure mode is documented.
 3. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Add batch case queue workflows for multi-case review, filtering, and bulk state transitions.

@@ -78,6 +78,27 @@ data/artifacts/datasets/tn3k/derived/detection/
 - 检测类别：`0: thyroid_nodule`
 - 分类标签：保留到 COCO image metadata 和 JSONL manifest 中，`0=benign`、`1=malignant`
 
+YOLOv11 训练调优入口：
+
+```bash
+npm run datasets:tn3k:train-yolo -- \
+  --model data/artifacts/model-weights/yolo/yolo11m.pt \
+  --epochs 120 \
+  --imgsz 768 \
+  --batch 16 \
+  --device 0 \
+  --target-threshold 0.93
+```
+
+训练脚本约定：
+
+- 脚本：`scripts/train_tn3k_yolo.py`
+- 数据切分：从 `annotations/manifest.jsonl` 全量 3,493 样本重新做 deterministic stratified 80/20 split
+- 当前本地切分：train 2,794，val 699；按良恶性标签分层
+- 验收指标：`metrics/mAP50(B) >= 0.93`
+- 输出目录：`data/artifacts/model-training/tn3k-yolo/`
+- 训练产物不入 Git；只记录 summary、metrics、best.pt/last.pt 路径
+
 使用建议：
 
 - 分割模型：直接使用 `*-image` 和 `*-mask`。

@@ -33,6 +33,7 @@
     "medical:init-db": "tsx scripts/medical-init-db.ts",
     "medical:embed": "tsx scripts/medical-embed.ts",
     "datasets:tn3k:bbox": "python3 scripts/tn3k_mask_to_bbox.py",
+    "datasets:tn3k:train-yolo": "python3 scripts/train_tn3k_yolo.py",
     "medical-agent-worker": "tsx scripts/medical-agent-worker.ts",
     "medical-agent-worker:once": "tsx scripts/medical-agent-worker.ts --once",
     "image-worker": "cd services/image-worker && python3 -m app",
