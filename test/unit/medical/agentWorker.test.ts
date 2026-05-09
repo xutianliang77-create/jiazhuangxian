@@ -357,6 +357,62 @@ describe("medical agent worker", () => {
     ]);
   });
 
+  it("runs safety review against report drafts and writes audit logs", () => {
+    const { tasks } = seedAgentTaskChain(["safety_review"]);
+    const studyId = String(tasks[0].input.study_id);
+    const report = repo.createReport({
+      studyId,
+      analysisSessionId: tasks[0].analysisSessionId,
+      templateId: "tpl-thyroid-ultrasound-draft-v1",
+      draftText: "患者姓名张三，AI确诊恶性结节，建议FNA。",
+      structured: { review_required: false },
+      evidence: [],
+      createdByAgent: "draft-agent",
+      now: 9000,
+    });
+
+    const result = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 9100 });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "safety_review",
+      output: {
+        validation_mode: false,
+        result: {
+          safety_status: "needs_doctor_review",
+          report_id: report.id,
+          rules_checked: 5,
+        },
+        warnings: ["doctor_review_required", "safety_issues_detected"],
+      },
+    });
+    const outputResult = result.output?.result as Record<string, unknown>;
+    const issues = outputResult.issues as Array<Record<string, unknown>>;
+    expect(issues.map((issue) => issue.rule_code)).toEqual(
+      expect.arrayContaining([
+        "NO_FINAL_DIAGNOSIS_WITHOUT_DOCTOR",
+        "NO_UNSUPPORTED_FNA_RECOMMENDATION",
+        "PHI_NOT_ALLOWED_IN_MODEL_LOG",
+      ])
+    );
+
+    expect(repo.listAuditLogsByStudy(studyId)).toMatchObject([
+      {
+        actorType: "agent",
+        actorId: "worker-test",
+        action: "medical.safety_review",
+        targetType: "report",
+        targetId: report.id,
+        traceId: tasks[0].id,
+        detail: {
+          safety_status: "needs_doctor_review",
+          report_id: report.id,
+        },
+      },
+    ]);
+  });
+
   it("persists structured TI-RADS feature candidates from classify task input", () => {
     const { tasks } = seedAgentTaskChain(["classify_tirads_features"], {
       classify_tirads_features: {

@@ -323,6 +323,45 @@ export interface ReportRecord {
   updatedAt: number;
 }
 
+export interface SafetyRuleRecord {
+  id: string;
+  ruleCode: string;
+  ruleType: string;
+  severity: string;
+  pattern: string | null;
+  rule: JsonObject;
+  message: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface AuditLogInput {
+  id?: string;
+  studyId?: string | null;
+  actorType: string;
+  actorId?: string | null;
+  action: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  detail?: JsonObject;
+  traceId?: string | null;
+  now?: number;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  studyId: string | null;
+  actorType: string;
+  actorId: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  detail: JsonObject;
+  traceId: string | null;
+  createdAt: number;
+}
+
 export interface StudyBundle {
   patient: PatientRecord | null;
   study: StudyRecord;
@@ -489,6 +528,32 @@ interface ReportRow {
   confirmed_at: number | null;
   created_at: number;
   updated_at: number;
+}
+
+interface SafetyRuleRow {
+  id: string;
+  rule_code: string;
+  rule_type: string;
+  severity: string;
+  pattern: string | null;
+  rule_json: string;
+  message: string;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+interface AuditLogRow {
+  id: string;
+  study_id: string | null;
+  actor_type: string;
+  actor_id: string | null;
+  action: string;
+  target_type: string | null;
+  target_id: string | null;
+  detail_json: string;
+  trace_id: string | null;
+  created_at: number;
 }
 
 export class MedicalCaseRepo {
@@ -794,6 +859,31 @@ export class MedicalCaseRepo {
     return this.getReport(id)!;
   }
 
+  createAuditLog(input: AuditLogInput): AuditLogRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO audit_log(
+           id, study_id, actor_type, actor_id, action, target_type, target_id,
+           detail_json, trace_id, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.studyId ?? null,
+        input.actorType,
+        input.actorId ?? null,
+        input.action,
+        input.targetType ?? null,
+        input.targetId ?? null,
+        stringifyJson(input.detail ?? {}),
+        input.traceId ?? null,
+        now
+      );
+    return this.getAuditLog(id)!;
+  }
+
   getPatient(id: string): PatientRecord | null {
     const row = this.db.prepare<[string], PatientRow>("SELECT * FROM patient WHERE id = ?").get(id);
     return row ? mapPatient(row) : null;
@@ -930,6 +1020,29 @@ export class MedicalCaseRepo {
       )
       .get(templateId);
     return row?.template_text ?? null;
+  }
+
+  listActiveSafetyRules(): SafetyRuleRecord[] {
+    return this.db
+      .prepare<[], SafetyRuleRow>(
+        "SELECT * FROM safety_rules WHERE status = 'active' ORDER BY severity ASC, rule_code ASC"
+      )
+      .all()
+      .map(mapSafetyRule);
+  }
+
+  getAuditLog(id: string): AuditLogRecord | null {
+    const row = this.db.prepare<[string], AuditLogRow>("SELECT * FROM audit_log WHERE id = ?").get(id);
+    return row ? mapAuditLog(row) : null;
+  }
+
+  listAuditLogsByStudy(studyId: string): AuditLogRecord[] {
+    return this.db
+      .prepare<[string], AuditLogRow>(
+        "SELECT * FROM audit_log WHERE study_id = ? ORDER BY created_at ASC, id ASC"
+      )
+      .all(studyId)
+      .map(mapAuditLog);
   }
 
   findModelJobByAgentTask(agentTaskId: string, jobType?: string): ModelJobRecord | null {
@@ -1352,6 +1465,36 @@ function mapReport(row: ReportRow): ReportRecord {
     confirmedAt: row.confirmed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapSafetyRule(row: SafetyRuleRow): SafetyRuleRecord {
+  return {
+    id: row.id,
+    ruleCode: row.rule_code,
+    ruleType: row.rule_type,
+    severity: row.severity,
+    pattern: row.pattern,
+    rule: parseJson(row.rule_json, {}),
+    message: row.message,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapAuditLog(row: AuditLogRow): AuditLogRecord {
+  return {
+    id: row.id,
+    studyId: row.study_id,
+    actorType: row.actor_type,
+    actorId: row.actor_id,
+    action: row.action,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    detail: parseJson(row.detail_json, {}),
+    traceId: row.trace_id,
+    createdAt: row.created_at,
   };
 }
 

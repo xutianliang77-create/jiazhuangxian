@@ -333,4 +333,46 @@ describe("MedicalCaseRepo", () => {
       "甲状腺超声AI辅助报告（草稿）"
     );
   });
+
+  it("reads safety rules and persists audit logs", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-AUDIT", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-AUDIT", now: 1100 });
+
+    expect(repo.listActiveSafetyRules().map((rule) => rule.ruleCode)).toEqual(
+      expect.arrayContaining(["NO_FINAL_DIAGNOSIS_WITHOUT_DOCTOR", "PHI_NOT_ALLOWED_IN_MODEL_LOG"])
+    );
+
+    const audit = repo.createAuditLog({
+      studyId: study.id,
+      actorType: "agent",
+      actorId: "worker-test",
+      action: "medical.safety_review",
+      targetType: "report",
+      targetId: "R1",
+      detail: {
+        safety_status: "needs_doctor_review",
+        issues: [{ rule_code: "NO_FINAL_DIAGNOSIS_WITHOUT_DOCTOR" }],
+      },
+      traceId: "TASK1",
+      now: 1200,
+    });
+
+    expect(repo.getAuditLog(audit.id)).toMatchObject({
+      id: audit.id,
+      studyId: study.id,
+      actorType: "agent",
+      actorId: "worker-test",
+      action: "medical.safety_review",
+      targetType: "report",
+      targetId: "R1",
+      detail: {
+        safety_status: "needs_doctor_review",
+        issues: [{ rule_code: "NO_FINAL_DIAGNOSIS_WITHOUT_DOCTOR" }],
+      },
+      traceId: "TASK1",
+      createdAt: 1200,
+    });
+    expect(repo.listAuditLogsByStudy(study.id).map((item) => item.id)).toEqual([audit.id]);
+  });
 });

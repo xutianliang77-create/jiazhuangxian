@@ -2,6 +2,8 @@ export { MedicalCaseRepo } from "./caseRepo";
 export type {
   AgentTaskInput,
   AgentTaskRecord,
+  AuditLogInput,
+  AuditLogRecord,
   AnalysisSessionInput,
   AnalysisSessionRecord,
   ImageInput,
@@ -14,6 +16,7 @@ export type {
   PatientRecord,
   ReportInput,
   ReportRecord,
+  SafetyRuleRecord,
   StudyBundle,
   StudyInput,
   StudyRecord,

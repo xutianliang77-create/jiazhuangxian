@@ -1,8 +1,11 @@
 import {
   MedicalCaseRepo,
   type AgentTaskRecord,
+  type ImageRecord,
   type ModelJobRecord,
   type NoduleRecord,
+  type ReportRecord,
+  type SafetyRuleRecord,
   type TiradsFeatureRecord,
   type TiradsResultRecord,
 } from "./storage";
@@ -457,14 +460,7 @@ function buildSynchronousTaskOutput(
     case "draft_report":
       return buildDraftReportTaskOutput(repo, task, base, workerId, now);
     case "safety_review":
-      return {
-        ...base,
-        result: {
-          safety_status: "passed_with_validation_warnings",
-          issues: [],
-        },
-        warnings: ["doctor_review_required"],
-      };
+      return buildSafetyReviewTaskOutput(repo, task, base, workerId, now);
     default:
       throw new Error(`unsupported medical agent task type: ${task.taskType}`);
   }
@@ -542,6 +538,58 @@ function buildDraftReportTaskOutput(
   };
 }
 
+function buildSafetyReviewTaskOutput(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  base: JsonObject,
+  workerId: string,
+  now: number
+): JsonObject {
+  const studyId = requiredString(task.input.study_id, "study_id");
+  const report = latestReport(repo.listReportsByStudy(studyId));
+  const rules = repo.listActiveSafetyRules();
+  const bundle = repo.getStudyBundle(studyId);
+  const issues = report ? evaluateSafetyRules(report, rules, bundle?.images ?? [], repo.listNodulesByStudy(studyId)) : [];
+  const safetyStatus = report
+    ? issues.length > 0
+      ? "needs_doctor_review"
+      : "passed_with_doctor_review_required"
+    : "no_report";
+  const audit = repo.createAuditLog({
+    studyId,
+    actorType: "agent",
+    actorId: workerId,
+    action: "medical.safety_review",
+    targetType: report ? "report" : "study",
+    targetId: report?.id ?? studyId,
+    detail: {
+      safety_status: safetyStatus,
+      report_id: report?.id ?? null,
+      issues,
+      rules_checked: rules.map((rule) => rule.ruleCode),
+    },
+    traceId: task.id,
+    now,
+  });
+
+  return {
+    ...base,
+    validation_mode: false,
+    result: {
+      safety_status: safetyStatus,
+      report_id: report?.id ?? null,
+      audit_log_id: audit.id,
+      issues,
+      rules_checked: rules.length,
+    },
+    warnings: uniqueStrings([
+      "doctor_review_required",
+      report ? undefined : "no_report_for_safety_review",
+      issues.length > 0 ? "safety_issues_detected" : undefined,
+    ]),
+  };
+}
+
 function detectorSuccessOutput(
   repo: MedicalCaseRepo,
   modelJob: ModelJobRecord,
@@ -609,6 +657,119 @@ function isWorkerResponse(value: unknown): value is WorkerResponse {
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0))];
+}
+
+interface SafetyIssue extends JsonObject {
+  rule_code: string;
+  severity: string;
+  rule_type: string;
+  message: string;
+}
+
+function latestReport(reports: ReportRecord[]): ReportRecord | null {
+  return reports.length > 0 ? reports[reports.length - 1] : null;
+}
+
+function evaluateSafetyRules(
+  report: ReportRecord,
+  rules: SafetyRuleRecord[],
+  images: ImageRecord[],
+  nodules: NoduleRecord[]
+): SafetyIssue[] {
+  const text = report.draftText ?? report.finalText ?? "";
+  const issues: SafetyIssue[] = [];
+  for (const rule of rules) {
+    const issue = evaluateSafetyRule(rule, report, text, images, nodules);
+    if (issue) issues.push(issue);
+  }
+  return issues;
+}
+
+function evaluateSafetyRule(
+  rule: SafetyRuleRecord,
+  report: ReportRecord,
+  text: string,
+  images: ImageRecord[],
+  nodules: NoduleRecord[]
+): SafetyIssue | null {
+  const patternMatch = matchRulePattern(rule, text);
+  if (patternMatch) {
+    return safetyIssue(rule, { matched_text: patternMatch });
+  }
+
+  if (rule.ruleCode === "NO_UNSUPPORTED_FNA_RECOMMENDATION" && mentionsIntervention(text) && !reportHasEvidence(report)) {
+    return safetyIssue(rule, { missing_evidence: "tirads_rules" });
+  }
+
+  if (rule.ruleCode === "BLOCK_LOW_CONFIDENCE_AUTOMATION") {
+    const minImageQualityScore = optionalNumber(rule.rule.min_image_quality_score) ?? 0.55;
+    const minDetectionConfidence = optionalNumber(rule.rule.min_detection_confidence) ?? 0.5;
+    const lowQualityImage = images.find(
+      (image) => image.qualityScore !== null && image.qualityScore < minImageQualityScore
+    );
+    const lowConfidenceNodule = nodules.find(
+      (nodule) => nodule.detectionConfidence !== null && nodule.detectionConfidence < minDetectionConfidence
+    );
+    if (lowQualityImage || lowConfidenceNodule) {
+      return safetyIssue(rule, {
+        image_id: lowQualityImage?.id,
+        image_quality_score: lowQualityImage?.qualityScore,
+        nodule_id: lowConfidenceNodule?.id,
+        detection_confidence: lowConfidenceNodule?.detectionConfidence,
+      });
+    }
+  }
+
+  if (rule.ruleCode === "REQUIRE_MANUAL_CALIBRATION_FOR_MM" && mentionsMillimeter(text) && !hasPixelSpacing(images)) {
+    return safetyIssue(rule, { missing: "pixel_spacing" });
+  }
+
+  return null;
+}
+
+function matchRulePattern(rule: SafetyRuleRecord, text: string): string | null {
+  if (!rule.pattern) return null;
+  try {
+    const match = text.match(new RegExp(rule.pattern, "i"));
+    return match?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function safetyIssue(rule: SafetyRuleRecord, detail: JsonObject = {}): SafetyIssue {
+  return {
+    rule_code: rule.ruleCode,
+    severity: rule.severity,
+    rule_type: rule.ruleType,
+    message: rule.message,
+    ...detail,
+  };
+}
+
+function mentionsIntervention(text: string): boolean {
+  return /\bFNA\b|穿刺|活检|随访|follow[- ]?up/i.test(text);
+}
+
+function mentionsMillimeter(text: string): boolean {
+  return /\bmm\b|毫米/.test(text);
+}
+
+function reportHasEvidence(report: ReportRecord): boolean {
+  const evidence = report.evidence.length > 0 ? report.evidence : asRecordArray(report.structured.evidence);
+  return evidence.some((item) => evidenceRuleCodesFromValue(item).length > 0);
+}
+
+function evidenceRuleCodesFromValue(value: unknown): string[] {
+  const record = asJsonObject(value);
+  if (!record) return [];
+  const direct = optionalString(record.rule_code) ?? optionalString(record.code);
+  if (direct) return [direct];
+  return asRecordArray(record.evidence_rules).flatMap((item) => evidenceRuleCodesFromValue(item));
+}
+
+function hasPixelSpacing(images: ImageRecord[]): boolean {
+  return images.some((image) => Object.keys(image.pixelSpacing).length > 0);
 }
 
 function latestTiradsResultPerNodule(
