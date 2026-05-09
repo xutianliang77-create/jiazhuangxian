@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, public thyroid ultrasound dataset bootstrap, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
 
 ### Completed
 
@@ -164,6 +164,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added an Overlay Revision workspace in MedicalPanel that displays detector overlay images, lets doctors select a nodule, drag a new bbox on the overlay, and save it through the existing `POST /v1/web/medical/nodules/:noduleId/revise` endpoint.
 - Enhanced the report card with editable report text and optional review comments before confirm/reject, using the existing report review endpoint.
 - Enhanced doctor review and safety audit rendering so report status/text changes and bbox before/after changes are visible in the workstation.
+- Downloaded TN3K to `data/artifacts/datasets/tn3k/raw/TN3K.rar`, extracted it to `data/artifacts/datasets/tn3k/processed/datasets/tn3k`, and preserved local metadata/labels plus sha256 checksums.
+- Downloaded the public Sample-of-UD-TN GitHub sample to `data/artifacts/datasets/ud-tn-sample/raw/Sample-of-UD-TN-master` for smoke testing.
+- Added `examples/datasets/thyroid-ultrasound-public.manifest.json` as the tracked dataset source/status manifest for TN3K, Sample-of-UD-TN, TN5000, ThyroidXL, ThyUS2Path, Stanford Thyroid Cine-clip, AHU heterogeneous ultrasound, and DDTI.
+- Added `docs/PUBLIC_THYROID_ULTRASOUND_DATASETS.md` documenting downloaded paths, access blockers, and recommended model-development use.
+- Added `data/artifacts/datasets/.gitkeep` and updated `data/README.md` so the local dataset artifact directory is explicit while real data stays out of Git.
 
 ### Verification
 
@@ -368,6 +373,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Full web-react tests passed after workstation enhancement: `cd web-react && npm test` with 11 files and 43 tests.
 - `npm run build:web` passed after workstation enhancement; Vite still reports the existing Monaco chunk-size warning.
 - `git diff --check` passed after workstation enhancement.
+- TN3K archive sha256 verified: `407fe2b4992e83b037621214aaaa39d86072e03d4ee3765f3c68d06e546e4ad4`.
+- TN3K extraction verified with 2,879 train/validation images, 2,879 train/validation masks, 614 test images, and 614 test masks.
+- Sample-of-UD-TN local fetch verified with 27 files including 26 JPG images.
+- JSON validation passed for `examples/datasets/thyroid-ultrasound-public.manifest.json`.
+- `git diff --check` passed after public dataset bootstrap.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.
@@ -384,10 +394,12 @@ None.
 
 ### Next Session Priorities
 
-1. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
-2. Add PDF-to-manifest parsing when representative guideline PDFs are available.
-3. Add batch case queue workflows for multi-case review, filtering, and bulk state transitions.
-4. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
+1. Manually download TN5000 through the browser/Figshare page into `data/artifacts/datasets/tn5000/raw`, then convert its detection annotations into the YOLO/COCO formats needed for YOLOv11 and RT-DETR/RF-DETR.
+2. Add a TN3K mask-to-bbox conversion script so the downloaded masks can bootstrap detector training/evaluation.
+3. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
+4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
+5. Add batch case queue workflows for multi-case review, filtering, and bulk state transitions.
+6. Fix or intentionally suppress the two pre-existing lint findings when lint hygiene becomes the next task.
 
 ### Resume Checklist
 

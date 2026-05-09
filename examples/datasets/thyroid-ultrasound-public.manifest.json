@@ -1,0 +1,195 @@
+{
+  "schema_version": "thyroid.public_dataset_manifest.v1",
+  "created_at": "2026-05-09T08:35:46Z",
+  "workspace": "/Users/xutianliang/Downloads/jiazhuangxian",
+  "artifact_root": "data/artifacts/datasets",
+  "policy": {
+    "commit_dataset_files": false,
+    "allowed_git_files": [
+      "dataset manifests",
+      "download notes",
+      "checksums",
+      "directory .gitkeep files"
+    ],
+    "purpose": "validation, pretraining, smoke testing, and model evaluation only"
+  },
+  "datasets": [
+    {
+      "id": "tn3k",
+      "name": "TN3K: Thyroid Nodule Dataset for Segmentation and Classification",
+      "source_url": "https://huggingface.co/datasets/haifan-gong/TN3K",
+      "download_url_used": "https://hf-mirror.com/datasets/haifan-gong/TN3K/resolve/main/TN3K.rar",
+      "access": "public",
+      "license": "MIT",
+      "download_status": "downloaded_and_extracted",
+      "downloaded_at": "2026-05-09T08:35:46Z",
+      "local_paths": {
+        "archive": "data/artifacts/datasets/tn3k/raw/TN3K.rar",
+        "raw_metadata_dir": "data/artifacts/datasets/tn3k/raw",
+        "processed_root": "data/artifacts/datasets/tn3k/processed/datasets/tn3k"
+      },
+      "checksums": {
+        "TN3K.rar_sha256": "407fe2b4992e83b037621214aaaa39d86072e03d4ee3765f3c68d06e546e4ad4"
+      },
+      "counts": {
+        "trainval_images": 2879,
+        "trainval_masks": 2879,
+        "test_images": 614,
+        "test_masks": 614,
+        "classification_label_rows": 3493
+      },
+      "tasks": [
+        "segmentation",
+        "benign_malignant_classification",
+        "mask_to_bbox_conversion_for_detector_pretraining"
+      ],
+      "notes": [
+        "Official Hugging Face endpoint timed out in the local network during this download; the mirror resolved the same public repository file.",
+        "Masks are stored as JPG files under trainval-mask and test-mask.",
+        "This dataset is suitable for segmentation and classification validation; detection bboxes should be derived from masks before YOLO/RT-DETR training."
+      ]
+    },
+    {
+      "id": "ud-tn-sample",
+      "name": "Sample-of-UD-TN",
+      "source_url": "https://github.com/18811755633/Sample-of-UD-TN",
+      "download_url_used": "GitHub API blobs from repository tree master",
+      "access": "public_sample",
+      "license": "not_declared_in_repository",
+      "download_status": "downloaded",
+      "downloaded_at": "2026-05-09T08:35:46Z",
+      "local_paths": {
+        "raw_root": "data/artifacts/datasets/ud-tn-sample/raw/Sample-of-UD-TN-master"
+      },
+      "counts": {
+        "image_files": 26,
+        "readme_files": 1
+      },
+      "tasks": [
+        "smoke_test",
+        "classification_path_check"
+      ],
+      "notes": [
+        "Only the repository sample was downloaded, not the full UD-TN dataset.",
+        "The sample has benign and malignant subfolders for train, test, and small-nodule test checks."
+      ]
+    },
+    {
+      "id": "tn5000",
+      "name": "TN5000: An Ultrasound Image Dataset for Thyroid Nodule Detection and Classification",
+      "source_url": "https://springernature.figshare.com/articles/dataset/TN5000_An_Ultrasound_Image_Dataset_for_Thyroid_Nodule_Detection_and_Classification/28455641",
+      "repository_url": "https://github.com/Qingyanyichen/TN5000-2025",
+      "access": "public_figshare",
+      "download_status": "blocked_by_figshare_waf_cli",
+      "local_paths": {
+        "expected_archive_dir": "data/artifacts/datasets/tn5000/raw",
+        "expected_processed_root": "data/artifacts/datasets/tn5000/processed"
+      },
+      "tasks": [
+        "nodule_detection",
+        "benign_malignant_classification",
+        "YOLOv11_primary_detector_training",
+        "RT-DETR_or_RF-DETR_comparator_training"
+      ],
+      "notes": [
+        "The Figshare page is reachable in a browser, but command-line download returned an AWS WAF challenge on 2026-05-09.",
+        "Manual browser download is required unless a trusted institutional mirror is provided.",
+        "This remains the preferred first detector dataset once downloaded because it includes detection annotations."
+      ]
+    },
+    {
+      "id": "thyroidxl",
+      "name": "ThyroidXL",
+      "source_url": "https://huggingface.co/datasets/hunglc007/ThyroidXL",
+      "access": "manual_gated",
+      "download_status": "not_downloaded_requires_huggingface_access_approval",
+      "local_paths": {
+        "expected_root": "data/artifacts/datasets/thyroidxl"
+      },
+      "tasks": [
+        "detection",
+        "segmentation",
+        "classification",
+        "tirads_feature_validation"
+      ],
+      "notes": [
+        "The Hugging Face API reports this dataset as manual gated.",
+        "Download requires accepting the dataset terms with a Hugging Face account."
+      ]
+    },
+    {
+      "id": "thyus2path",
+      "name": "ThyUS2Path",
+      "source_url": "https://www.nature.com/articles/s41597-024-04156-5",
+      "access": "public_article_dataset_with_large_archive",
+      "download_status": "not_downloaded_needs_manual_dataset_access",
+      "local_paths": {
+        "expected_root": "data/artifacts/datasets/thyus2path"
+      },
+      "tasks": [
+        "pathology_validated_benign_malignant_classification",
+        "external_validation"
+      ],
+      "notes": [
+        "Useful for pathology-validated classification and external validation.",
+        "Not the first detector-training choice because public metadata is classification-oriented rather than bbox-oriented."
+      ]
+    },
+    {
+      "id": "stanford-thyroid-cine-clip",
+      "name": "Stanford Thyroid Ultrasound Cine-clip",
+      "source_url": "https://aimi.stanford.edu/datasets/thyroid-ultrasound-cine-clip",
+      "access": "public_listing_redivis_download",
+      "download_status": "not_downloaded_needs_redivis_download_flow",
+      "local_paths": {
+        "expected_root": "data/artifacts/datasets/stanford-thyroid-cine-clip"
+      },
+      "tasks": [
+        "cine_clip_segmentation",
+        "tirads_descriptor_validation",
+        "pathology_validated_external_validation"
+      ],
+      "notes": [
+        "Dataset page lists biopsy-confirmed nodules, cine clips, radiologist segmentations, TI-RADS descriptors, and histopathology.",
+        "Download is routed through Redivis, so it should be handled with the official account/terms flow."
+      ]
+    },
+    {
+      "id": "ahu-heterogeneous-ultrasound",
+      "name": "Annotated Heterogeneous Ultrasound Database",
+      "source_url": "https://www.nature.com/articles/s41597-025-04464-4",
+      "access": "research_only_figshare_dataset",
+      "download_status": "not_downloaded_general_ultrasound_dataset_not_first_priority",
+      "local_paths": {
+        "expected_root": "data/artifacts/datasets/ahu-heterogeneous-ultrasound"
+      },
+      "tasks": [
+        "domain_robustness_probe",
+        "ultrasound_noise_and_video_generalization"
+      ],
+      "notes": [
+        "This is a heterogeneous multi-organ ultrasound dataset that includes thyroid among other organs.",
+        "Use only as a robustness/domain-shift probe, not as a primary thyroid nodule detector benchmark."
+      ]
+    },
+    {
+      "id": "ddti",
+      "name": "Digital Database Thyroid Images",
+      "source_url": "http://cimalab.intec.co/applications/thyroid/",
+      "secondary_url": "https://github.com/openmedlab/Awesome-Medical-Dataset/blob/main/resources/DDTI.md",
+      "access": "legacy_public",
+      "download_status": "not_downloaded_original_host_unresolved",
+      "local_paths": {
+        "expected_root": "data/artifacts/datasets/ddti"
+      },
+      "tasks": [
+        "small_smoke_test",
+        "segmentation_baseline_check"
+      ],
+      "notes": [
+        "The original host did not resolve from this machine on 2026-05-09.",
+        "Use only if a reliable mirror and license terms are confirmed."
+      ]
+    }
+  ]
+}
