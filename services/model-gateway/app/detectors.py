@@ -8,6 +8,7 @@ from typing import Any, Mapping, Protocol
 
 
 JsonDict = dict[str, Any]
+MODEL_DEVICE_ENV = "JZX_MODEL_DEVICE"
 
 
 @dataclass(frozen=True)
@@ -91,9 +92,24 @@ class BaseDetectorAdapter:
                 "name": self.model_name,
                 "version": self.model_version,
                 "weights_hash": self.weights_hash,
+                "device": self.model_device() or "auto",
             },
             "warnings": [],
         }
+
+    def model_device(self) -> str | None:
+        raw = self.env.get(MODEL_DEVICE_ENV)
+        if raw is None:
+            return None
+        stripped = raw.strip()
+        return stripped or None
+
+    def predict_options(self) -> JsonDict:
+        options: JsonDict = {"verbose": False}
+        device = self.model_device()
+        if device:
+            options["device"] = device
+        return options
 
     def resolve_image_path(self, image_uri: str) -> Path:
         if image_uri.startswith("artifact://"):
@@ -118,7 +134,7 @@ class YoloV11DetectorAdapter(BaseDetectorAdapter):
             raise runtime_unavailable(self, "ultralytics", weights, image_path) from exc
 
         model = YOLO(str(weights))
-        results = model.predict(str(image_path), verbose=False)
+        results = model.predict(str(image_path), **self.predict_options())
         return self.common_output(format_ultralytics_boxes(results, self.model_name, self.model_version))
 
 
@@ -136,7 +152,7 @@ class RtDetrDetectorAdapter(BaseDetectorAdapter):
             raise runtime_unavailable(self, "ultralytics", weights, image_path) from exc
 
         model = RTDETR(str(weights))
-        results = model.predict(str(image_path), verbose=False)
+        results = model.predict(str(image_path), **self.predict_options())
         return self.common_output(format_ultralytics_boxes(results, self.model_name, self.model_version))
 
 

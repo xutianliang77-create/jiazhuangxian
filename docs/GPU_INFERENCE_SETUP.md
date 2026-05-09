@@ -80,9 +80,12 @@ export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/medical/data.db
 export JZX_ARTIFACT_ROOT=/path/to/jiazhuangxian/data/artifacts
 export JZX_YOLOV11_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/yolo/yolov11-thyroid.pt
 export JZX_RTDETR_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/rtdetr/rtdetr-thyroid.pt
+export JZX_MODEL_DEVICE=0
 ```
 
 如果只先验证 YOLOv11，`JZX_RTDETR_WEIGHTS` 可以暂时不设。
+
+`JZX_MODEL_DEVICE` 传给 Ultralytics `predict(device=...)`。单卡 5090 验证环境推荐设为 `0`；不设置时使用 Ultralytics 自动设备选择。
 
 ## 检查
 
@@ -111,6 +114,7 @@ source .venv-model-gateway-gpu/bin/activate
 export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/medical/data.db
 export JZX_ARTIFACT_ROOT=/path/to/jiazhuangxian/data/artifacts
 export JZX_YOLOV11_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/yolo/yolov11-thyroid.pt
+export JZX_MODEL_DEVICE=0
 npm run model-gateway
 ```
 
@@ -121,6 +125,7 @@ source .venv-model-gateway-gpu/bin/activate
 export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/medical/data.db
 export JZX_ARTIFACT_ROOT=/path/to/jiazhuangxian/data/artifacts
 export JZX_YOLOV11_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/yolo/yolov11-thyroid.pt
+export JZX_MODEL_DEVICE=0
 npm run model-worker
 ```
 

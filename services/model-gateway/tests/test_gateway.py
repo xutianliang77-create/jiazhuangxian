@@ -89,6 +89,15 @@ class ModelGatewayTest(unittest.TestCase):
         self.assertIn("nvidia_smi", gpu)
         self.assertIn("torch_cuda_version", gpu)
         self.assertIn("devices", gpu)
+        self.assertEqual(report["runtime"]["inference_device"]["effective"], "auto")
+
+    def test_config_report_includes_explicit_inference_device(self) -> None:
+        report = build_config_report(env={"JZX_MODEL_DEVICE": "0"})
+
+        self.assertEqual(
+            report["runtime"]["inference_device"],
+            {"env": "JZX_MODEL_DEVICE", "configured": True, "value": "0", "effective": "0"},
+        )
 
     def test_parse_nvidia_smi_cuda_version(self) -> None:
         self.assertEqual(
@@ -277,6 +286,12 @@ class ModelGatewayTest(unittest.TestCase):
         yolo = select_detector_adapter({"model_name": "yolov11-thyroid-detector"}, env={})
         self.assertEqual(yolo.adapter_name, "yolov11-ultralytics")
         self.assertEqual(yolo.model_family, "yolov11")
+
+        forced_device = select_detector_adapter(
+            {"model_name": "yolov11-thyroid-detector"},
+            env={"JZX_MODEL_DEVICE": "0"},
+        )
+        self.assertEqual(forced_device.common_output([])["model"]["device"], "0")
 
         rtdetr = select_detector_adapter({"model_name": "rt-detr-thyroid-detector"}, env={})
         self.assertEqual(rtdetr.adapter_name, "rtdetr-ultralytics")

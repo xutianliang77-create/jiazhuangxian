@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping
 
-from .detectors import RfDetrDetectorAdapter, RtDetrDetectorAdapter, YoloV11DetectorAdapter
+from .detectors import MODEL_DEVICE_ENV, RfDetrDetectorAdapter, RtDetrDetectorAdapter, YoloV11DetectorAdapter
 from .store import default_db_path
 
 
@@ -77,6 +77,7 @@ def build_config_report(
             },
             "packages": base_packages,
             "gpu": gpu,
+            "inference_device": inference_device_status(source_env),
         },
         "storage": {
             "data_db": str(db_path or Path(source_env.get("JZX_DATA_DB", default_db_path()))),
@@ -85,6 +86,17 @@ def build_config_report(
         "detectors": detectors,
         "ready_detectors": [item["model_family"] for item in ready_detectors],
         "warnings": warnings,
+    }
+
+
+def inference_device_status(env: Mapping[str, str]) -> JsonDict:
+    raw = env.get(MODEL_DEVICE_ENV)
+    value = raw.strip() if raw else None
+    return {
+        "env": MODEL_DEVICE_ENV,
+        "configured": bool(value),
+        "value": value,
+        "effective": value or "auto",
     }
 
 

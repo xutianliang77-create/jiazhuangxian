@@ -403,6 +403,15 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.
   - `test/golden/runner/meta-router.ts`: unnecessary escaped `\-`.
 - GitHub push now works with `git -c http.version=HTTP/1.1 push origin main` when the default HTTP path is slow.
+- Remote medical SQLite/RAG initialization passed on the 5090 host with 4 medical documents, 36 TI-RADS rules, 5 report templates, 5 safety rules, 10 terms, and 13 ingested RAG chunks.
+- Remote `npm run build` passed on the 5090 host after updating it to commit `0452cb6`; the only build warning was the existing Monaco/Vite chunk-size warning.
+- Downloaded Ultralytics `yolo11n.pt` locally because the remote host's GitHub download stalled, copied it to `data/artifacts/model-weights/yolo/yolo11n.pt`, and used it only as a generic GPU smoke weight, not as a thyroid-specialized detector.
+- Remote `npm run model-gateway:check -- --strict` passed with Torch `2.11.0+cu128`, CUDA available, RTX 5090 detected, and `ready_detectors=["yolov11"]` when `JZX_YOLOV11_WEIGHTS` points to the generic smoke weight.
+- Remote end-to-end model-gateway/model-worker smoke passed for job `mj_198b1bb5c92a40969dca00dfa45d2fb1`, writing `detections.json` and `overlay.png` under `data/artifacts/model-output/thyroid-detect-nodules/REMOTE_GPU_SMOKE_20260509214227_STUDY/REMOTE_GPU_SMOKE_20260509214227_IMAGE/`.
+- Added explicit detector device control with `JZX_MODEL_DEVICE`, passed through to Ultralytics `predict(device=...)`, and exposed it in model-gateway config reports.
+- `python3 -m unittest discover services/model-gateway/tests` passed after adding explicit detector device control: 13 tests.
+- `npm run model-gateway:check` passed locally in degraded mode after adding explicit detector device reporting, correctly showing `runtime.inference_device.effective="auto"` on the Mac development host.
+- `git diff --check` passed after adding explicit detector device control.
 
 ### Background Tasks
 
