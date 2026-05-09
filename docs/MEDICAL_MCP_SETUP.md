@@ -75,6 +75,8 @@ export JZX_DATA_DB=/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/med
 export JZX_RAG_DB=/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/rag.db
 ```
 
+`--ingest-sample-knowledge` 默认写入第一版甲状腺知识库 `examples/medical-knowledge/thyroid-guidelines-v1.manifest.json`，包含 ACR TI-RADS、ATA、EU-TIRADS、C-TIRADS 参考边界和报告安全证据约束。
+
 终端 1：启动图像服务。
 
 ```bash

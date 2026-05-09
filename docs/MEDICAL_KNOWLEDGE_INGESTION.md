@@ -17,9 +17,12 @@
 示例文件：
 
 ```text
+examples/medical-knowledge/thyroid-guidelines-v1.manifest.json
 examples/medical-knowledge/acr-tirads-validation.manifest.json
 examples/medical-knowledge/acr-tirads-validation.md
 ```
+
+`thyroid-guidelines-v1.manifest.json` 是第一版验证知识库，覆盖 ACR TI-RADS 2017、ATA 2015、EU-TIRADS 2017、C-TIRADS 本地化参考边界、跨指南冲突策略和报告证据安全约束。C-TIRADS 当前只作为公开文献参考，不作为默认自动判定规则。
 
 Markdown manifest 的 front matter 必须包含 `document`，可选 `chunk_defaults` 和 `report_templates`。正文会按 Markdown 标题切成知识 chunk，所有 chunk 仍然通过同一套 manifest ingestion 管线写入 `medical_chunk_metadata` 和 CodeClaw `rag_chunks`。
 
@@ -39,11 +42,13 @@ cd /Users/xutianliang/Downloads/jiazhuangxian
 npm run medical:init-db -- --ingest-sample-knowledge
 ```
 
+`--ingest-sample-knowledge` 默认导入 `examples/medical-knowledge/thyroid-guidelines-v1.manifest.json`。
+
 使用默认 `~/.codeclaw/data.db` 和当前 workspace 对应的 CodeClaw RAG 库：
 
 ```bash
 cd /Users/xutianliang/Downloads/jiazhuangxian
-npm run medical:ingest -- --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json
+npm run medical:ingest -- --manifest examples/medical-knowledge/thyroid-guidelines-v1.manifest.json
 ```
 
 导入 Markdown：
@@ -82,7 +87,7 @@ npm run medical:embed -- --data-db data/artifacts/medical-validation/data.db --r
 ```bash
 cd /Users/xutianliang/Downloads/jiazhuangxian
 npm run medical:ingest -- \
-  --manifest examples/medical-knowledge/acr-tirads-validation.manifest.json \
+  --manifest examples/medical-knowledge/thyroid-guidelines-v1.manifest.json \
   --data-db data/artifacts/medical-validation/data.db \
   --rag-db data/artifacts/medical-validation/rag.db \
   --workspace /Users/xutianliang/Downloads/jiazhuangxian

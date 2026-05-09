@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, approved medical RAG evidence search, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, and doctor-side nodule bbox revision with audit history in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, and doctor-side nodule bbox revision with audit history in the doctor workstation.
 
 ### Completed
 
@@ -158,6 +158,9 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `POST /v1/web/medical/knowledge/search` so the doctor workstation can query approved guideline evidence through the Web API.
 - Added a `知识证据` panel to MedicalPanel that displays evidence text, document source/version, section, score, and source line provenance.
 - Updated the medical MCP example and knowledge documentation with `JZX_RAG_DB`, the evidence search API, and the `medical.SearchGuideline` call.
+- Added `examples/medical-knowledge/thyroid-guidelines-v1.manifest.json` as the first-version thyroid knowledge base with ACR TI-RADS 2017, ATA 2015, EU-TIRADS 2017, C-TIRADS reference boundary, cross-guideline conflict policy, and report evidence safety constraints.
+- Changed `medical:init-db --ingest-sample-knowledge` to default to the first-version thyroid guideline knowledge base while keeping the older ACR validation sample available for focused ingestion tests.
+- Updated medical knowledge ingestion and MCP setup documentation so local validation initialization now creates the guideline evidence pack in SQLite and CodeClaw RAG by default.
 
 ### Verification
 
@@ -347,6 +350,13 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `web-react`: `npm run typecheck` passed.
 - `npm run build:web` passed.
 - `git diff --cached --check` passed.
+- JSON validation passed for `examples/medical-knowledge/thyroid-guidelines-v1.manifest.json`.
+- Targeted knowledge tests passed after the first-version KB: `npm test -- --run test/unit/medical/knowledgeIngestion.test.ts test/unit/medical/initDbCli.test.ts test/unit/medical/knowledgeSearch.test.ts` with 10 tests.
+- Root `npm run typecheck` passed after the first-version KB.
+- Targeted lint passed for the changed init-db and medical knowledge tests: `npx eslint scripts/medical-init-db.ts test/unit/medical/knowledgeIngestion.test.ts test/unit/medical/initDbCli.test.ts`.
+- CLI smoke test passed after the first-version KB: `npm run medical:init-db -- --data-db <tmp>/data.db --rag-db <tmp>/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge` wrote 13 chunks and 2 templates.
+- Medical knowledge search smoke test passed after the first-version KB: query `TR5 FNA 1.0 cm` returned `medical/doc-thyroid-guidelines-v1/acr-tirads-size-actions` from a temporary SQLite/RAG pair.
+- `git diff --check` passed after the first-version KB.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.
@@ -356,6 +366,10 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 ### Background Tasks
 
 None.
+
+### Blocking Issues
+
+- The local first-version KB commit is ready, but GitHub push is blocked by network connectivity to `github.com:443`; retries failed with `Empty reply from server` and `Couldn't connect to server`.
 
 ### Next Session Priorities
 

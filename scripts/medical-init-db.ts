@@ -19,7 +19,7 @@ export interface MedicalInitDbArgs {
 }
 
 const VALIDATION_DIR = "data/artifacts/medical-validation";
-const DEFAULT_SAMPLE_MANIFEST = "examples/medical-knowledge/acr-tirads-validation.manifest.json";
+const DEFAULT_SAMPLE_MANIFEST = "examples/medical-knowledge/thyroid-guidelines-v1.manifest.json";
 
 async function main(): Promise<void> {
   const args = parseMedicalInitDbArgs(process.argv.slice(2));

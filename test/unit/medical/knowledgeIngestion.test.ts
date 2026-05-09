@@ -149,6 +149,29 @@ describe("medical knowledge ingestion", () => {
     expect(manifest.report_templates?.[0]?.scene).toBe("tirads_evidence_summary");
   });
 
+  it("loads the first-version thyroid guideline knowledge base", () => {
+    const manifest = loadMedicalKnowledgeManifest(
+      path.join(process.cwd(), "examples/medical-knowledge/thyroid-guidelines-v1.manifest.json")
+    );
+
+    expect(manifest.document.id).toBe("doc-thyroid-guidelines-v1");
+    expect(manifest.document.review_status).toBe("approved");
+    expect(manifest.chunks).toHaveLength(13);
+    expect(manifest.chunks.map((chunk) => chunk.id)).toEqual(
+      expect.arrayContaining([
+        "acr-tirads-category-score",
+        "acr-tirads-size-actions",
+        "ata-2015-fna-thresholds",
+        "eu-tirads-fna-thresholds",
+        "c-tirads-reference-boundary",
+        "report-safety-evidence-required",
+      ])
+    );
+    expect(manifest.report_templates?.map((template) => template.scene)).toEqual(
+      expect.arrayContaining(["guideline_evidence_summary", "guideline_conflict_review"])
+    );
+  });
+
   it("loads Markdown front matter and chunks headings into RAG-ready sections", () => {
     const file = path.join(tmpRoot, "markdown-knowledge.md");
     writeFileSync(

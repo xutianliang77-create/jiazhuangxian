@@ -23,7 +23,7 @@ describe("medical init db CLI helpers", () => {
       ragDb: "/repo/data/artifacts/medical-validation/rag.db",
       workspace: "/repo",
       ingestSampleKnowledge: false,
-      sampleManifest: "/repo/examples/medical-knowledge/acr-tirads-validation.manifest.json",
+      sampleManifest: "/repo/examples/medical-knowledge/thyroid-guidelines-v1.manifest.json",
     });
   });
 
@@ -35,7 +35,7 @@ describe("medical init db CLI helpers", () => {
       ragDb,
       workspace: process.cwd(),
       ingestSampleKnowledge: true,
-      sampleManifest: path.join(process.cwd(), "examples/medical-knowledge/acr-tirads-validation.manifest.json"),
+      sampleManifest: path.join(process.cwd(), "examples/medical-knowledge/thyroid-guidelines-v1.manifest.json"),
     });
 
     expect(existsSync(dataDb)).toBe(true);
@@ -45,9 +45,9 @@ describe("medical init db CLI helpers", () => {
       ragDb,
       ragReady: true,
       sampleKnowledge: {
-        documentId: "doc-validation-acr-tirads-notes-v1",
-        chunksUpserted: 2,
-        templatesUpserted: 1,
+        documentId: "doc-thyroid-guidelines-v1",
+        chunksUpserted: 13,
+        templatesUpserted: 2,
       },
     });
     expect((result.seedCounts as Record<string, number>).tiradsRules).toBe(36);

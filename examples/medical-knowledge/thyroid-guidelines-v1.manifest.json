@@ -1,0 +1,343 @@
+{
+  "document": {
+    "id": "doc-thyroid-guidelines-v1",
+    "title": "甲状腺超声与结节管理第一版知识库",
+    "source_type": "curated_guideline_pack",
+    "source_name": "ACR_TI_RADS_2017_ATA_2015_EU_TIRADS_2017_C_TIRADS_reference",
+    "version": "v1",
+    "language": "zh-CN",
+    "effective_date": "2026-05-09",
+    "file_uri": "artifact://examples/medical-knowledge/thyroid-guidelines-v1.manifest.json",
+    "review_status": "approved",
+    "approved_by": "validation_owner",
+    "approved_at": 1778256000000,
+    "metadata": {
+      "body_part": "thyroid",
+      "modality": "ultrasound",
+      "scope": "validation_only",
+      "curation_note": "第一版仅纳入公开可追溯资料的结构化摘要和验证规则；不替代医院正式指南库、医生判断或法务审核。",
+      "sources": [
+        {
+          "id": "acr-tirads-official",
+          "title": "ACR TI-RADS official reference page and chart",
+          "url": "https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/TI-RADS",
+          "system": "ACR_TI_RADS",
+          "year": 2017
+        },
+        {
+          "id": "ata-2015-guideline",
+          "title": "2015 American Thyroid Association Management Guidelines",
+          "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4739132/",
+          "system": "ATA_2015",
+          "year": 2015
+        },
+        {
+          "id": "eta-eu-tirads-2017",
+          "title": "European Thyroid Association Guidelines for Ultrasound Malignancy Risk Stratification of Thyroid Nodules in Adults",
+          "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5652895/",
+          "system": "EU_TIRADS",
+          "year": 2017
+        },
+        {
+          "id": "c-tirads-reference",
+          "title": "Thyroid imaging reporting and data system for ultrasound features of nodules: multicentric retrospective study in China",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/32852733/",
+          "system": "C_TIRADS_REFERENCE",
+          "year": 2021
+        }
+      ]
+    }
+  },
+  "chunks": [
+    {
+      "id": "acr-tirads-purpose",
+      "section_title": "ACR TI-RADS 使用边界",
+      "chunk_type": "guideline_summary",
+      "topic": "tirads_scope",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "ACR_TI_RADS",
+      "body_part": "thyroid",
+      "text": "ACR TI-RADS 是甲状腺超声结节的结构化风险分层和管理建议体系。验证版系统只把它作为辅助分析依据：AI 可以汇总超声特征、分数、TR 分级和建议阈值，但不得把分级写成最终病理诊断，也不得绕过医生审核。",
+      "metadata": {
+        "source_id": "acr-tirads-official",
+        "source_url": "https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/TI-RADS",
+        "requires_doctor_review": true
+      }
+    },
+    {
+      "id": "acr-tirads-feature-groups",
+      "section_title": "ACR TI-RADS 特征组",
+      "chunk_type": "guideline_rule_summary",
+      "topic": "tirads_feature_scoring",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "ACR_TI_RADS",
+      "body_part": "thyroid",
+      "text": "ACR TI-RADS 评分按 composition、echogenicity、shape、margin、echogenic foci 五组超声特征分别记录后汇总。平台落库时必须保存每个特征项、来源模型或医生来源、置信度、证据 chunk 和原始图像引用，不能只保存最终 TR 结论。",
+      "metadata": {
+        "source_id": "acr-tirads-official",
+        "source_url": "https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/TI-RADS",
+        "required_fields": [
+          "composition",
+          "echogenicity",
+          "shape",
+          "margin",
+          "echogenic_foci"
+        ]
+      }
+    },
+    {
+      "id": "acr-tirads-category-score",
+      "section_title": "ACR TI-RADS 分数到分级",
+      "chunk_type": "guideline_rule_summary",
+      "topic": "tirads_category_scoring",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "ACR_TI_RADS",
+      "body_part": "thyroid",
+      "text": "验证版规则包采用 ACR TI-RADS 常用分数映射：0 分为 TR1，2 分为 TR2，3 分为 TR3，4 至 6 分为 TR4，7 分及以上为 TR5。规则引擎必须返回触发的规则代码和版本，报告生成只能引用规则引擎结果，不能由大模型自由计算。",
+      "metadata": {
+        "source_id": "acr-tirads-official",
+        "source_url": "https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/TI-RADS",
+        "rule_owner": "tirads_rule_engine",
+        "score_ranges": {
+          "TR1": "0",
+          "TR2": "2",
+          "TR3": "3",
+          "TR4": "4-6",
+          "TR5": ">=7"
+        }
+      }
+    },
+    {
+      "id": "acr-tirads-size-actions",
+      "section_title": "ACR TI-RADS 大小阈值建议",
+      "chunk_type": "guideline_rule_summary",
+      "topic": "tirads_management_thresholds",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "ACR_TI_RADS",
+      "body_part": "thyroid",
+      "text": "验证版规则包采用 ACR TI-RADS 常用大小阈值：TR3 通常在最大径达到 1.5 cm 时进入随访建议、达到 2.5 cm 时进入 FNA 建议；TR4 通常在 1.0 cm 时进入随访建议、1.5 cm 时进入 FNA 建议；TR5 通常在 0.5 cm 时进入随访建议、1.0 cm 时进入 FNA 建议。最终处理应结合病史、检查质量、医生判断和本院制度。",
+      "metadata": {
+        "source_id": "acr-tirads-official",
+        "source_url": "https://www.acr.org/Clinical-Resources/Clinical-Tools-and-Reference/Reporting-and-Data-Systems/TI-RADS",
+        "thresholds_cm": {
+          "TR3": {
+            "follow_up": 1.5,
+            "fna": 2.5
+          },
+          "TR4": {
+            "follow_up": 1.0,
+            "fna": 1.5
+          },
+          "TR5": {
+            "follow_up": 0.5,
+            "fna": 1.0
+          }
+        },
+        "clinical_override_allowed": true
+      }
+    },
+    {
+      "id": "ata-2015-sonographic-patterns",
+      "section_title": "ATA 2015 超声模式分层",
+      "chunk_type": "guideline_summary",
+      "topic": "ata_sonographic_patterns",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "ATA_2015",
+      "body_part": "thyroid",
+      "text": "ATA 2015 指南使用超声模式对甲状腺结节进行风险分层，并把模式、结节大小和临床因素共同用于 FNA 决策。高可疑模式通常关注实性低回声结节及不规则边界、微钙化、纵横比异常、边缘钙化伴突出软组织或甲状腺外侵犯等危险征象。",
+      "metadata": {
+        "source_id": "ata-2015-guideline",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4739132/",
+        "reference_table": "sonographic_patterns_and_fna_guidance"
+      }
+    },
+    {
+      "id": "ata-2015-fna-thresholds",
+      "section_title": "ATA 2015 FNA 阈值摘要",
+      "chunk_type": "guideline_rule_summary",
+      "topic": "ata_fna_thresholds",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "ATA_2015",
+      "body_part": "thyroid",
+      "text": "ATA 2015 的常用 FNA 阈值可作为跨指南对照：高可疑和中等可疑结节通常在最大径超过 1 cm 时建议 FNA；低可疑结节通常在超过 1.5 cm 时建议 FNA；极低可疑结节通常在超过 2 cm 时可考虑 FNA 或观察；纯囊性结节通常不建议诊断性 FNA。验证版报告如引用 ATA 阈值，必须显示 ATA 来源和医生确认状态。",
+      "metadata": {
+        "source_id": "ata-2015-guideline",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4739132/",
+        "thresholds_cm": {
+          "high_suspicion_fna": 1.0,
+          "intermediate_suspicion_fna": 1.0,
+          "low_suspicion_fna": 1.5,
+          "very_low_suspicion_consider_fna": 2.0
+        },
+        "pure_cystic_diagnostic_fna": false
+      }
+    },
+    {
+      "id": "eu-tirads-categories",
+      "section_title": "EU-TIRADS 分层摘要",
+      "chunk_type": "guideline_summary",
+      "topic": "eu_tirads_categories",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "EU_TIRADS",
+      "body_part": "thyroid",
+      "text": "EU-TIRADS 以甲状腺超声表现进行风险分层：EU-TIRADS 2 偏良性，EU-TIRADS 3 低风险，EU-TIRADS 4 中等风险，EU-TIRADS 5 高风险。平台可把 EU-TIRADS 作为跨指南解释和质量复核依据，但验证版默认规则引擎仍以 ACR TI-RADS 为主。",
+      "metadata": {
+        "source_id": "eta-eu-tirads-2017",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5652895/",
+        "default_rule_engine": false
+      }
+    },
+    {
+      "id": "eu-tirads-fna-thresholds",
+      "section_title": "EU-TIRADS FNA 阈值摘要",
+      "chunk_type": "guideline_rule_summary",
+      "topic": "eu_tirads_thresholds",
+      "evidence_level": "official_guideline_summary",
+      "tirads_system": "EU_TIRADS",
+      "body_part": "thyroid",
+      "text": "EU-TIRADS 指南中，低风险结节通常在超过 20 mm 时考虑 FNA，中等风险结节通常在超过 15 mm 时考虑 FNA，高风险结节通常在超过 10 mm 时考虑 FNA。该规则在验证版中用于跨指南对照和报告解释，不自动覆盖 ACR TI-RADS 主规则输出。",
+      "metadata": {
+        "source_id": "eta-eu-tirads-2017",
+        "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5652895/",
+        "thresholds_mm": {
+          "EU_TIRADS_3_low_risk": 20,
+          "EU_TIRADS_4_intermediate_risk": 15,
+          "EU_TIRADS_5_high_risk": 10
+        },
+        "conflict_policy": "show_as_secondary_guideline"
+      }
+    },
+    {
+      "id": "c-tirads-reference-boundary",
+      "section_title": "C-TIRADS 本地化参考边界",
+      "chunk_type": "localization_reference",
+      "topic": "c_tirads_localization",
+      "evidence_level": "public_literature_reference",
+      "tirads_system": "C_TIRADS_REFERENCE",
+      "body_part": "thyroid",
+      "text": "C-TIRADS 与中国人群、多中心超声数据和本地临床应用场景相关，适合作为后续中国本地化规则扩展的参考。第一版知识库只记录 C-TIRADS 的公开文献来源和边界，不把未完成院内复核的 C-TIRADS 细则直接作为默认自动判定规则。",
+      "metadata": {
+        "source_id": "c-tirads-reference",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/32852733/",
+        "doi": "10.1007/s12020-020-02442-x",
+        "default_rule_engine": false,
+        "requires_local_review": true
+      }
+    },
+    {
+      "id": "c-tirads-positive-negative-features",
+      "section_title": "C-TIRADS 特征扩展方向",
+      "chunk_type": "localization_reference",
+      "topic": "c_tirads_feature_modeling",
+      "evidence_level": "public_literature_reference",
+      "tirads_system": "C_TIRADS_REFERENCE",
+      "body_part": "thyroid",
+      "text": "C-TIRADS 公开研究强调以超声特征和计数方法建立简化风险分层。验证版后续若启用 C-TIRADS，应先由医生和产品负责人确认正向/负向超声特征、分级边界、FNA 阈值和与 ACR/ATA/EU-TIRADS 冲突时的展示策略。",
+      "metadata": {
+        "source_id": "c-tirads-reference",
+        "source_url": "https://pubmed.ncbi.nlm.nih.gov/32852733/",
+        "requires_rule_authoring": true
+      }
+    },
+    {
+      "id": "multisystem-conflict-policy",
+      "section_title": "跨指南冲突处理",
+      "chunk_type": "safety_policy",
+      "topic": "guideline_conflict_policy",
+      "evidence_level": "local_policy",
+      "tirads_system": "MULTI_GUIDELINE",
+      "body_part": "thyroid",
+      "text": "当 ACR TI-RADS、ATA、EU-TIRADS 或 C-TIRADS 参考之间给出不同建议时，系统不得自动合并成单一最终结论。医生工作台应显示各自来源、版本、触发条件和建议差异，并把报告状态保持为待审核或需复核。",
+      "metadata": {
+        "source_id": "local-safety-policy",
+        "requires_doctor_review": true,
+        "applies_to": [
+          "report_generation",
+          "safety_review",
+          "knowledge_search"
+        ]
+      }
+    },
+    {
+      "id": "report-safety-evidence-required",
+      "section_title": "报告生成证据要求",
+      "chunk_type": "safety_policy",
+      "topic": "report_generation",
+      "evidence_level": "local_policy",
+      "tirads_system": "MULTI_GUIDELINE",
+      "body_part": "thyroid",
+      "text": "AI 报告草稿中涉及 TI-RADS 分级、FNA、随访、恶性风险或复查建议的句子，必须绑定规则引擎输出或知识库证据 chunk。没有可靠证据时，报告应写明证据不足并提示医生复核，不能让主报告模型自由补全医学建议。",
+      "metadata": {
+        "source_id": "local-safety-policy",
+        "requires_evidence_link": true,
+        "forbidden_without_evidence": [
+          "fna_recommendation",
+          "follow_up_recommendation",
+          "malignancy_risk_claim",
+          "final_diagnosis"
+        ]
+      }
+    },
+    {
+      "id": "knowledge-use-boundary",
+      "section_title": "知识库使用边界",
+      "chunk_type": "safety_policy",
+      "topic": "rag_boundary",
+      "evidence_level": "local_policy",
+      "tirads_system": "MULTI_GUIDELINE",
+      "body_part": "thyroid",
+      "text": "本知识库定位是医学证据检索、规则解释、报告依据和安全复核支撑层，不是面向患者的自由问答模块。检索结果必须保留 provenance，包括文档、版本、章节、审核状态和来源 URL；所有患者个体化管理建议必须由医生确认。",
+      "metadata": {
+        "source_id": "local-safety-policy",
+        "rag_mode": "evidence_pack",
+        "patient_facing_qa": false
+      }
+    }
+  ],
+  "report_templates": [
+    {
+      "id": "tpl-thyroid-guideline-evidence-v1",
+      "template_name": "甲状腺指南证据摘要模板",
+      "scene": "guideline_evidence_summary",
+      "tirads_category": null,
+      "template_text": "结节 {nodule_index}：已检索到 {guideline_system} {guideline_version} 证据，触发依据为 {trigger_summary}，建议摘要为 {recommendation_summary}。证据来源：{evidence_summary}。本内容为 AI 辅助草稿，需医生审核。",
+      "required_fields": [
+        "nodule_index",
+        "guideline_system",
+        "guideline_version",
+        "trigger_summary",
+        "recommendation_summary",
+        "evidence_summary"
+      ],
+      "forbidden_phrases": [
+        "确诊",
+        "排除恶性",
+        "无需医生审核",
+        "一定为恶性"
+      ],
+      "version": "v1",
+      "status": "active"
+    },
+    {
+      "id": "tpl-thyroid-guideline-conflict-v1",
+      "template_name": "跨指南差异复核模板",
+      "scene": "guideline_conflict_review",
+      "tirads_category": null,
+      "template_text": "结节 {nodule_index}：不同指南建议存在差异。ACR TI-RADS：{acr_summary}；ATA：{ata_summary}；EU-TIRADS：{eu_summary}；C-TIRADS 参考：{ctirads_summary}。请医生结合病史、图像质量和本院规范复核。",
+      "required_fields": [
+        "nodule_index",
+        "acr_summary",
+        "ata_summary",
+        "eu_summary",
+        "ctirads_summary"
+      ],
+      "forbidden_phrases": [
+        "自动采纳",
+        "无需复核",
+        "最终诊断"
+      ],
+      "version": "v1",
+      "status": "active"
+    }
+  ]
+}
