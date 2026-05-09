@@ -412,6 +412,9 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after adding explicit detector device control: 13 tests.
 - `npm run model-gateway:check` passed locally in degraded mode after adding explicit detector device reporting, correctly showing `runtime.inference_device.effective="auto"` on the Mac development host.
 - `git diff --check` passed after adding explicit detector device control.
+- Synchronized commit `9969e7f` to the remote 5090 host via git bundle because remote GitHub connectivity remained unreliable.
+- Remote `JZX_MODEL_DEVICE=0 npm run model-gateway:check -- --strict` passed and reported `runtime.inference_device.effective="0"` with `ready_detectors=["yolov11"]`.
+- Remote explicit-GPU end-to-end smoke passed for job `mj_4a0d4aaa4dee4077aeba1840b60ae242`; worker output included `model.device="0"` and wrote both `detections.json` and `overlay.png` under `data/artifacts/model-output/thyroid-detect-nodules/REMOTE_GPU_DEVICE0_20260509214944_STUDY/REMOTE_GPU_DEVICE0_20260509214944_IMAGE/`.
 
 ### Background Tasks
 
