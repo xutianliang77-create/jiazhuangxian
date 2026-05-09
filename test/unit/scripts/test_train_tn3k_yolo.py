@@ -52,6 +52,31 @@ class TrainTn3kYoloTest(unittest.TestCase):
         self.assertTrue(passed["target_met"])
         self.assertFalse(failed["target_met"])
 
+    def test_prepare_dataset_preserves_same_file_names_from_different_source_splits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = create_duplicate_name_manifest(root)
+
+            summary = train_tn3k_yolo.prepare_dataset(
+                manifest=manifest,
+                output_root=root / "out",
+                name="unit-duplicates",
+                train_ratio=0.5,
+                seed=123,
+                copy_images=True,
+            )
+
+            dataset_root = Path(summary["dataset_root"])
+            train_images = [path.name for path in (dataset_root / "images" / "train").glob("*.jpg")]
+            val_images = [path.name for path in (dataset_root / "images" / "val").glob("*.jpg")]
+            self.assertEqual(set(train_images + val_images), {"test_0000.jpg", "trainval_0000.jpg"})
+            label_paths = {
+                path.name
+                for label_split in ["train", "val"]
+                for path in (dataset_root / "labels" / label_split).glob("*.txt")
+            }
+            self.assertEqual(label_paths, {"test_0000.txt", "trainval_0000.txt"})
+
 
 def create_manifest(root: Path, *, benign: int, malignant: int) -> Path:
     image_dir = root / "images"
@@ -79,6 +104,34 @@ def create_manifest(root: Path, *, benign: int, malignant: int) -> Path:
                 }
             )
     manifest = root / "manifest.jsonl"
+    manifest.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return manifest
+
+
+def create_duplicate_name_manifest(root: Path) -> Path:
+    rows = []
+    for split in ["trainval", "test"]:
+        image_dir = root / split
+        image_dir.mkdir()
+        image_path = image_dir / "0000.jpg"
+        Image.new("RGB", (20, 20), (20, 20, 20)).save(image_path)
+        rows.append(
+            {
+                "dataset_id": "tn3k",
+                "split": split,
+                "image_id": image_path.stem,
+                "image_file": image_path.name,
+                "image_path": str(image_path),
+                "mask_path": str(image_path),
+                "width": 20,
+                "height": 20,
+                "bbox_xyxy": [2, 3, 10, 13],
+                "bbox_xywh": [2, 3, 8, 10],
+                "foreground_pixels": 80,
+                "classification_label": 0,
+            }
+        )
+    manifest = root / "duplicate-name-manifest.jsonl"
     manifest.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
     return manifest
 

@@ -137,11 +137,16 @@ def materialize_split(*, dataset_root: Path, split: str, rows: list[dict[str, An
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
     manifest_lines: list[str] = []
+    seen_stems: set[str] = set()
     for row in rows:
         image_path = Path(required_string(row, "image_path"))
         if not image_path.exists():
             raise FileNotFoundError(f"image file not found: {image_path}")
-        image_target = image_dir / image_path.name
+        target_stem = training_file_stem(row, image_path)
+        if target_stem in seen_stems:
+            raise ValueError(f"duplicate training sample target stem in {split}: {target_stem}")
+        seen_stems.add(target_stem)
+        image_target = image_dir / f"{target_stem}{image_path.suffix}"
         link_or_copy(image_path.resolve(), image_target, copy_file=copy_images)
 
         bbox = row.get("bbox_xyxy")
@@ -149,7 +154,7 @@ def materialize_split(*, dataset_root: Path, split: str, rows: list[dict[str, An
             raise ValueError(f"invalid bbox for {image_path}: {bbox}")
         width = int(row["width"])
         height = int(row["height"])
-        label_target = label_dir / f"{image_path.stem}.txt"
+        label_target = label_dir / f"{target_stem}.txt"
         label_target.write_text(yolo_line(bbox, width, height), encoding="utf-8")
 
         manifest_row = {
@@ -161,6 +166,17 @@ def materialize_split(*, dataset_root: Path, split: str, rows: list[dict[str, An
         manifest_lines.append(json.dumps(manifest_row, ensure_ascii=False))
 
     manifest_path.write_text("\n".join(manifest_lines) + ("\n" if manifest_lines else ""), encoding="utf-8")
+
+
+def training_file_stem(row: dict[str, Any], image_path: Path) -> str:
+    source_split = safe_component(str(row.get("split", "source") or "source"))
+    image_id = safe_component(str(row.get("image_id", image_path.stem) or image_path.stem))
+    return f"{source_split}_{image_id}"
+
+
+def safe_component(value: str) -> str:
+    cleaned = "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in value.strip())
+    return cleaned or "unknown"
 
 
 def required_string(row: dict[str, Any], key: str) -> str:
