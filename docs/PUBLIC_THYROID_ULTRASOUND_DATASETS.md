@@ -49,11 +49,40 @@ label4trainval.csv 2879 rows
 label4test.csv      614 rows
 ```
 
+已生成检测预训练标注：
+
+```bash
+npm run datasets:tn3k:bbox
+```
+
+输出目录：
+
+```text
+data/artifacts/datasets/tn3k/derived/detection/
+  yolo/data.yaml
+  yolo/images/trainval/   2879 symlinks
+  yolo/images/test/        614 symlinks
+  yolo/labels/trainval/   2879 txt labels
+  yolo/labels/test/        614 txt labels
+  coco/trainval.json      2879 images / 2879 annotations
+  coco/test.json           614 images / 614 annotations
+  annotations/manifest.jsonl
+  summary.json
+```
+
+转换规则：
+
+- 脚本：`scripts/tn3k_mask_to_bbox.py`
+- 前景阈值：mask 灰度像素 `> 127`
+- bbox 格式：像素坐标 `xyxy`，右下角为 exclusive；YOLO 输出为归一化 `xywh`
+- 检测类别：`0: thyroid_nodule`
+- 分类标签：保留到 COCO image metadata 和 JSONL manifest 中，`0=benign`、`1=malignant`
+
 使用建议：
 
 - 分割模型：直接使用 `*-image` 和 `*-mask`。
 - 良恶性分类：使用 `label4trainval.csv`、`label4test.csv`。
-- 检测模型：先从 mask 生成 bbox，再转换为 YOLO/COCO 格式；不要直接把 TN3K 当原生检测标注集。
+- 检测模型：使用上述 mask-derived bbox 做 YOLOv11 / RT-DETR 预训练或 smoke evaluation；仍需 TN5000 或院内 bbox 数据做主检测训练和外部验证。
 
 ### Sample-of-UD-TN
 

@@ -4,7 +4,7 @@
 
 ### Current Work
 
-P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, remote RTX 5090 GPU runtime setup scripts, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, public thyroid ultrasound dataset bootstrap, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
+P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, remote RTX 5090 GPU runtime setup scripts, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, public thyroid ultrasound dataset bootstrap, TN3K mask-to-bbox detection annotation conversion, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
 
 ### Completed
 
@@ -415,6 +415,11 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Synchronized commit `9969e7f` to the remote 5090 host via git bundle because remote GitHub connectivity remained unreliable.
 - Remote `JZX_MODEL_DEVICE=0 npm run model-gateway:check -- --strict` passed and reported `runtime.inference_device.effective="0"` with `ready_detectors=["yolov11"]`.
 - Remote explicit-GPU end-to-end smoke passed for job `mj_4a0d4aaa4dee4077aeba1840b60ae242`; worker output included `model.device="0"` and wrote both `detections.json` and `overlay.png` under `data/artifacts/model-output/thyroid-detect-nodules/REMOTE_GPU_DEVICE0_20260509214944_STUDY/REMOTE_GPU_DEVICE0_20260509214944_IMAGE/`.
+- Added `scripts/tn3k_mask_to_bbox.py` and `npm run datasets:tn3k:bbox` to convert TN3K segmentation masks into detection annotations.
+- TN3K mask-to-bbox conversion now writes YOLO labels/data.yaml, COCO trainval/test JSON, split JSONL manifests, and a summary under `data/artifacts/datasets/tn3k/derived/detection/`.
+- Full local TN3K conversion passed: 3,493 images converted, 0 skipped, 0 missing classification labels; split counts are 2,879 trainval and 614 test bboxes.
+- Added unit tests for TN3K mask-to-bbox conversion covering YOLO label math, COCO bbox output, JSONL manifest output, and empty-mask skipping.
+- Updated `docs/PUBLIC_THYROID_ULTRASOUND_DATASETS.md` and `examples/datasets/thyroid-ultrasound-public.manifest.json` with the derived detection output paths and counts.
 
 ### Background Tasks
 
@@ -426,8 +431,8 @@ None.
 
 ### Next Session Priorities
 
-1. Manually download TN5000 through the browser/Figshare page into `data/artifacts/datasets/tn5000/raw`, then convert its detection annotations into the YOLO/COCO formats needed for YOLOv11 and RT-DETR/RF-DETR.
-2. Add a TN3K mask-to-bbox conversion script so the downloaded masks can bootstrap detector training/evaluation.
+1. Manually download TN5000 through the browser/Figshare page into `data/artifacts/datasets/tn5000/raw`, then convert its native detection annotations into the YOLO/COCO formats needed for YOLOv11 and RT-DETR/RF-DETR.
+2. Use the generated TN3K YOLO dataset for first detector-training smoke tests on the 5090 host, then record metrics and trained weight paths outside Git.
 3. Replace the remaining validation placeholder outputs with real feature-classifier model, report-generation, and safety-review calls where dependencies are configured.
 4. Add PDF-to-manifest parsing when representative guideline PDFs are available.
 5. Add batch case queue workflows for multi-case review, filtering, and bulk state transitions.
@@ -445,4 +450,5 @@ npm test -- --run test/unit/medical/seed-data.test.ts
 npm test -- --run test/unit/medical/knowledgeIngestion.test.ts
 python3 -m unittest discover services/image-worker/tests
 python3 -m unittest discover services/model-gateway/tests
+python3 -m unittest discover test/unit/scripts
 ```

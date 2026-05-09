@@ -76,7 +76,8 @@
       "local_paths": {
         "archive": "data/artifacts/datasets/tn3k/raw/TN3K.rar",
         "raw_metadata_dir": "data/artifacts/datasets/tn3k/raw",
-        "processed_root": "data/artifacts/datasets/tn3k/processed/datasets/tn3k"
+        "processed_root": "data/artifacts/datasets/tn3k/processed/datasets/tn3k",
+        "derived_detection_root": "data/artifacts/datasets/tn3k/derived/detection"
       },
       "checksums": {
         "TN3K.rar_sha256": "407fe2b4992e83b037621214aaaa39d86072e03d4ee3765f3c68d06e546e4ad4"
@@ -86,7 +87,26 @@
         "trainval_masks": 2879,
         "test_images": 614,
         "test_masks": 614,
-        "classification_label_rows": 3493
+        "classification_label_rows": 3493,
+        "derived_bbox_trainval": 2879,
+        "derived_bbox_test": 614
+      },
+      "derived_outputs": {
+        "mask_to_bbox": {
+          "script": "scripts/tn3k_mask_to_bbox.py",
+          "npm_script": "npm run datasets:tn3k:bbox",
+          "threshold": 127,
+          "formats": [
+            "YOLO",
+            "COCO",
+            "JSONL"
+          ],
+          "summary": "data/artifacts/datasets/tn3k/derived/detection/summary.json",
+          "yolo_dataset": "data/artifacts/datasets/tn3k/derived/detection/yolo/data.yaml",
+          "coco_trainval": "data/artifacts/datasets/tn3k/derived/detection/coco/trainval.json",
+          "coco_test": "data/artifacts/datasets/tn3k/derived/detection/coco/test.json",
+          "manifest_jsonl": "data/artifacts/datasets/tn3k/derived/detection/annotations/manifest.jsonl"
+        }
       },
       "tasks": [
         "segmentation",
