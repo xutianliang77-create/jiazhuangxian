@@ -38,6 +38,14 @@ bash scripts/setup-remote-5090-gpu.sh
 bash scripts/setup-remote-5090-gpu.sh --python /usr/bin/python3.12
 ```
 
+如果远程节点访问 `download.pytorch.org` 很慢，可使用 wheel 镜像和固定版本。当前 5090 节点已验证这组版本可用：
+
+```bash
+bash scripts/setup-remote-5090-gpu.sh \
+  --torch-find-links https://mirrors.aliyun.com/pytorch-wheels/cu128/ \
+  --torch-version 2.11.0+cu128
+```
+
 脚本会创建：
 
 ```text

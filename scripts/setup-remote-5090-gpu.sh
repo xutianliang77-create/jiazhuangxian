@@ -5,7 +5,25 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3.12}"
 VENV_DIR="${VENV_DIR:-$ROOT_DIR/.venv-model-gateway-gpu}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}"
+TORCH_FIND_LINKS="${TORCH_FIND_LINKS:-}"
+TORCH_VERSION="${TORCH_VERSION:-}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-}"
+TORCHAUDIO_VERSION="${TORCHAUDIO_VERSION:-}"
 INSTALL_RFDETR=0
+
+torchvision_version_for_torch() {
+  case "$1" in
+    2.11.0+cu128) echo "0.26.0+cu128" ;;
+    2.10.0+cu128) echo "0.25.0+cu128" ;;
+    2.9.1+cu128|2.9.0+cu128) echo "0.24.1+cu128" ;;
+    2.8.0+cu128) echo "0.23.0+cu128" ;;
+    2.7.1+cu128|2.7.0+cu128) echo "0.22.1+cu128" ;;
+    *)
+      echo "Unable to infer torchvision version for torch $1. Set TORCHVISION_VERSION or omit --torch-version." >&2
+      return 2
+      ;;
+  esac
+}
 
 usage() {
   cat <<USAGE
@@ -15,6 +33,9 @@ Options:
   --python PATH          Python executable to use. Default: \$PYTHON_BIN or python3.12
   --venv PATH            Virtualenv path. Default: \$VENV_DIR or .venv-model-gateway-gpu
   --torch-index URL      PyTorch CUDA wheel index. Default: $TORCH_INDEX_URL
+  --torch-find-links URL PyTorch wheel listing mirror, used with pip -f when
+                         download.pytorch.org is slow
+  --torch-version VER    Exact CUDA PyTorch version, for example 2.11.0+cu128
   --install-rfdetr       Also install the optional RF-DETR runtime package
   -h, --help             Show this help
 
@@ -39,6 +60,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --torch-index)
       TORCH_INDEX_URL="$2"
+      shift 2
+      ;;
+    --torch-find-links)
+      TORCH_FIND_LINKS="$2"
+      shift 2
+      ;;
+    --torch-version)
+      TORCH_VERSION="$2"
       shift 2
       ;;
     --install-rfdetr)
@@ -78,8 +107,22 @@ echo "== Python =="
 source "$VENV_DIR/bin/activate"
 python -m pip install --upgrade pip setuptools wheel
 
-echo "== Install CUDA PyTorch from $TORCH_INDEX_URL =="
-python -m pip install --index-url "$TORCH_INDEX_URL" torch torchvision torchaudio
+echo "== Install CUDA PyTorch =="
+if [[ -n "$TORCH_FIND_LINKS" ]]; then
+  if [[ -n "$TORCH_VERSION" ]]; then
+    TORCHVISION_VERSION="${TORCHVISION_VERSION:-$(torchvision_version_for_torch "$TORCH_VERSION")}"
+    TORCHAUDIO_VERSION="${TORCHAUDIO_VERSION:-$TORCH_VERSION}"
+    python -m pip install \
+      -f "$TORCH_FIND_LINKS" \
+      "torch==$TORCH_VERSION" \
+      "torchvision==$TORCHVISION_VERSION" \
+      "torchaudio==$TORCHAUDIO_VERSION"
+  else
+    python -m pip install -f "$TORCH_FIND_LINKS" torch torchvision torchaudio
+  fi
+else
+  python -m pip install --index-url "$TORCH_INDEX_URL" torch torchvision torchaudio
+fi
 
 echo "== Install model-gateway GPU requirements =="
 python -m pip install -r "$ROOT_DIR/services/model-gateway/requirements-gpu.txt"

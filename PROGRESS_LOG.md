@@ -175,6 +175,8 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added `services/model-gateway/requirements-gpu.txt` for the YOLOv11/RT-DETR detector runtime and updated base model-gateway requirements with numpy, OpenCV, and Pillow 12 compatibility.
 - Enhanced `services/model-gateway/app/config_check.py` so config reports now include `nvidia-smi`, NVIDIA driver/CUDA summary, Torch CUDA runtime version, GPU memory, and device capability.
 - Added `docs/GPU_INFERENCE_SETUP.md` and linked it from README/model-gateway docs as the remote 5090 setup guide.
+- Configured the remote 5090 host `beelink@100.110.127.117`: cloned the repository to `~/jiazhuangxian`, created `.venv-model-gateway-gpu`, installed `torch==2.11.0+cu128`, `torchvision==0.26.0+cu128`, `torchaudio==2.11.0+cu128`, `opencv-python`, `pydantic`, and `ultralytics==8.4.48`.
+- Updated the remote GPU setup script and documentation with a `--torch-find-links` / `--torch-version` path because the remote host timed out on the default `download.pytorch.org` wheel download, while `https://mirrors.aliyun.com/pytorch-wheels/cu128/` worked for the verified 5090 setup.
 
 ### Verification
 
@@ -388,6 +390,8 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - `python3 -m unittest discover services/model-gateway/tests` passed after GPU config-check enhancement: 12 tests.
 - `npm run model-gateway:check` passed locally in degraded mode, correctly reporting no `nvidia-smi`, no Torch, and no detector runtime on the Mac development host.
 - `git diff --check` passed after remote GPU setup scripts and config-check enhancement.
+- Remote GPU check passed on `beelink@100.110.127.117`: Torch `2.11.0+cu128`, CUDA runtime `12.8`, `cuda_available=true`, RTX 5090 detected with capability `12.0` and ~32 GB VRAM.
+- Remote model-gateway config check now reports base runtime packages and Ultralytics ready, but detector readiness remains `degraded` because `JZX_YOLOV11_WEIGHTS` and `JZX_RTDETR_WEIGHTS` are not configured yet.
 - `web-react npm ci` reported 8 npm audit findings in upstream frontend dependencies; no functional failure observed.
 - `npm run lint` is currently blocked by two existing unrelated lint findings:
   - `src/reports/renderHtml.ts`: unused `ReportChart` import/type.
