@@ -130,6 +130,7 @@ describe("MedicalCaseRepo", () => {
     expect(bundle?.tiradsResults).toEqual([]);
     expect(bundle?.reports).toEqual([]);
     expect(bundle?.auditLogs).toEqual([]);
+    expect(bundle?.doctorReviews).toEqual([]);
     expect(task).toMatchObject({
       agentName: "CaseCoordinatorAgent",
       taskType: "orchestrate",
@@ -343,6 +344,47 @@ describe("MedicalCaseRepo", () => {
       "甲状腺超声AI辅助报告（草稿）"
     );
     expect(repo.getStudyBundle(study.id)?.reports.map((item) => item.id)).toEqual([report.id]);
+  });
+
+  it("records doctor review decisions and updates report status", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-REVIEW", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-REVIEW", now: 1100 });
+    const report = repo.createReport({
+      studyId: study.id,
+      draftText: "AI draft report",
+      status: "draft",
+      now: 1200,
+    });
+
+    const reviewed = repo.reviewReport({
+      reportId: report.id,
+      reviewerName: "doctor-a",
+      action: "approve",
+      comment: "ok",
+      finalText: "doctor confirmed report",
+      now: 1300,
+    });
+
+    expect(reviewed.report).toMatchObject({
+      id: report.id,
+      status: "confirmed",
+      finalText: "doctor confirmed report",
+      confirmedBy: "doctor-a",
+      confirmedAt: 1300,
+      updatedAt: 1300,
+    });
+    expect(reviewed.doctorReview).toMatchObject({
+      reportId: report.id,
+      reviewerName: "doctor-a",
+      action: "approve",
+      comment: "ok",
+      before: { status: "draft" },
+      after: { status: "confirmed", final_text: "doctor confirmed report" },
+      createdAt: 1300,
+    });
+    expect(repo.listDoctorReviewsByStudy(study.id).map((item) => item.id)).toEqual([reviewed.doctorReview.id]);
+    expect(repo.getStudyBundle(study.id)?.doctorReviews.map((item) => item.id)).toEqual([reviewed.doctorReview.id]);
   });
 
   it("reads safety rules and persists audit logs", () => {

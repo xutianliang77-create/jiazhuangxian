@@ -430,6 +430,17 @@ export interface MedicalAuditLog {
   createdAt: number;
 }
 
+export interface MedicalDoctorReview {
+  id: string;
+  reportId: string;
+  reviewerName: string;
+  action: string;
+  comment: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: number;
+}
+
 export interface MedicalStudyBundle {
   patient: MedicalPatient | null;
   study: MedicalStudy;
@@ -439,6 +450,7 @@ export interface MedicalStudyBundle {
   tiradsResults: MedicalTiradsResult[];
   reports: MedicalReport[];
   auditLogs: MedicalAuditLog[];
+  doctorReviews: MedicalDoctorReview[];
   analysisSessions: MedicalAnalysisSession[];
   agentTasks: MedicalAgentTask[];
 }
@@ -647,6 +659,22 @@ export const startMedicalAnalysis = (studyId: string, input: { imageId?: string;
     agentTasks: MedicalAgentTask[];
     bundle: MedicalStudyBundle;
   }>("POST", `/v1/web/medical/studies/${encodeURIComponent(studyId)}/analyze`, input);
+
+export const reviewMedicalReport = (
+  reportId: string,
+  input: {
+    action: "approve" | "revise" | "reject";
+    reviewerName?: string;
+    comment?: string;
+    finalText?: string;
+  }
+) =>
+  api<{
+    report: MedicalReport;
+    doctorReview: MedicalDoctorReview;
+    auditLog: MedicalAuditLog;
+    bundle: MedicalStudyBundle;
+  }>("POST", `/v1/web/medical/reports/${encodeURIComponent(reportId)}/review`, input);
 
 // ===== Cron #116 =====
 

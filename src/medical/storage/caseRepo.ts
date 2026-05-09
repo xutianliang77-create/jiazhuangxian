@@ -362,6 +362,29 @@ export interface AuditLogRecord {
   createdAt: number;
 }
 
+export type ReportReviewAction = "approve" | "revise" | "reject";
+
+export interface ReportReviewInput {
+  id?: string;
+  reportId: string;
+  reviewerName: string;
+  action: ReportReviewAction;
+  comment?: string | null;
+  finalText?: string | null;
+  now?: number;
+}
+
+export interface DoctorReviewRecord {
+  id: string;
+  reportId: string;
+  reviewerName: string;
+  action: string;
+  comment: string | null;
+  before: JsonObject | null;
+  after: JsonObject | null;
+  createdAt: number;
+}
+
 export interface StudyBundle {
   patient: PatientRecord | null;
   study: StudyRecord;
@@ -371,6 +394,7 @@ export interface StudyBundle {
   tiradsResults: TiradsResultRecord[];
   reports: ReportRecord[];
   auditLogs: AuditLogRecord[];
+  doctorReviews: DoctorReviewRecord[];
   analysisSessions: AnalysisSessionRecord[];
   agentTasks: AgentTaskRecord[];
 }
@@ -558,6 +582,17 @@ interface AuditLogRow {
   target_id: string | null;
   detail_json: string;
   trace_id: string | null;
+  created_at: number;
+}
+
+interface DoctorReviewRow {
+  id: string;
+  report_id: string;
+  reviewer_name: string;
+  action: string;
+  comment: string | null;
+  before_json: string | null;
+  after_json: string | null;
   created_at: number;
 }
 
@@ -889,6 +924,50 @@ export class MedicalCaseRepo {
     return this.getAuditLog(id)!;
   }
 
+  reviewReport(input: ReportReviewInput): { report: ReportRecord; doctorReview: DoctorReviewRecord } {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const before = this.getReport(input.reportId);
+      if (!before) throw new Error(`Report not found: ${input.reportId}`);
+      const nextStatus = input.action === "reject" ? "rejected" : "confirmed";
+      const nextFinalText = input.action === "reject" ? before.finalText : input.finalText ?? before.finalText ?? before.draftText;
+      const confirmedBy = input.action === "reject" ? null : input.reviewerName;
+      const confirmedAt = input.action === "reject" ? null : now;
+      this.db
+        .prepare<[string, string | null, string | null, number | null, number, string]>(
+          `UPDATE report
+           SET status = ?, final_text = ?, confirmed_by = ?, confirmed_at = ?, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(nextStatus, nextFinalText ?? null, confirmedBy, confirmedAt, now, input.reportId);
+      const after = this.getReport(input.reportId)!;
+      this.db
+        .prepare(
+          `INSERT INTO doctor_review(
+             id, report_id, reviewer_name, action, comment, before_json, after_json, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          input.reportId,
+          input.reviewerName,
+          input.action,
+          input.comment ?? null,
+          stringifyJson(reportReviewSnapshot(before)),
+          stringifyJson(reportReviewSnapshot(after)),
+          now
+        );
+      const doctorReview = this.getDoctorReview(id)!;
+      this.db.exec("COMMIT");
+      return { report: after, doctorReview };
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
   getPatient(id: string): PatientRecord | null {
     const row = this.db.prepare<[string], PatientRow>("SELECT * FROM patient WHERE id = ?").get(id);
     return row ? mapPatient(row) : null;
@@ -1048,6 +1127,24 @@ export class MedicalCaseRepo {
       )
       .all(studyId)
       .map(mapAuditLog);
+  }
+
+  getDoctorReview(id: string): DoctorReviewRecord | null {
+    const row = this.db.prepare<[string], DoctorReviewRow>("SELECT * FROM doctor_review WHERE id = ?").get(id);
+    return row ? mapDoctorReview(row) : null;
+  }
+
+  listDoctorReviewsByStudy(studyId: string): DoctorReviewRecord[] {
+    return this.db
+      .prepare<[string], DoctorReviewRow>(
+        `SELECT dr.*
+         FROM doctor_review dr
+         JOIN report r ON r.id = dr.report_id
+         WHERE r.study_id = ?
+         ORDER BY dr.created_at ASC, dr.id ASC`
+      )
+      .all(studyId)
+      .map(mapDoctorReview);
   }
 
   findModelJobByAgentTask(agentTaskId: string, jobType?: string): ModelJobRecord | null {
@@ -1236,6 +1333,7 @@ export class MedicalCaseRepo {
       tiradsResults: this.listTiradsResultsByStudy(studyId),
       reports: this.listReportsByStudy(studyId),
       auditLogs: this.listAuditLogsByStudy(studyId),
+      doctorReviews: this.listDoctorReviewsByStudy(studyId),
       analysisSessions,
       agentTasks,
     };
@@ -1511,6 +1609,32 @@ function mapAuditLog(row: AuditLogRow): AuditLogRecord {
     detail: parseJson(row.detail_json, {}),
     traceId: row.trace_id,
     createdAt: row.created_at,
+  };
+}
+
+function mapDoctorReview(row: DoctorReviewRow): DoctorReviewRecord {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    reviewerName: row.reviewer_name,
+    action: row.action,
+    comment: row.comment,
+    before: row.before_json ? parseJson(row.before_json, {}) : null,
+    after: row.after_json ? parseJson(row.after_json, {}) : null,
+    createdAt: row.created_at,
+  };
+}
+
+function reportReviewSnapshot(report: ReportRecord): JsonObject {
+  return {
+    id: report.id,
+    study_id: report.studyId,
+    status: report.status,
+    draft_text: report.draftText,
+    final_text: report.finalText,
+    confirmed_by: report.confirmedBy,
+    confirmed_at: report.confirmedAt,
+    updated_at: report.updatedAt,
   };
 }
 

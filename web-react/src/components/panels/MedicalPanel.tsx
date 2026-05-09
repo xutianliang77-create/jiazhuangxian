@@ -6,9 +6,11 @@ import {
   createMedicalStudy,
   getMedicalStudy,
   getMedicalSummary,
+  reviewMedicalReport,
   startMedicalAnalysis,
   type MedicalAgentTask,
   type MedicalAuditLog,
+  type MedicalDoctorReview,
   type MedicalImage,
   type MedicalNodule,
   type MedicalRecentStudy,
@@ -69,6 +71,7 @@ export default function MedicalPanel({ onError }: Props) {
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [analysisBusyImageId, setAnalysisBusyImageId] = useState<string | null>(null);
+  const [reviewBusyReportId, setReviewBusyReportId] = useState<string | null>(null);
 
   async function refresh() {
     setBusy(true);
@@ -122,6 +125,25 @@ export default function MedicalPanel({ onError }: Props) {
       onError(message);
     } finally {
       setAnalysisBusyImageId(null);
+    }
+  }
+
+  async function reviewReport(report: MedicalReport, action: "approve" | "reject") {
+    setReviewBusyReportId(report.id);
+    setDetailError(null);
+    try {
+      const result = await reviewMedicalReport(report.id, {
+        action,
+        finalText: action === "approve" ? report.finalText ?? report.draftText ?? undefined : undefined,
+      });
+      setStudyBundle(result.bundle);
+      await refresh();
+    } catch (err) {
+      const message = `Medical 报告审核失败：${(err as Error).message}`;
+      setDetailError(message);
+      onError(message);
+    } finally {
+      setReviewBusyReportId(null);
     }
   }
 
@@ -241,7 +263,9 @@ export default function MedicalPanel({ onError }: Props) {
           busy={detailBusy}
           error={detailError}
           analyzingImageId={analysisBusyImageId}
+          reviewingReportId={reviewBusyReportId}
           onStartAnalysis={launchAnalysis}
+          onReviewReport={reviewReport}
         />
 
         <div className="flex items-center justify-between mb-3">
@@ -416,13 +440,17 @@ function StudyDetail({
   busy,
   error,
   analyzingImageId,
+  reviewingReportId,
   onStartAnalysis,
+  onReviewReport,
 }: {
   bundle: MedicalStudyBundle | null;
   busy: boolean;
   error: string | null;
   analyzingImageId: string | null;
+  reviewingReportId: string | null;
   onStartAnalysis(imageId: string): void;
+  onReviewReport(report: MedicalReport, action: "approve" | "reject"): void;
 }) {
   if (!bundle) {
     return (
@@ -432,7 +460,18 @@ function StudyDetail({
     );
   }
 
-  const { patient, study, images, nodules, tiradsResults, reports, auditLogs, analysisSessions, agentTasks } = bundle;
+  const {
+    patient,
+    study,
+    images,
+    nodules,
+    tiradsResults,
+    reports,
+    auditLogs,
+    doctorReviews,
+    analysisSessions,
+    agentTasks,
+  } = bundle;
   return (
     <div className="border border-border rounded p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -501,7 +540,26 @@ function StudyDetail({
         ) : (
           <div className="space-y-2">
             {reports.map((report) => (
-              <ReportRow key={report.id} report={report} />
+              <ReportRow
+                key={report.id}
+                report={report}
+                busy={busy || reviewingReportId !== null}
+                reviewing={reviewingReportId === report.id}
+                onReview={(action) => onReviewReport(report, action)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4">
+        <h4 className="text-xs uppercase text-muted mb-2">Doctor Reviews</h4>
+        {doctorReviews.length === 0 ? (
+          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        ) : (
+          <div className="space-y-2">
+            {doctorReviews.map((review) => (
+              <DoctorReviewRow key={review.id} review={review} />
             ))}
           </div>
         )}
@@ -554,8 +612,19 @@ function NoduleResultRow({ nodule, result }: { nodule: MedicalNodule; result: Me
   );
 }
 
-function ReportRow({ report }: { report: MedicalReport }) {
+function ReportRow({
+  report,
+  busy,
+  reviewing,
+  onReview,
+}: {
+  report: MedicalReport;
+  busy: boolean;
+  reviewing: boolean;
+  onReview(action: "approve" | "reject"): void;
+}) {
   const text = report.finalText ?? report.draftText ?? "";
+  const canReview = report.status === "draft" || report.status === "pending_review";
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -570,6 +639,31 @@ function ReportRow({ report }: { report: MedicalReport }) {
           {text}
         </pre>
       )}
+      {canReview && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => onReview("approve")}>
+            {reviewing ? "处理中..." : "确认报告"}
+          </button>
+          <button type="button" className="btn-secondary" disabled={busy} onClick={() => onReview("reject")}>
+            驳回
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">{review.action}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{review.reviewerName}</span>
+      </div>
+      <div className="text-muted mt-1">
+        {review.reportId} · {formatTime(review.createdAt)}
+      </div>
+      {review.comment && <div className="mt-2 text-muted">{review.comment}</div>}
     </div>
   );
 }

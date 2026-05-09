@@ -9,6 +9,7 @@ vi.mock("@/api/endpoints", () => ({
   createMedicalPatient: vi.fn(),
   createMedicalStudy: vi.fn(),
   createMedicalImage: vi.fn(),
+  reviewMedicalReport: vi.fn(),
   startMedicalAnalysis: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ import {
   createMedicalStudy,
   getMedicalStudy,
   getMedicalSummary,
+  reviewMedicalReport,
   startMedicalAnalysis,
 } from "@/api/endpoints";
 
@@ -170,6 +172,7 @@ const studyBundle = {
       createdAt: 1778245200000,
     },
   ],
+  doctorReviews: [],
   analysisSessions: [],
   agentTasks: [],
 };
@@ -180,6 +183,61 @@ describe("MedicalPanel", () => {
     useAuthStore.setState({ token: "test-token", connected: true });
     vi.mocked(getMedicalSummary).mockResolvedValue(summary);
     vi.mocked(getMedicalStudy).mockResolvedValue({ bundle: studyBundle });
+    vi.mocked(reviewMedicalReport).mockResolvedValue({
+      report: {
+        ...studyBundle.reports[0],
+        status: "confirmed",
+        finalText: studyBundle.reports[0].draftText,
+        confirmedBy: "web-test",
+        confirmedAt: 1778245300000,
+      },
+      doctorReview: {
+        id: "DR1",
+        reportId: "R1",
+        reviewerName: "web-test",
+        action: "approve",
+        comment: null,
+        before: { status: "draft" },
+        after: { status: "confirmed" },
+        createdAt: 1778245300000,
+      },
+      auditLog: {
+        id: "A2",
+        studyId: "S1",
+        actorType: "doctor",
+        actorId: "web-test",
+        action: "medical.report.approve",
+        targetType: "report",
+        targetId: "R1",
+        detail: { report_status: "confirmed" },
+        traceId: "DR1",
+        createdAt: 1778245300000,
+      },
+      bundle: {
+        ...studyBundle,
+        reports: [
+          {
+            ...studyBundle.reports[0],
+            status: "confirmed",
+            finalText: studyBundle.reports[0].draftText,
+            confirmedBy: "web-test",
+            confirmedAt: 1778245300000,
+          },
+        ],
+        doctorReviews: [
+          {
+            id: "DR1",
+            reportId: "R1",
+            reviewerName: "web-test",
+            action: "approve",
+            comment: null,
+            before: { status: "draft" },
+            after: { status: "confirmed" },
+            createdAt: 1778245300000,
+          },
+        ],
+      },
+    });
     vi.mocked(startMedicalAnalysis).mockResolvedValue({
       analysisSession: {
         id: "AS1",
@@ -334,6 +392,26 @@ describe("MedicalPanel", () => {
 
     await waitFor(() => expect(startMedicalAnalysis).toHaveBeenCalledWith("S1", { imageId: "IMG1" }));
     expect(getMedicalStudy).toHaveBeenCalledWith("S1");
+    expect(getMedicalSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("confirms a report draft from study detail", async () => {
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    expect(await screen.findByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认报告" }));
+
+    await waitFor(() =>
+      expect(reviewMedicalReport).toHaveBeenCalledWith("R1", {
+        action: "approve",
+        finalText: "甲状腺超声AI辅助报告（草稿）\nTI-RADS TR4，需医生审核确认后生效。",
+      })
+    );
+    expect(await screen.findByText("confirmed")).toBeInTheDocument();
+    expect(screen.getByText("approve")).toBeInTheDocument();
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
   });
 

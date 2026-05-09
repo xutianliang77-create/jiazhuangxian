@@ -2,7 +2,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
 
-import { MedicalCaseRepo, type ImageInput, type PatientInput, type StudyInput } from "../../medical/storage/caseRepo";
+import {
+  MedicalCaseRepo,
+  type ImageInput,
+  type PatientInput,
+  type ReportReviewAction,
+  type StudyInput,
+} from "../../medical/storage/caseRepo";
 import { authenticate, jsonResponse, readJsonBody, type HandlerDeps } from "./handlers";
 
 type JsonObject = Record<string, unknown>;
@@ -237,6 +243,61 @@ export async function handleStartMedicalAnalysis(
   }
 }
 
+export async function handleReviewMedicalReport(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  reportId: string
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const repo = new MedicalCaseRepo(ctx.db);
+    const report = repo.getReport(reportId);
+    if (!report) {
+      throw new MedicalRequestError(404, "report-not-found", `report not found: ${reportId}`);
+    }
+    const action = reviewAction(body);
+    const reviewerName = stringField(body, "reviewerName", "reviewer_name") ?? ctx.userId;
+    const comment = stringField(body, "comment");
+    const finalText = stringField(body, "finalText", "final_text");
+    const now = Date.now();
+    const reviewed = repo.reviewReport({
+      reportId,
+      reviewerName,
+      action,
+      comment,
+      finalText,
+      now,
+    });
+    const auditLog = repo.createAuditLog({
+      studyId: reviewed.report.studyId,
+      actorType: "doctor",
+      actorId: reviewerName,
+      action: `medical.report.${action}`,
+      targetType: "report",
+      targetId: reportId,
+      detail: {
+        doctor_review_id: reviewed.doctorReview.id,
+        report_status: reviewed.report.status,
+        comment: comment ?? null,
+      },
+      traceId: reviewed.doctorReview.id,
+      now,
+    });
+    jsonResponse(res, 200, {
+      report: reviewed.report,
+      doctorReview: reviewed.doctorReview,
+      auditLog,
+      bundle: repo.getStudyBundle(reviewed.report.studyId),
+    });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
 function readCounts(db: Database.Database): Record<string, number> {
   return {
     patients: count(db, "patient"),
@@ -425,6 +486,12 @@ function imageInput(body: JsonObject): ImageInput {
     qualityScore: numberField(body, "qualityScore", "quality_score"),
     processingStatus: stringField(body, "processingStatus", "processing_status"),
   };
+}
+
+function reviewAction(body: JsonObject): ReportReviewAction {
+  const action = requiredString(body, "action");
+  if (action === "approve" || action === "revise" || action === "reject") return action;
+  throw new MedicalRequestError(400, "invalid-request", "action must be approve, revise, or reject");
 }
 
 function requireBodyObject(body: unknown): JsonObject {

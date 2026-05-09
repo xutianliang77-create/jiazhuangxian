@@ -865,6 +865,97 @@ describe("Web server · medical API", () => {
     }
   });
 
+  it("POST medical report review confirms a draft report", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-review-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    let localDb: Database.Database | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+
+      const patientResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/patients`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ externalPatientId: "EXT-REVIEW-P1" }),
+      });
+      const patientBody = (await patientResponse.json()) as { patient: { id: string } };
+      const studyResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/studies`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ patientId: patientBody.patient.id, accessionNo: "ACC-REVIEW-1" }),
+      });
+      const studyBody = (await studyResponse.json()) as { study: { id: string } };
+      const now = Date.now();
+      localDb = new Database(dbPath);
+      localDb
+        .prepare(
+          `INSERT INTO report(
+             id, study_id, report_type, status, draft_text, structured_json,
+             evidence_json, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          "R-WEB-REVIEW",
+          studyBody.study.id,
+          "thyroid_ultrasound",
+          "draft",
+          "AI draft",
+          "{}",
+          "[]",
+          now,
+          now
+        );
+      localDb.close();
+      localDb = null;
+
+      const reviewResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/reports/R-WEB-REVIEW/review`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action: "approve", finalText: "doctor final report", comment: "ok" }),
+      });
+      expect(reviewResponse.status).toBe(200);
+      const reviewBody = (await reviewResponse.json()) as {
+        report: { status: string; finalText: string; confirmedBy: string };
+        doctorReview: { action: string; reviewerName: string; comment: string };
+        auditLog: { action: string; actorType: string; targetId: string };
+        bundle: { reports: Array<{ status: string }>; doctorReviews: Array<{ action: string }> };
+      };
+      expect(reviewBody.report).toMatchObject({
+        status: "confirmed",
+        finalText: "doctor final report",
+        confirmedBy: "web-test-tok",
+      });
+      expect(reviewBody.doctorReview).toMatchObject({
+        action: "approve",
+        reviewerName: "web-test-tok",
+        comment: "ok",
+      });
+      expect(reviewBody.auditLog).toMatchObject({
+        action: "medical.report.approve",
+        actorType: "doctor",
+        targetId: "R-WEB-REVIEW",
+      });
+      expect(reviewBody.bundle.reports[0].status).toBe("confirmed");
+      expect(reviewBody.bundle.doctorReviews[0].action).toBe("approve");
+    } finally {
+      localDb?.close();
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("POST medical image with unknown study → 400 invalid-reference", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-write-"));
     const dbPath = path.join(dir, "data.db");

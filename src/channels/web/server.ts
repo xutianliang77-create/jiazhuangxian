@@ -88,6 +88,7 @@ import {
   handleCreateMedicalStudy,
   handleMedicalSummary,
   handleReadMedicalStudy,
+  handleReviewMedicalReport,
   handleStartMedicalAnalysis,
 } from "./medicalHandlers";
 import { SessionStore } from "./sessionStore";
@@ -418,6 +419,10 @@ async function dispatch(
   const medicalStudyMatch = /^\/v1\/web\/medical\/studies\/([^/]+)$/.exec(url.pathname);
   if (medicalStudyMatch && method === "GET") {
     return handleReadMedicalStudy(req, res, deps, decodeURIComponent(medicalStudyMatch[1]));
+  }
+  const medicalReportReviewMatch = /^\/v1\/web\/medical\/reports\/([^/]+)\/review$/.exec(url.pathname);
+  if (medicalReportReviewMatch && method === "POST") {
+    return handleReviewMedicalReport(req, res, deps, decodeURIComponent(medicalReportReviewMatch[1]));
   }
   if (url.pathname === "/v1/web/medical/images" && method === "POST") {
     return handleCreateMedicalImage(req, res, deps);
