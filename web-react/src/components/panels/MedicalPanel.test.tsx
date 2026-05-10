@@ -1189,6 +1189,65 @@ describe("MedicalPanel", () => {
     expect(screen.getAllByText("pending refresh").length).toBeGreaterThan(0);
   });
 
+  it("prefers server revision evidence when the bundle provides task-chain attribution", async () => {
+    const serverMaskUri = "artifact://model-output/web-smoke/server-mask.png";
+    vi.mocked(getMedicalStudy).mockResolvedValueOnce({
+      bundle: {
+        ...studyBundle,
+        nodules: [
+          {
+            ...studyBundle.nodules[0],
+            bbox: [12, 22, 32, 42],
+            maskUri: serverMaskUri,
+            source: "doctor",
+            status: "doctor_revised",
+            updatedAt: 1778245600000,
+          },
+        ],
+        reports: [],
+        auditLogs: [
+          {
+            id: "A-SERVER",
+            studyId: "S1",
+            actorType: "doctor",
+            actorId: "web-test",
+            action: "medical.nodule.revise",
+            targetType: "nodule",
+            targetId: "N1",
+            detail: {
+              before: { id: "N1", nodule_index: 1, bbox: [10, 20, 30, 40] },
+              after: { id: "N1", nodule_index: 1, bbox: [12, 22, 32, 42] },
+              revision_evidence: {
+                source: "server_revision_task_chain",
+                status: "refreshed",
+                new_mask_uri: serverMaskUri,
+                measurement: {
+                  long_axis_mm: 7,
+                  short_axis_mm: 4,
+                },
+                evidence_sources: ["server_segmentation", "server_measurement"],
+                report_id: "R-SERVER",
+              },
+            },
+            traceId: "N1",
+            createdAt: 1778245400000,
+          },
+        ],
+      },
+    });
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    expect(await screen.findByText("Revision Evidence Diff")).toBeInTheDocument();
+    expect(screen.getByText("refreshed")).toBeInTheDocument();
+    expect(screen.getByText("7.00 mm x 4.00 mm")).toBeInTheDocument();
+    expect(screen.getByText("server_segmentation, server_measurement")).toBeInTheDocument();
+    expect(screen.getAllByText(serverMaskUri).length).toBeGreaterThan(0);
+    expect(screen.getByText("R-SERVER")).toBeInTheDocument();
+  });
+
   it("blocks zero-area manual bbox revisions before calling the API", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 

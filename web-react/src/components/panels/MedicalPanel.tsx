@@ -1564,6 +1564,11 @@ function RevisionEvidenceDiff({
 }) {
   const before = objectValue(audit.detail.before);
   const after = objectValue(audit.detail.after);
+  const serverEvidence = objectValue(audit.detail.revision_evidence);
+  const serverMeasurement = objectValue(serverEvidence?.measurement);
+  const serverStatus = stringValue(serverEvidence?.status);
+  const serverEvidenceSources = stringList(serverEvidence?.evidence_sources);
+  const serverReportId = stringValue(serverEvidence?.report_id);
   const afterBbox = isNumberTuple4(after?.bbox) ? normalizedBbox(after.bbox) : null;
   const afterBboxError = afterBbox ? bboxValidationMessage(afterBbox) : null;
   const noduleMatchesRevision = !afterBbox || bboxNearlyEqual(row.nodule.bbox, afterBbox);
@@ -1577,15 +1582,25 @@ function RevisionEvidenceDiff({
   const freshMeasurementEvidence = freshReport ? row.measurementEvidence : null;
   const freshMeasurement = evidenceMatchesRevision && row.measurement && row.measurement.createdAt > audit.createdAt ? row.measurement : null;
   const freshNodule = evidenceMatchesRevision && row.nodule.updatedAt > audit.createdAt ? row.nodule : null;
-  const newMaskUri = stringValue(freshSegmentationEvidence?.mask_uri) ?? freshNodule?.maskUri ?? null;
-  const longAxisMm = numberValue(freshMeasurementEvidence?.long_axis_mm) ?? freshMeasurement?.longAxisMm ?? null;
-  const shortAxisMm = numberValue(freshMeasurementEvidence?.short_axis_mm) ?? freshMeasurement?.shortAxisMm ?? null;
+  const newMaskUri = serverEvidence
+    ? stringValue(serverEvidence.new_mask_uri)
+    : stringValue(freshSegmentationEvidence?.mask_uri) ?? freshNodule?.maskUri ?? null;
+  const longAxisMm = serverEvidence
+    ? numberValue(serverMeasurement?.long_axis_mm)
+    : numberValue(freshMeasurementEvidence?.long_axis_mm) ?? freshMeasurement?.longAxisMm ?? null;
+  const shortAxisMm = serverEvidence
+    ? numberValue(serverMeasurement?.short_axis_mm)
+    : numberValue(freshMeasurementEvidence?.short_axis_mm) ?? freshMeasurement?.shortAxisMm ?? null;
   const measurementLabel = longAxisMm === null && shortAxisMm === null
     ? "pending refresh"
     : `${formatMm(longAxisMm)} x ${formatMm(shortAxisMm)}`;
   const oldMaskUri = snapshotMaskUri(before);
-  const sourceLabel = freshReport ? reportEvidenceSourceLabel(freshReport) : "pending refresh";
-  const refreshStatus = afterBboxError
+  const sourceLabel = serverEvidence
+    ? (serverEvidenceSources.length > 0 ? serverEvidenceSources.join(", ") : "pending refresh")
+    : freshReport ? reportEvidenceSourceLabel(freshReport) : "pending refresh";
+  const refreshStatus = serverStatus
+    ? revisionEvidenceStatusLabel(serverStatus)
+    : afterBboxError
     ? "invalid revision bbox"
     : hasFreshReport && !evidenceMatchesRevision
       ? "bbox mismatch"
@@ -1608,9 +1623,16 @@ function RevisionEvidenceDiff({
       </div>
       {oldMaskUri && <ArtifactLine label="old mask" value={oldMaskUri} />}
       {newMaskUri && <ArtifactLine label="new mask" value={newMaskUri} />}
-      {freshReport && <ArtifactLine label="report" value={freshReport.id} />}
+      {(serverReportId || freshReport) && <ArtifactLine label="report" value={serverReportId ?? freshReport!.id} />}
     </div>
   );
+}
+
+function revisionEvidenceStatusLabel(status: string): string {
+  if (status === "invalid_revision_bbox") return "invalid revision bbox";
+  if (status === "pending_refresh") return "pending refresh";
+  if (status === "bbox_mismatch") return "bbox mismatch";
+  return status;
 }
 
 function segmentationPromptBbox(evidence: Record<string, unknown> | null): number[] | null {

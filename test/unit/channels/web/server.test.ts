@@ -1265,7 +1265,7 @@ describe("Web server · medical API", () => {
         };
         bundle: {
           nodules: Array<{ bbox: number[]; status: string }>;
-          auditLogs: Array<{ action: string }>;
+          auditLogs: Array<{ action: string; detail: { revision_evidence?: Record<string, unknown> } }>;
           analysisSessions: unknown[];
           agentTasks: Array<{ taskType: string; parentTaskId: string | null }>;
         };
@@ -1327,6 +1327,16 @@ describe("Web server · medical API", () => {
       ]);
       expect(reviseBody.bundle.nodules[0]).toMatchObject({ bbox: [12, 22, 32, 42], status: "doctor_revised" });
       expect(reviseBody.bundle.auditLogs[0].action).toBe("medical.nodule.revise");
+      expect(reviseBody.bundle.auditLogs[0].detail.revision_evidence).toMatchObject({
+        source: "server_revision_task_chain",
+        status: "pending_refresh",
+        analysis_session_id: reviseBody.analysisSession.id,
+        new_bbox: [12, 22, 32, 42],
+        model_job_ids: {
+          segmentation: null,
+          measurement: null,
+        },
+      });
       expect(reviseBody.bundle.analysisSessions).toHaveLength(1);
       expect(reviseBody.bundle.agentTasks.map((task) => task.taskType)).toEqual([
         "segment_nodules",
@@ -1486,6 +1496,38 @@ describe("Web server · medical API", () => {
         model_evidence: {
           segmentation_count: 1,
           measurement_count: 1,
+        },
+      });
+
+      const finalStudyResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/studies/${studyBody.study.id}`, {
+        headers: authHeaders(),
+      });
+      expect(finalStudyResponse.status).toBe(200);
+      const finalStudyBody = (await finalStudyResponse.json()) as {
+        bundle: {
+          auditLogs: Array<{ action: string; detail: { revision_evidence?: Record<string, unknown> } }>;
+        };
+      };
+      expect(finalStudyBody.bundle.auditLogs[0].detail.revision_evidence).toMatchObject({
+        source: "server_revision_task_chain",
+        status: "refreshed",
+        analysis_session_id: reviseBody.analysisSession.id,
+        model_job_ids: {
+          segmentation: segmentStart.modelJobId,
+          measurement: measureStart.modelJobId,
+        },
+        report_id: latestReport?.id,
+        evidence_sources: expect.arrayContaining(["segmentation_result", "measurement_result", "tirads_rule"]),
+        new_mask_uri: "artifact://model-output/web-smoke/mask_nodule_1.png",
+        measurement: {
+          long_axis_mm: 5,
+          short_axis_mm: 5,
+          source: "mask",
+        },
+        consistency: {
+          after_bbox_valid: true,
+          nodule_bbox_matches: true,
+          segmentation_prompt_bbox_matches: true,
         },
       });
     } finally {

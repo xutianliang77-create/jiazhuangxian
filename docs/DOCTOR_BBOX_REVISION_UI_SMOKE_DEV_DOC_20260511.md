@@ -312,3 +312,58 @@ npm run dev -- web --port=7180 --host=127.0.0.1
 3. 后端按修订批次提供专门 evidence 查询接口。
 
 这些项已作为 P1/P2 或后续验证任务保留。
+
+## 13. 后续补充：服务端 revision evidence summary
+
+2026-05-11 继续补齐了第 12 节中第 3 项的核心部分：后端不新增独立查询接口，而是在 `GET /v1/web/medical/studies/:studyId` 返回的 `auditLogs[].detail.revision_evidence` 中直接附加本次修订链路的 evidence summary。
+
+服务端 summary 绑定以下字段：
+
+1. `rerun_analysis_session_id`
+2. `rerun_agent_task_ids`
+3. `segment_nodules` 对应的 `thyroid.segment_nodule` model job
+4. `measure_nodules` 对应的 `thyroid.measure_nodule` model job
+5. 同一 `analysis_session_id` 生成的 report
+
+典型结构：
+
+```json
+{
+  "source": "server_revision_task_chain",
+  "status": "refreshed",
+  "analysis_session_id": "AS-REV",
+  "rerun_agent_task_ids": ["AT-SEG", "AT-MEASURE", "AT-REPORT"],
+  "model_job_ids": {
+    "segmentation": "MJ-SEG",
+    "measurement": "MJ-MEASURE"
+  },
+  "report_id": "R-REV",
+  "evidence_sources": ["segmentation_result", "measurement_result", "tirads_rule"],
+  "old_bbox": [10, 20, 30, 40],
+  "new_bbox": [12, 22, 32, 42],
+  "new_mask_uri": "artifact://model-output/.../mask_nodule_1.png",
+  "measurement": {
+    "long_axis_mm": 5,
+    "short_axis_mm": 5,
+    "source": "mask"
+  },
+  "consistency": {
+    "after_bbox_valid": true,
+    "nodule_bbox_matches": true,
+    "segmentation_prompt_bbox_matches": true
+  }
+}
+```
+
+前端展示策略：
+
+1. 如果 `revision_evidence` 存在，`Revision Evidence Diff` 优先展示服务端 summary。
+2. 如果服务端 summary 不存在，前端保留原有推断逻辑作为兼容兜底。
+3. `status` 使用服务端枚举：
+   - `pending_refresh`
+   - `refreshed`
+   - `invalid_revision_bbox`
+   - `bbox_mismatch`
+   - `failed`
+
+这样医生看到的证据归属不再主要依赖前端按时间和 nodule id 推断，而是绑定到本次修订自动排队的 Agent task / model job / report 链路。

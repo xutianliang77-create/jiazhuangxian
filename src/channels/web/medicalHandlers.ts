@@ -8,10 +8,14 @@ import {
   MedicalCaseRepo,
   type AgentTaskRecord,
   type AnalysisSessionRecord,
+  type AuditLogRecord,
   type ImageInput,
+  type ModelJobRecord,
   type NoduleRevisionResult,
   type PatientInput,
+  type ReportRecord,
   type ReportReviewAction,
+  type StudyBundle,
   type StudyInput,
 } from "../../medical/storage/caseRepo";
 import { searchMedicalKnowledge } from "../../medical/knowledge/search";
@@ -275,7 +279,7 @@ export async function handleReadMedicalStudy(
 
   try {
     const repo = new MedicalCaseRepo(ctx.db);
-    const bundle = repo.getStudyBundle(studyId);
+    const bundle = readMedicalStudyBundle(repo, studyId);
     if (!bundle) {
       throw new MedicalRequestError(404, "study-not-found", `study not found: ${studyId}`);
     }
@@ -408,7 +412,7 @@ export async function handleStartMedicalAnalysis(
     jsonResponse(res, 201, {
       analysisSession,
       agentTasks,
-      bundle: repo.getStudyBundle(studyId),
+      bundle: readMedicalStudyBundle(repo, studyId),
     });
   } catch (err) {
     medicalWriteError(res, err);
@@ -463,7 +467,7 @@ export async function handleReviewMedicalReport(
       report: reviewed.report,
       doctorReview: reviewed.doctorReview,
       auditLog,
-      bundle: repo.getStudyBundle(reviewed.report.studyId),
+      bundle: readMedicalStudyBundle(repo, reviewed.report.studyId),
     });
   } catch (err) {
     medicalWriteError(res, err);
@@ -530,7 +534,7 @@ export async function handleReviseMedicalNodule(
       analysisSession,
       agentTasks,
       auditLog,
-      bundle: repo.getStudyBundle(revised.nodule.studyId),
+      bundle: readMedicalStudyBundle(repo, revised.nodule.studyId),
     });
   } catch (err) {
     medicalWriteError(res, err);
@@ -600,6 +604,212 @@ function createDoctorBboxRevisionRerun(
   });
 
   return { analysisSession, agentTasks };
+}
+
+function readMedicalStudyBundle(repo: MedicalCaseRepo, studyId: string): StudyBundle | null {
+  const bundle = repo.getStudyBundle(studyId);
+  return bundle ? withRevisionEvidence(bundle) : null;
+}
+
+function withRevisionEvidence(bundle: StudyBundle): StudyBundle {
+  return {
+    ...bundle,
+    auditLogs: bundle.auditLogs.map((audit) => {
+      if (audit.action !== "medical.nodule.revise") return audit;
+      return {
+        ...audit,
+        detail: {
+          ...audit.detail,
+          revision_evidence: buildRevisionEvidence(audit, bundle),
+        },
+      };
+    }),
+  };
+}
+
+function buildRevisionEvidence(audit: AuditLogRecord, bundle: StudyBundle): JsonObject {
+  const before = jsonObjectValue(audit.detail.before);
+  const after = jsonObjectValue(audit.detail.after);
+  const afterBbox = bboxTuple(after?.bbox);
+  const afterBboxValid = afterBbox ? bboxEdgeIsValid(afterBbox) : false;
+  const analysisSessionId = stringValue(audit.detail.rerun_analysis_session_id);
+  const taskIdSet = new Set(stringArray(audit.detail.rerun_agent_task_ids));
+  const tasks = bundle.agentTasks.filter((task) =>
+    taskIdSet.has(task.id) || (!!analysisSessionId && task.analysisSessionId === analysisSessionId)
+  );
+  const taskStatuses = tasks.map((task) => ({
+    id: task.id,
+    task_type: task.taskType,
+    status: task.status,
+  }));
+  const failed = tasks.some((task) => task.status === "failed" || task.status === "blocked");
+  const noduleId = stringValue(after?.id) ?? audit.targetId ?? undefined;
+  const noduleIndex = numberValue(after?.nodule_index) ?? numberValue(after?.noduleIndex);
+  const nodule = bundle.nodules.find((candidate) =>
+    (!!noduleId && candidate.id === noduleId) || (noduleIndex !== null && candidate.noduleIndex === noduleIndex)
+  );
+  const noduleBboxMatches = afterBbox && nodule ? bboxNearlyEqual(nodule.bbox, afterBbox) : null;
+  const segmentTask = tasks.find((task) => task.taskType === "segment_nodules") ?? null;
+  const measureTask = tasks.find((task) => task.taskType === "measure_nodules") ?? null;
+  const segmentJob = latestModelJobForTask(bundle.modelJobs, segmentTask?.id, "thyroid.segment_nodule");
+  const measureJob = latestModelJobForTask(bundle.modelJobs, measureTask?.id, "thyroid.measure_nodule");
+  const segmentation = segmentJob ? modelOutputRecord(segmentJob, "segmentations", noduleId, noduleIndex) : null;
+  const measurement = measureJob ? modelOutputRecord(measureJob, "measurements", noduleId, noduleIndex) : null;
+  const promptBbox = segmentationPromptBbox(segmentation, segmentJob, noduleId, noduleIndex);
+  const promptBboxMatches = afterBbox && promptBbox ? bboxNearlyEqual(promptBbox, afterBbox) : null;
+  const report = latestReportForRevision(bundle.reports, analysisSessionId);
+  const reportSources = report ? reportEvidenceSources(report) : [];
+  const evidenceMatches = afterBboxValid
+    && noduleBboxMatches !== false
+    && promptBboxMatches !== false;
+  const status = !afterBboxValid
+    ? "invalid_revision_bbox"
+    : failed
+      ? "failed"
+      : report && !evidenceMatches
+        ? "bbox_mismatch"
+        : report
+          ? "refreshed"
+          : "pending_refresh";
+  const measurementSummary = measurement
+    ? {
+        long_axis_mm: numberValue(measurement.long_axis_mm),
+        short_axis_mm: numberValue(measurement.short_axis_mm),
+        area_mm2: numberValue(measurement.area_mm2),
+        source: stringValue(measurement.measurement_source),
+        artifact_uri: stringValue(measurement.artifact_uri) ?? measureJob?.artifactUri ?? null,
+      }
+    : null;
+
+  return {
+    source: "server_revision_task_chain",
+    status,
+    analysis_session_id: analysisSessionId ?? null,
+    rerun_agent_task_ids: Array.from(taskIdSet),
+    task_statuses: taskStatuses,
+    model_job_ids: {
+      segmentation: segmentJob?.id ?? null,
+      measurement: measureJob?.id ?? null,
+    },
+    report_id: status === "refreshed" ? report?.id ?? null : null,
+    evidence_sources: status === "refreshed" ? reportSources : [],
+    old_bbox: before?.bbox ?? null,
+    new_bbox: after?.bbox ?? null,
+    old_mask_uri: stringValue(before?.mask_uri) ?? stringValue(before?.maskUri) ?? null,
+    new_mask_uri: status === "refreshed"
+      ? stringValue(segmentation?.mask_uri) ?? nodule?.maskUri ?? null
+      : null,
+    measurement: status === "refreshed" ? measurementSummary : null,
+    consistency: {
+      after_bbox_valid: afterBboxValid,
+      nodule_bbox_matches: noduleBboxMatches,
+      segmentation_prompt_bbox: promptBbox,
+      segmentation_prompt_bbox_matches: promptBboxMatches,
+    },
+  };
+}
+
+function latestModelJobForTask(
+  jobs: ModelJobRecord[],
+  taskId: string | undefined,
+  jobType: string
+): ModelJobRecord | null {
+  if (!taskId) return null;
+  return [...jobs]
+    .filter((job) => job.agentTaskId === taskId && job.jobType === jobType)
+    .sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt)[0] ?? null;
+}
+
+function modelOutputRecord(
+  job: ModelJobRecord,
+  outputKey: string,
+  noduleId: string | undefined,
+  noduleIndex: number | null
+): JsonObject | null {
+  for (const record of jsonObjectList(job.output?.[outputKey])) {
+    const recordNoduleId = stringValue(record.nodule_id) ?? stringValue(record.noduleId);
+    const recordNoduleIndex = numberValue(record.nodule_index) ?? numberValue(record.noduleIndex);
+    if ((noduleId && recordNoduleId === noduleId) || (noduleIndex !== null && recordNoduleIndex === noduleIndex)) {
+      return record;
+    }
+  }
+  return null;
+}
+
+function segmentationPromptBbox(
+  segmentation: JsonObject | null,
+  job: ModelJobRecord | null,
+  noduleId: string | undefined,
+  noduleIndex: number | null
+): number[] | null {
+  const metadata = jsonObjectValue(segmentation?.metadata);
+  const direct = bboxTuple(
+    segmentation?.prompt_bbox
+    ?? segmentation?.prompt_bbox_xyxy
+    ?? metadata?.prompt_bbox
+    ?? metadata?.prompt_bbox_xyxy
+    ?? metadata?.bbox
+  );
+  if (direct) return direct;
+  if (!job) return null;
+  for (const record of jsonObjectList(job.input?.nodules)) {
+    const recordNoduleId = stringValue(record.nodule_id) ?? stringValue(record.noduleId);
+    const recordNoduleIndex = numberValue(record.nodule_index) ?? numberValue(record.noduleIndex);
+    if ((noduleId && recordNoduleId === noduleId) || (noduleIndex !== null && recordNoduleIndex === noduleIndex)) {
+      return bboxTuple(record.bbox);
+    }
+  }
+  return null;
+}
+
+function latestReportForRevision(reports: ReportRecord[], analysisSessionId: string | undefined): ReportRecord | null {
+  if (!analysisSessionId) return null;
+  return [...reports]
+    .filter((report) => report.analysisSessionId === analysisSessionId)
+    .sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt)[0] ?? null;
+}
+
+function reportEvidenceSources(report: ReportRecord): string[] {
+  const sources = new Set<string>();
+  for (const evidence of report.evidence) {
+    const source = stringValue(jsonObjectValue(evidence)?.source);
+    if (source) sources.add(source);
+  }
+  return Array.from(sources);
+}
+
+function jsonObjectValue(value: unknown): JsonObject | undefined {
+  return isJsonObject(value) ? value : undefined;
+}
+
+function jsonObjectList(value: unknown): JsonObject[] {
+  return Array.isArray(value) ? value.filter(isJsonObject) : [];
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function bboxTuple(value: unknown): number[] | null {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  if (!value.every((item): item is number => typeof item === "number" && Number.isFinite(item))) return null;
+  return normalizedBbox(value);
+}
+
+function bboxEdgeIsValid(value: number[]): boolean {
+  const [x1, y1, x2, y2] = normalizedBbox(value);
+  return x2 - x1 >= 1 && y2 - y1 >= 1;
+}
+
+function bboxNearlyEqual(left: unknown, right: unknown): boolean {
+  const leftBbox = bboxTuple(left);
+  const rightBbox = bboxTuple(right);
+  if (!leftBbox || !rightBbox) return false;
+  return leftBbox.every((value, index) => Math.abs(value - rightBbox[index]) <= 1);
 }
 
 function readCounts(db: Database.Database): Record<string, number> {
