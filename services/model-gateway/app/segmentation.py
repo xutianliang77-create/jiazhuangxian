@@ -1631,8 +1631,20 @@ def parse_pixel_spacing(value: Any) -> tuple[float | None, float | None]:
     if isinstance(value, list) and len(value) >= 2:
         return number_or_none(value[0]), number_or_none(value[1])
     if isinstance(value, dict):
-        row = first_number(value, "row_mm", "rowSpacing", "row_spacing", "y", "height")
-        column = first_number(value, "column_mm", "columnSpacing", "column_spacing", "x", "width")
+        row = first_number(value, "row_mm", "rowSpacing", "row_spacing", "row_spacing_mm", "y", "height")
+        column = first_number(
+            value,
+            "column_mm",
+            "columnSpacing",
+            "column_spacing",
+            "column_spacing_mm",
+            "col_mm",
+            "colSpacing",
+            "col_spacing",
+            "col_spacing_mm",
+            "x",
+            "width",
+        )
         if row is not None and column is not None:
             return row, column
         spacing = value.get("spacing")

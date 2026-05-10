@@ -444,7 +444,7 @@ class ModelGatewayTest(unittest.TestCase):
                     image_id="IMG1",
                     nodule_id="N1",
                     mask_uri=mask_uri,
-                    pixel_spacing={"row_mm": 0.1, "column_mm": 0.2},
+                    pixel_spacing={"row_spacing_mm": 0.1, "col_spacing_mm": 0.2},
                 )
             )
             with patch.dict(os.environ, {"JZX_ARTIFACT_ROOT": str(root)}, clear=False):
@@ -460,6 +460,7 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertEqual(measurement["nodule_id"], "N1")
             self.assertGreater(measurement["long_axis_mm"], 0)
             self.assertEqual(measurement["measurement_source"], "mask")
+            self.assertEqual(measure_artifact["pixel_spacing"], {"row_mm": 0.1, "column_mm": 0.2})
 
     def test_worker_writes_video_segmentation_and_measurement_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

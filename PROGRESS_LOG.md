@@ -2312,3 +2312,79 @@ npm test -- test/unit/medical/agentWorker.test.ts
 npm run typecheck
 cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
 ```
+
+## 2026-05-11 00:59 CST - UI Smoke: Doctor BBox Revision -> nnU-Net -> Measurement -> Report Evidence
+
+- Ran a real UI smoke on the doctor workbench against `SMOKE_STUDY_UI` / `SMOKE_NODULE_UI`.
+  - Dragged the overlay revision canvas and saved the bbox revision.
+  - UI created a `doctor_bbox_revision` analysis session and queued the expected task chain:
+    1. `segment_nodules`
+    2. `measure_nodules`
+    3. `draft_report`
+  - Screenshot: `data/artifacts/medical/ui-smoke-after-bbox-revision.png`.
+- The browser drag event produced a zero-area bbox in this synthetic smoke run. Before model execution, normalized the smoke bbox to `[112,64,214,172]` and recorded `smoke_normalization` in task/session/audit details so nnU-Net received a valid ROI.
+- Ran real model-worker jobs on the 5090 host:
+  - First GPU attempt hit CUDA OOM because LM Studio was occupying about 23.9GB VRAM.
+  - Retried `thyroid.segment_nodule` with `JZX_MODEL_DEVICE=cpu`; nnU-Net succeeded and produced:
+    - `artifact://model-output/thyroid-segment-nodule/SMOKE_STUDY_UI/SMOKE_IMAGE_UI/01KR9CJWG42MYM6RPXC74KZM8T/segmentation.json`
+    - `artifact://model-output/thyroid-segment-nodule/SMOKE_STUDY_UI/SMOKE_IMAGE_UI/01KR9CJWG42MYM6RPXC74KZM8T/mask_nodule_1.png`
+  - Ran `thyroid.measure_nodule`; after pixel-spacing parser fix, measurement succeeded with:
+    - long axis `25.25mm`
+    - short axis `20.0mm`
+    - area `386.625mm2`
+    - source `mask`
+    - no warnings
+- Fixed model-gateway pixel spacing parsing:
+  - `services/model-gateway/app/segmentation.py` now accepts `row_spacing_mm`, `column_spacing_mm`, `col_spacing_mm`, and related aliases.
+  - `services/model-gateway/tests/test_gateway.py` now verifies the agent-style spacing keys produce mm measurements.
+- Ran final `draft_report`; report `01KR9D765ZSTSVWHGCM341NQZZ` includes:
+  - segmentation evidence from `nnunet_tight_roi`
+  - measurement evidence from `mask`
+  - TI-RADS rule evidence
+  - medical guideline/RAG evidence chunks
+- Exported smoke verification artifact:
+  - `data/artifacts/medical/ui-smoke-bbox-revision-verification.json`
+- Output development document:
+  - `docs/DOCTOR_BBOX_REVISION_UI_SMOKE_DEV_DOC_20260511.md`
+
+### Validation
+
+- `python3 -m unittest services/model-gateway/tests/test_gateway.py` -> 29 tests OK.
+- `medical-agent-worker:once` segment task -> succeeded.
+- `medical-agent-worker:once` measure task -> succeeded.
+- `medical-agent-worker:once` draft report task -> succeeded.
+- DB verification:
+  - analysis session `01KR9CHM7RK3YGK7SWTZSDW2V2` -> `succeeded`.
+  - tasks `segment_nodules`, `measure_nodules`, `draft_report` -> all `succeeded`.
+  - model jobs `thyroid.detect_nodules`, `thyroid.segment_nodule`, `thyroid.measure_nodule` -> all `succeeded`.
+  - `nodule.mask_uri` populated.
+  - `measurement` row persisted.
+  - latest report evidence includes `tirads_result`, `segmentation_result`, `measurement_result`, `tirads_rule`, and `medical_guideline`.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: Real UI Smoke Completed
+
+- The requested static chain is verified end to end: doctor bbox revision -> queued rerun -> nnU-Net segmentation -> mask measurement -> refreshed report basis.
+- A small model-gateway compatibility fix is pending commit: pixel spacing parser aliases for `row_spacing_mm/col_spacing_mm`.
+
+### Background Tasks
+
+- No new long-running browser, backend, Vite, training, or model-worker job remains running from this smoke.
+- The pre-existing local UI preview on port `5173` may still be running from an earlier session.
+
+### Next Session Priorities
+
+1. Commit and push the pixel-spacing parser fix if desired.
+2. Add a UI-level guard against zero-area drag rectangles so synthetic/edge drag events cannot submit invalid bbox values.
+3. Add doctor-facing old-vs-new evidence diff for bbox/mask/measurement/report basis.
+4. Re-run the smoke with GPU after LM Studio/large LLM processes are unloaded, to validate the fast CUDA path.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+python3 -m unittest services/model-gateway/tests/test_gateway.py
+node -e "const Database=require('better-sqlite3'); const db=new Database('data/artifacts/medical/data.db'); console.log(db.prepare(\"select id,status from analysis_session where id='01KR9CHM7RK3YGK7SWTZSDW2V2'\").get()); db.close();"
+sed -n '1,220p' data/artifacts/medical/ui-smoke-bbox-revision-verification.json
+```
