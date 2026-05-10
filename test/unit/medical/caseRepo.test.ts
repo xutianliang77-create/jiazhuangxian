@@ -304,6 +304,59 @@ describe("MedicalCaseRepo", () => {
     expect(repo.getStudyBundle(study.id)?.nodules[0]).toMatchObject({ bbox: [12, 22, 32, 42] });
   });
 
+  it("persists segmentation mask URI and measurements", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-MEASURE", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-MEASURE", now: 1100 });
+    const image = repo.addImage({
+      studyId: study.id,
+      fileUri: "artifact://raw/ACC-MEASURE/IMG.png",
+      fileType: "png",
+      now: 1200,
+    });
+    const nodule = repo.upsertNodule({
+      studyId: study.id,
+      imageId: image.id,
+      noduleIndex: 1,
+      bbox: [10, 20, 30, 40],
+      now: 1300,
+    });
+
+    const masked = repo.updateNoduleMask(nodule.id, "artifact://mask/ACC-MEASURE/N1.png", 1400);
+    const measurement = repo.createMeasurement({
+      noduleId: nodule.id,
+      longAxisMm: 12.4,
+      shortAxisMm: 6.2,
+      areaMm2: 48.1,
+      aspectRatio: 2,
+      measurementSource: "mask",
+      confidence: 0.76,
+      now: 1500,
+    });
+
+    expect(masked).toMatchObject({
+      id: nodule.id,
+      maskUri: "artifact://mask/ACC-MEASURE/N1.png",
+      status: "segmented",
+    });
+    expect(repo.listMeasurementsByStudy(study.id)).toMatchObject([
+      {
+        id: measurement.id,
+        noduleId: nodule.id,
+        longAxisMm: 12.4,
+        shortAxisMm: 6.2,
+        areaMm2: 48.1,
+        aspectRatio: 2,
+        measurementSource: "mask",
+        confidence: 0.76,
+      },
+    ]);
+    expect(repo.getStudyBundle(study.id)).toMatchObject({
+      nodules: [{ id: nodule.id, maskUri: "artifact://mask/ACC-MEASURE/N1.png" }],
+      measurements: [{ id: measurement.id, noduleId: nodule.id }],
+    });
+  });
+
   it("persists TI-RADS features and calculated results", () => {
     const repo = new MedicalCaseRepo(db);
     const patient = repo.upsertPatient({ externalPatientId: "P-TIRADS", now: 1000 });

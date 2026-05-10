@@ -1,0 +1,30 @@
+{
+  "dataset_root": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight",
+  "prediction_dir": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred",
+  "audit_csv": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/audit/holdout_low_dice_audit.csv",
+  "summary_json": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/summary.json",
+  "output_dir": "data/curation/tn3k-tight-roi-low-dice-v1",
+  "total_cases": 576,
+  "manual_review_dice": 0.8,
+  "group_counts": {
+    "clean_high_confidence": 307,
+    "borderline_boundary": 177,
+    "label_or_task_review": 54,
+    "model_hard": 38
+  },
+  "review_priority_counts": {
+    "low": 307,
+    "medium": 177,
+    "high": 92
+  },
+  "subset_counts": {
+    "clean_high_confidence": 307,
+    "clean_label_candidate": 522,
+    "manual_review_required": 92,
+    "label_or_task_review": 54,
+    "model_hard_cases": 38,
+    "borderline_boundary": 177,
+    "low_dice_below_080": 55
+  },
+  "use_symlinks": true
+}

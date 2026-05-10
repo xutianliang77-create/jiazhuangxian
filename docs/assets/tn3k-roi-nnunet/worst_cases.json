@@ -1,0 +1,86 @@
+[
+  {
+    "case_id": "tn3k_roi_0042",
+    "dice": 0.22582602460146725,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_0042_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_0042.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_0042.png"
+  },
+  {
+    "case_id": "tn3k_roi_2235",
+    "dice": 0.31455534229046705,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_2235_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_2235.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_2235.png"
+  },
+  {
+    "case_id": "tn3k_roi_0577",
+    "dice": 0.38289826146331213,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_0577_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_0577.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_0577.png"
+  },
+  {
+    "case_id": "tn3k_roi_0022",
+    "dice": 0.40748263325880285,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_0022_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_0022.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_0022.png"
+  },
+  {
+    "case_id": "tn3k_roi_1490",
+    "dice": 0.42539483436912023,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_1490_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_1490.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_1490.png"
+  },
+  {
+    "case_id": "tn3k_roi_1191",
+    "dice": 0.4577290959580376,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_1191_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_1191.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_1191.png"
+  },
+  {
+    "case_id": "tn3k_roi_2057",
+    "dice": 0.4774806892453951,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_2057_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_2057.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_2057.png"
+  },
+  {
+    "case_id": "tn3k_roi_2040",
+    "dice": 0.48172912455294664,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_2040_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_2040.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_2040.png"
+  },
+  {
+    "case_id": "tn3k_roi_1571",
+    "dice": 0.4935421985226363,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_1571_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_1571.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_1571.png"
+  },
+  {
+    "case_id": "tn3k_roi_1885",
+    "dice": 0.49680190058479534,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_1885_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_1885.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_1885.png"
+  },
+  {
+    "case_id": "tn3k_roi_1844",
+    "dice": 0.5007589678037868,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_1844_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_1844.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_1844.png"
+  },
+  {
+    "case_id": "tn3k_roi_1652",
+    "dice": 0.5378840049045132,
+    "image": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/imagesTr/tn3k_roi_1652_0000.png",
+    "label": "data/nnunet/nnUNet_raw/Dataset502_TN3KThyroidROI/labelsTr/tn3k_roi_1652.png",
+    "prediction": "data/nnunet/nnUNet_results/Dataset502_TN3KThyroidROI/nnUNetTrainer_100epochs__nnUNetPlans__2d/fold_0/validation/tn3k_roi_1652.png"
+  }
+]

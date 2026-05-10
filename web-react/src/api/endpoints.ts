@@ -452,6 +452,19 @@ export interface MedicalNodule {
   updatedAt: number;
 }
 
+export interface MedicalMeasurement {
+  id: string;
+  noduleId: string;
+  longAxisMm: number | null;
+  shortAxisMm: number | null;
+  apAxisMm: number | null;
+  areaMm2: number | null;
+  aspectRatio: number | null;
+  measurementSource: string;
+  confidence: number | null;
+  createdAt: number;
+}
+
 export interface MedicalTiradsFeature {
   id: string;
   noduleId: string;
@@ -523,6 +536,7 @@ export interface MedicalStudyBundle {
   study: MedicalStudy;
   images: MedicalImage[];
   nodules: MedicalNodule[];
+  measurements: MedicalMeasurement[];
   tiradsFeatures: MedicalTiradsFeature[];
   tiradsResults: MedicalTiradsResult[];
   reports: MedicalReport[];
@@ -780,6 +794,8 @@ export const reviseMedicalNodule = (
 ) =>
   api<{
     nodule: MedicalNodule;
+    analysisSession: MedicalAnalysisSession;
+    agentTasks: MedicalAgentTask[];
     auditLog: MedicalAuditLog;
     bundle: MedicalStudyBundle;
   }>("POST", `/v1/web/medical/nodules/${encodeURIComponent(noduleId)}/revise`, input);

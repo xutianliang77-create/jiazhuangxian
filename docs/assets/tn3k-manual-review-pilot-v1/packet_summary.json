@@ -1,0 +1,47 @@
+{
+  "dataset_root": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight",
+  "prediction_dir": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred",
+  "queue_csv": "data/curation/tn3k-tight-roi-low-dice-v1/manual_review_queue.csv",
+  "output_dir": "data/curation/tn3k-tight-roi-low-dice-v1/review_packets/pilot_first20",
+  "offset": 0,
+  "limit": 20,
+  "selected_cases": 20,
+  "case_ids": [
+    "tn3k_roi_0005",
+    "tn3k_roi_0335",
+    "tn3k_roi_0430",
+    "tn3k_roi_0358",
+    "tn3k_roi_0146",
+    "tn3k_roi_0537",
+    "tn3k_roi_0223",
+    "tn3k_roi_0541",
+    "tn3k_roi_0192",
+    "tn3k_roi_0216",
+    "tn3k_roi_0372",
+    "tn3k_roi_0512",
+    "tn3k_roi_0429",
+    "tn3k_roi_0213",
+    "tn3k_roi_0012",
+    "tn3k_roi_0170",
+    "tn3k_roi_0096",
+    "tn3k_roi_0354",
+    "tn3k_roi_0135",
+    "tn3k_roi_0565"
+  ],
+  "category_counts": {
+    "boundary_or_shape_mismatch": 1,
+    "location_shift": 5,
+    "multi_region_gt_partial": 7,
+    "oversegmentation": 6,
+    "undersegmentation": 1
+  },
+  "primary_group_counts": {
+    "label_or_task_review": 12,
+    "model_hard": 8
+  },
+  "artifacts": {
+    "packet_csv": "data/curation/tn3k-tight-roi-low-dice-v1/review_packets/pilot_first20/manual_review_queue_first20.csv",
+    "packet_markdown": "data/curation/tn3k-tight-roi-low-dice-v1/review_packets/pilot_first20/manual_review_packet.md",
+    "contact_sheet": "data/curation/tn3k-tight-roi-low-dice-v1/review_packets/pilot_first20/tn3k_manual_review_contact_sheet.png"
+  }
+}

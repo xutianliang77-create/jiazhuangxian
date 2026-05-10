@@ -24,6 +24,10 @@ describe("medical MCP tool surface", () => {
       "image.ImageQualityCheck",
       "thyroid.ImageQC",
       "thyroid.DetectNodules",
+      "thyroid.SegmentNodule",
+      "thyroid.MeasureNodule",
+      "thyroid.SegmentVideoNodule",
+      "thyroid.MeasureVideoNodule",
       "thyroid.ClassifyTiradsFeatures",
       "thyroid.CalculateTirads",
       "medical.SearchGuideline",
@@ -157,6 +161,162 @@ describe("medical MCP tool surface", () => {
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({
       status: "error",
       error: { code: "model_gateway_unreachable" },
+    });
+  });
+
+  it("forwards thyroid.SegmentNodule to the model-gateway HTTP endpoint", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const server = new MedicalMcpServer({
+      modelGatewayUrl: "http://model.test",
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as unknown });
+        return jsonResponse({
+          status: "ok",
+          result: { job_id: "mj_seg", status: "queued", job_type: "thyroid.segment_nodule" },
+          warnings: [],
+        });
+      },
+    });
+
+    const result = await server.callTool("thyroid.SegmentNodule", {
+      study_id: "S1",
+      image_id: "IMG1",
+      image_uri: "artifact://raw/S1/IMG1.png",
+      nodule_id: "N1",
+      bbox: [10, 20, 30, 40],
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "http://model.test/model/v1/infer/thyroid/segment-nodule",
+        body: {
+          study_id: "S1",
+          image_id: "IMG1",
+          image_uri: "artifact://raw/S1/IMG1.png",
+          nodule_id: "N1",
+          bbox: [10, 20, 30, 40],
+        },
+      },
+    ]);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      status: "ok",
+      result: { job_id: "mj_seg", job_type: "thyroid.segment_nodule" },
+    });
+  });
+
+  it("forwards thyroid.MeasureNodule to the model-gateway HTTP endpoint", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const server = new MedicalMcpServer({
+      modelGatewayUrl: "http://model.test",
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as unknown });
+        return jsonResponse({
+          status: "ok",
+          result: { job_id: "mj_measure", status: "queued", job_type: "thyroid.measure_nodule" },
+          warnings: [],
+        });
+      },
+    });
+
+    const result = await server.callTool("thyroid.MeasureNodule", {
+      study_id: "S1",
+      image_id: "IMG1",
+      nodule_id: "N1",
+      mask_uri: "artifact://mask/S1/N1.png",
+      pixel_spacing: { row_mm: 0.08, column_mm: 0.08 },
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "http://model.test/model/v1/infer/thyroid/measure-nodule",
+        body: {
+          study_id: "S1",
+          image_id: "IMG1",
+          nodule_id: "N1",
+          mask_uri: "artifact://mask/S1/N1.png",
+          pixel_spacing: { row_mm: 0.08, column_mm: 0.08 },
+        },
+      },
+    ]);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      status: "ok",
+      result: { job_id: "mj_measure", job_type: "thyroid.measure_nodule" },
+    });
+  });
+
+  it("forwards thyroid.SegmentVideoNodule to the model-gateway HTTP endpoint", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const server = new MedicalMcpServer({
+      modelGatewayUrl: "http://model.test",
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as unknown });
+        return jsonResponse({
+          status: "ok",
+          result: { job_id: "mj_video_seg", status: "queued", job_type: "thyroid.segment_video_nodule" },
+          warnings: [],
+        });
+      },
+    });
+
+    const result = await server.callTool("thyroid.SegmentVideoNodule", {
+      study_id: "S1",
+      video_id: "VID1",
+      video_uri: "artifact://medical-videos/S1/VID1.mp4",
+      targets: [{ nodule_id: "N1", track_id: "T1", prompt_frame_index: 42, bbox: [10, 20, 30, 40] }],
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "http://model.test/model/v1/infer/thyroid/segment-video-nodule",
+        body: {
+          study_id: "S1",
+          video_id: "VID1",
+          video_uri: "artifact://medical-videos/S1/VID1.mp4",
+          targets: [{ nodule_id: "N1", track_id: "T1", prompt_frame_index: 42, bbox: [10, 20, 30, 40] }],
+        },
+      },
+    ]);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      status: "ok",
+      result: { job_id: "mj_video_seg", job_type: "thyroid.segment_video_nodule" },
+    });
+  });
+
+  it("forwards thyroid.MeasureVideoNodule to the model-gateway HTTP endpoint", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const server = new MedicalMcpServer({
+      modelGatewayUrl: "http://model.test",
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as unknown });
+        return jsonResponse({
+          status: "ok",
+          result: { job_id: "mj_video_measure", status: "queued", job_type: "thyroid.measure_video_nodule" },
+          warnings: [],
+        });
+      },
+    });
+
+    const result = await server.callTool("thyroid.MeasureVideoNodule", {
+      study_id: "S1",
+      video_id: "VID1",
+      segmentation_uri: "artifact://model-output/thyroid-segment-video-nodule/S1/VID1/JOB/video_segmentation.json",
+      measurement_policy: "max_long_axis_high_confidence",
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "http://model.test/model/v1/infer/thyroid/measure-video-nodule",
+        body: {
+          study_id: "S1",
+          video_id: "VID1",
+          segmentation_uri: "artifact://model-output/thyroid-segment-video-nodule/S1/VID1/JOB/video_segmentation.json",
+          measurement_policy: "max_long_axis_high_confidence",
+        },
+      },
+    ]);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      status: "ok",
+      result: { job_id: "mj_video_measure", job_type: "thyroid.measure_video_nodule" },
     });
   });
 });

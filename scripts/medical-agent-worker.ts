@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { runMedicalAgentWorkerOnceAsync } from "../src/medical/agentWorker";
 import { MedicalCaseRepo } from "../src/medical/storage";
+import { loadRuntimeSelection } from "../src/provider/registry";
+import type { ProviderStatus } from "../src/provider/types";
 import { defaultDataDbPath, openDataDb } from "../src/storage/db";
 
 interface CliArgs {
@@ -9,25 +11,41 @@ interface CliArgs {
   once: boolean;
   workerId: string;
   intervalMs: number;
+  ragDb?: string;
+  workspace?: string;
+  knowledgeTopK?: number;
   imageWorkerUrl?: string;
+  enableLlmEvaluation: boolean;
+  llmProviderId?: string;
+  enableMedicalReview: boolean;
+  medicalReviewProviderId?: string;
 }
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  const dataDbPath = path.resolve(args.dataDb ?? process.env.JZX_DATA_DB ?? defaultDataDbPath());
   const handle = openDataDb({
-    path: path.resolve(args.dataDb ?? process.env.JZX_DATA_DB ?? defaultDataDbPath()),
+    path: dataDbPath,
     singleton: false,
   });
   const repo = new MedicalCaseRepo(handle.db);
+  const llmProvider = await resolveLlmProvider(args);
+  const medicalReviewProvider = await resolveMedicalReviewProvider(args);
 
   try {
     if (args.once) {
-      console.log(JSON.stringify(await runMedicalAgentWorkerOnceAsync(repo, workerOptions(args)), null, 2));
+      console.log(
+        JSON.stringify(
+          await runMedicalAgentWorkerOnceAsync(repo, workerOptions(args, llmProvider, medicalReviewProvider, dataDbPath)),
+          null,
+          2
+        )
+      );
       return;
     }
 
     for (;;) {
-      const result = await runMedicalAgentWorkerOnceAsync(repo, workerOptions(args));
+      const result = await runMedicalAgentWorkerOnceAsync(repo, workerOptions(args, llmProvider, medicalReviewProvider, dataDbPath));
       console.log(JSON.stringify(result, null, 2));
       if (!result.claimed) await sleep(args.intervalMs);
     }
@@ -41,7 +59,14 @@ function parseArgs(argv: string[]): CliArgs {
     once: false,
     workerId: process.env.JZX_MEDICAL_AGENT_WORKER_ID ?? "medical-agent-worker",
     intervalMs: positiveIntValue(process.env.JZX_MEDICAL_AGENT_WORKER_INTERVAL_MS, 1000),
+    ragDb: process.env.JZX_RAG_DB,
+    workspace: process.env.JZX_WORKSPACE,
+    knowledgeTopK: positiveIntValue(process.env.JZX_MEDICAL_KNOWLEDGE_TOP_K, 3),
     imageWorkerUrl: process.env.JZX_IMAGE_WORKER_URL,
+    enableLlmEvaluation: process.env.JZX_MEDICAL_LLM_EVALUATION === "1",
+    llmProviderId: process.env.JZX_MEDICAL_LLM_PROVIDER,
+    enableMedicalReview: process.env.JZX_MEDICAL_REVIEW === "1",
+    medicalReviewProviderId: process.env.JZX_MEDICAL_REVIEW_PROVIDER,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -57,8 +82,27 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (arg === "--interval-ms") {
       parsed.intervalMs = positiveInt(arg, next);
       i += 1;
+    } else if (arg === "--rag-db") {
+      parsed.ragDb = requireValue(arg, next);
+      i += 1;
+    } else if (arg === "--workspace") {
+      parsed.workspace = requireValue(arg, next);
+      i += 1;
+    } else if (arg === "--knowledge-top-k") {
+      parsed.knowledgeTopK = positiveInt(arg, next);
+      i += 1;
     } else if (arg === "--image-worker-url") {
       parsed.imageWorkerUrl = requireValue(arg, next);
+      i += 1;
+    } else if (arg === "--enable-llm-evaluation") {
+      parsed.enableLlmEvaluation = true;
+    } else if (arg === "--llm-provider") {
+      parsed.llmProviderId = requireValue(arg, next);
+      i += 1;
+    } else if (arg === "--enable-medical-review") {
+      parsed.enableMedicalReview = true;
+    } else if (arg === "--medical-review-provider") {
+      parsed.medicalReviewProviderId = requireValue(arg, next);
       i += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -67,11 +111,64 @@ function parseArgs(argv: string[]): CliArgs {
   return parsed;
 }
 
-function workerOptions(args: CliArgs): { workerId: string; imageWorkerUrl?: string } {
+function workerOptions(
+  args: CliArgs,
+  llmProvider: ProviderStatus | null,
+  medicalReviewProvider: ProviderStatus | null,
+  dataDbPath: string
+): {
+  workerId: string;
+  imageWorkerUrl?: string;
+  dataDbPath?: string;
+  ragDbPath?: string;
+  workspace?: string;
+  knowledgeTopK?: number;
+  llmProvider?: ProviderStatus | null;
+  medicalReviewProvider?: ProviderStatus | null;
+} {
   return {
     workerId: args.workerId,
     imageWorkerUrl: args.imageWorkerUrl,
+    dataDbPath,
+    ragDbPath: args.ragDb ? path.resolve(args.ragDb) : undefined,
+    workspace: args.workspace ? path.resolve(args.workspace) : process.cwd(),
+    knowledgeTopK: args.knowledgeTopK,
+    llmProvider,
+    medicalReviewProvider,
   };
+}
+
+async function resolveLlmProvider(args: CliArgs): Promise<ProviderStatus | null> {
+  if (!args.enableLlmEvaluation) return null;
+  const runtime = await loadRuntimeSelection();
+  const provider = args.llmProviderId
+    ? runtime.registry.get(args.llmProviderId)
+    : runtime.selection?.current ?? null;
+  if (!provider) {
+    throw new Error("LLM evaluation enabled but no CodeClaw provider is configured.");
+  }
+  if (!provider.available) {
+    throw new Error(`LLM evaluation provider is unavailable: ${provider.instanceId} (${provider.reason})`);
+  }
+  return provider;
+}
+
+async function resolveMedicalReviewProvider(args: CliArgs): Promise<ProviderStatus | null> {
+  if (!args.enableMedicalReview) return null;
+  const provider = await resolveConfiguredProvider(args.medicalReviewProviderId, "medical review");
+  return provider;
+}
+
+async function resolveConfiguredProvider(providerId: string | undefined, label: string): Promise<ProviderStatus> {
+  const runtime = await loadRuntimeSelection();
+  const provider = providerId ? runtime.registry.get(providerId) : runtime.selection?.current ?? null;
+  if (!provider) {
+    throw new Error(`${label} provider enabled but no CodeClaw provider is configured.`);
+  }
+  if (!provider.available) {
+    throw new Error(`${label} provider is unavailable: ${provider.instanceId} (${provider.reason})`);
+  }
+  return provider;
 }
 
 function sleep(ms: number): Promise<void> {

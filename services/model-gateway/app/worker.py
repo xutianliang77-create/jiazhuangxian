@@ -7,8 +7,15 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .artifacts import write_detector_artifact
+from .artifacts import (
+    write_detector_artifact,
+    write_measurement_artifact,
+    write_segmentation_artifact,
+    write_video_measurement_artifact,
+    write_video_segmentation_artifact,
+)
 from .detectors import DetectorAdapterError, run_detector_job
+from .segmentation import run_measure_video_job, run_measurement_job, run_segment_job, run_segment_video_job
 from .store import ModelJobStore, default_db_path
 
 
@@ -19,6 +26,14 @@ def run_once(store: ModelJobStore, *, worker_id: str = "model-worker") -> dict[s
 
     if job["job_type"] == "thyroid.detect_nodules":
         return run_detector_once(store, job, worker_id=worker_id)
+    if job["job_type"] == "thyroid.segment_nodule":
+        return run_segment_once(store, job, worker_id=worker_id)
+    if job["job_type"] == "thyroid.measure_nodule":
+        return run_measurement_once(store, job, worker_id=worker_id)
+    if job["job_type"] == "thyroid.segment_video_nodule":
+        return run_segment_video_once(store, job, worker_id=worker_id)
+    if job["job_type"] == "thyroid.measure_video_nodule":
+        return run_measure_video_once(store, job, worker_id=worker_id)
 
     return fail_claimed_job(store, job, build_failure(job, worker_id), worker_id=worker_id)
 
@@ -33,7 +48,7 @@ def run_detector_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: s
             "artifacts": {
                 "detections_json": artifact_result["artifact_uri"],
                 "overlay_image": artifact_result["overlay_uri"],
-                "model_comparison_json": None,
+                "model_comparison_json": artifact_result["artifact"].get("artifacts", {}).get("model_comparison_json"),
             },
         }
         completed = store.complete_job(str(job["id"]), enriched_output, artifact_uri=artifact_result["artifact_uri"])
@@ -57,6 +72,131 @@ def run_detector_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: s
                 "worker_id": worker_id,
                 "job_type": job["job_type"],
             },
+        }
+        return fail_claimed_job(store, job, error, worker_id=worker_id)
+
+
+def run_segment_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: str) -> dict[str, Any]:
+    try:
+        output = run_segment_job(job)
+        artifact_result = write_segmentation_artifact(job, output, worker_id=worker_id)
+        segmentations = artifact_result["artifact"].get("segmentations", [])
+        enriched_output = {
+            **output,
+            "segmentations": segmentations,
+            "warnings": artifact_result["artifact"].get("warnings", output.get("warnings", [])),
+            "artifacts": {
+                "segmentation_json": artifact_result["artifact_uri"],
+                "mask_images": artifact_result["artifact"].get("artifacts", {}).get("mask_images", []),
+            },
+        }
+        completed = store.complete_job(str(job["id"]), enriched_output, artifact_uri=artifact_result["artifact_uri"])
+        return {
+            "status": "succeeded" if completed else "error",
+            "claimed": True,
+            "worker_id": worker_id,
+            "job_id": job["id"],
+            "job_type": job["job_type"],
+            "artifact_uri": artifact_result["artifact_uri"],
+            "output": enriched_output,
+        }
+    except Exception as exc:
+        error = {
+            "code": "segment_worker_error",
+            "message": str(exc),
+            "detail": {"worker_id": worker_id, "job_type": job["job_type"]},
+        }
+        return fail_claimed_job(store, job, error, worker_id=worker_id)
+
+
+def run_measurement_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: str) -> dict[str, Any]:
+    try:
+        output = run_measurement_job(job)
+        artifact_result = write_measurement_artifact(job, output, worker_id=worker_id)
+        enriched_output = {
+            **output,
+            "warnings": artifact_result["artifact"].get("warnings", output.get("warnings", [])),
+            "artifacts": {
+                "measurements_json": artifact_result["artifact_uri"],
+            },
+        }
+        completed = store.complete_job(str(job["id"]), enriched_output, artifact_uri=artifact_result["artifact_uri"])
+        return {
+            "status": "succeeded" if completed else "error",
+            "claimed": True,
+            "worker_id": worker_id,
+            "job_id": job["id"],
+            "job_type": job["job_type"],
+            "artifact_uri": artifact_result["artifact_uri"],
+            "output": enriched_output,
+        }
+    except Exception as exc:
+        error = {
+            "code": "measurement_worker_error",
+            "message": str(exc),
+            "detail": {"worker_id": worker_id, "job_type": job["job_type"]},
+        }
+        return fail_claimed_job(store, job, error, worker_id=worker_id)
+
+
+def run_segment_video_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: str) -> dict[str, Any]:
+    try:
+        output = run_segment_video_job(job)
+        artifact_result = write_video_segmentation_artifact(job, output, worker_id=worker_id)
+        enriched_output = {
+            **output,
+            "tracks": artifact_result["artifact"].get("tracks", []),
+            "warnings": artifact_result["artifact"].get("warnings", output.get("warnings", [])),
+            "artifacts": {
+                "video_segmentation_json": artifact_result["artifact_uri"],
+                "mask_images": artifact_result["artifact"].get("artifacts", {}).get("mask_images", []),
+            },
+        }
+        completed = store.complete_job(str(job["id"]), enriched_output, artifact_uri=artifact_result["artifact_uri"])
+        return {
+            "status": "succeeded" if completed else "error",
+            "claimed": True,
+            "worker_id": worker_id,
+            "job_id": job["id"],
+            "job_type": job["job_type"],
+            "artifact_uri": artifact_result["artifact_uri"],
+            "output": enriched_output,
+        }
+    except Exception as exc:
+        error = {
+            "code": "video_segment_worker_error",
+            "message": str(exc),
+            "detail": {"worker_id": worker_id, "job_type": job["job_type"]},
+        }
+        return fail_claimed_job(store, job, error, worker_id=worker_id)
+
+
+def run_measure_video_once(store: ModelJobStore, job: dict[str, Any], *, worker_id: str) -> dict[str, Any]:
+    try:
+        output = run_measure_video_job(job)
+        artifact_result = write_video_measurement_artifact(job, output, worker_id=worker_id)
+        enriched_output = {
+            **output,
+            "warnings": artifact_result["artifact"].get("warnings", output.get("warnings", [])),
+            "artifacts": {
+                "video_measurement_json": artifact_result["artifact_uri"],
+            },
+        }
+        completed = store.complete_job(str(job["id"]), enriched_output, artifact_uri=artifact_result["artifact_uri"])
+        return {
+            "status": "succeeded" if completed else "error",
+            "claimed": True,
+            "worker_id": worker_id,
+            "job_id": job["id"],
+            "job_type": job["job_type"],
+            "artifact_uri": artifact_result["artifact_uri"],
+            "output": enriched_output,
+        }
+    except Exception as exc:
+        error = {
+            "code": "video_measurement_worker_error",
+            "message": str(exc),
+            "detail": {"worker_id": worker_id, "job_type": job["job_type"]},
         }
         return fail_claimed_job(store, job, error, worker_id=worker_id)
 

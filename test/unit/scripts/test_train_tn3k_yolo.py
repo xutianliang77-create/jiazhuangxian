@@ -102,6 +102,32 @@ class TrainTn3kYoloTest(unittest.TestCase):
             self.assertEqual(summary["splits"]["val"]["samples"], 1)
             self.assertEqual(summary["fixed_split_field"], "fixed_training_split")
 
+    def test_prepare_dataset_writes_multiple_boxes_per_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = create_multi_box_manifest(root)
+
+            summary = train_tn3k_yolo.prepare_dataset(
+                manifest=manifest,
+                output_root=root / "out",
+                name="unit-multibox",
+                train_ratio=0.8,
+                fixed_split_field="fixed_training_split",
+                seed=123,
+                copy_images=True,
+            )
+
+            dataset_root = Path(summary["dataset_root"])
+            labels = sorted((dataset_root / "labels" / "train").glob("*.txt"))
+            self.assertEqual(len(labels), 1)
+            self.assertEqual(
+                labels[0].read_text(encoding="utf-8"),
+                "0 0.300000 0.350000 0.400000 0.500000\n"
+                "0 0.625000 0.650000 0.250000 0.300000\n",
+            )
+            self.assertEqual(summary["class_names"], ["thyroid_nodule"])
+            self.assertEqual(summary["splits"]["train"]["boxes"], 2)
+
 
 def create_manifest(root: Path, *, benign: int, malignant: int) -> Path:
     image_dir = root / "images"
@@ -157,6 +183,48 @@ def create_duplicate_name_manifest(root: Path) -> Path:
             }
         )
     manifest = root / "duplicate-name-manifest.jsonl"
+    manifest.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return manifest
+
+
+def create_multi_box_manifest(root: Path) -> Path:
+    image_dir = root / "images"
+    image_dir.mkdir()
+    rows = []
+    for split, name in [("train", "multi.jpg"), ("val", "single.jpg")]:
+        image_path = image_dir / name
+        Image.new("RGB", (20, 20), (20, 20, 20)).save(image_path)
+        if split == "train":
+            row = {
+                "dataset_id": "tn5000_detection_clean",
+                "split": "tn5000_cleaned",
+                "image_id": image_path.stem,
+                "image_file": name,
+                "image_path": str(image_path),
+                "width": 20,
+                "height": 20,
+                "classification_label": 1,
+                "bbox_xyxy": [2, 2, 10, 12],
+                "bboxes_xyxy": [[2, 2, 10, 12], [10, 10, 15, 16]],
+                "yolo_class_ids": [0, 0],
+                "yolo_class_names": ["thyroid_nodule"],
+                "fixed_training_split": "train",
+            }
+        else:
+            row = {
+                "dataset_id": "tn5000_detection_clean",
+                "split": "tn5000_cleaned",
+                "image_id": image_path.stem,
+                "image_file": name,
+                "image_path": str(image_path),
+                "width": 20,
+                "height": 20,
+                "classification_label": 0,
+                "bbox_xyxy": [1, 1, 4, 4],
+                "fixed_training_split": "val",
+            }
+        rows.append(row)
+    manifest = root / "multi-box-manifest.jsonl"
     manifest.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
     return manifest
 

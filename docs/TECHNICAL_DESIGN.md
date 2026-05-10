@@ -63,8 +63,8 @@
 | 8 | 模型推理队列 | SQLite Job Queue + 本地 Worker 轮询 |
 | 9 | 医学知识库/RAG | CodeClaw RAG embedding/hybrid + 医学知识结构化扩展 |
 | 10 | TI-RADS 规则引擎 | TypeScript 确定性规则引擎 + SQLite 规则表 + MCP 工具 |
-| 11 | 结节检测 | YOLOv11/Ultralytics YOLO 主模型 + RT-DETR/RF-DETR 对照验证 |
-| 12 | 分割与测量 | MedSAM/MedSAM2 主线 + nnU-Net 监督基线 + Swin U-Net 对照 |
+| 11 | 结节检测 | RF-DETR-Medium 主模型 + YOLO11m 对照验证 + RT-DETR 研究对照 |
+| 12 | 分割与测量 | 静态图像 MedSAM 主线 + 视频 MedSAM2/SAM2 主线 + nnU-Net 监督基线 + Swin U-Net 对照 |
 | 13 | 良恶性分类/TI-RADS 特征识别 | ResNet50 baseline + ViT/TC-ViT 主线 + ResNet-ViT 融合 + 多模态融合增强 |
 | 14 | 报告生成 | Qwen3.6 主报告模型 + MedGemma 医学复核 + RAG 证据约束 + 模板化输出 |
 | 15 | Embedding/Reranker | Qwen3-Embedding-8B + Qwen3-Reranker-8B，BGE-M3 备选 |
@@ -717,33 +717,61 @@ Agent 只通过 MCP/HTTP 工具调用模型服务
 医生职责：最终确认、修改、签署和归档
 ```
 
+模型分工原则：
+
+- Qwen3.6 通过 CodeClaw provider 接入，承担主报告生成、检测结果结构化评估、冲突解释和医生复核重点生成。
+- MedGemma 不替代 Qwen3.6 作为主报告模型；它作为医学复核辅助模型，用于医学表达、安全风险、影像解释材料和二次复核提示。
+- RF-DETR/YOLO/RT-DETR 等视觉检测模型不走 provider 聊天通道，继续由 model-gateway 执行本地 GPU 推理并输出可审计 artifact。
+- LLM/VLM 都不得新增、删除或移动 bbox；bbox 修订只能来自医生操作或专用检测/分割模型重新推理。
+
+当前 5090 验证配置采用 CodeClaw provider `lmstudio:qwen36-35b-a3b` 调用本地 LM Studio OpenAI-compatible endpoint。Qwen3.6-35B-A3B 已完成直接 JSON 输出、CodeClaw provider 流式调用、以及 `medical-agent-worker` 检测结果结构化复核烟测；Qwen3.6-27B 当前保留为候选模型，需先解决本地运行时加载失败后再作为 fallback。
+
+验证版 `medical-agent-worker` 已把同一 provider 通道复用到 `draft_report`：报告生成前会先查询 `tirads_rules`，再按 TI-RADS 分级、随访/FNA 建议和报告安全边界检索医学 RAG，形成 `tirads_rule` + `medical_guideline` evidence pack。同步模式保持确定性模板草稿，但仍会把证据包写入 `report.evidence_json` 和 `report.structured_json.knowledge_evidence`；异步模式在配置 `llmProvider` 时，会向 Qwen3.6 提供报告模板、TI-RADS 结构化结果、规则库证据、RAG 证据和安全约束，要求返回 JSON 草稿。系统仍会强制保留医生审核提示，并将 provider 报告生成结果写入 `medical.report.llm_draft` 审计日志。
+
+MedGemma 复核辅助采用独立 provider 通道 `medicalReviewProvider`，不参与主报告生成。启用后，worker 可在 `draft_report` 同步复核，也可在后续 `safety_review` 阶段复核同一条已落库报告。5090 验证环境推荐串行调度：先加载 Qwen3.6 完成主报告，再卸载 Qwen3.6、加载 `medgemma-4b-it` 执行 `safety_review` 复核。复核输入会被压缩为报告正文、结节摘要、规则库证据和 RAG 证据摘要，避免医学模型复述大 JSON。结果写入 `report.structured_json.medical_review_assistant`，并追加 `medical.report.medgemma_review` 审计日志。
+
 ### 5.3 结节检测模型
 
 | 方案 | 优点 | 风险 | 结论 |
 |---|---|---|---|
-| YOLOv11 / Ultralytics YOLO 系列 | 实时性强、工程成熟、检测链路完整 | 默认 AGPL-3.0 或企业授权，进入正式部署前必须完成许可证审查 | 验证版主检测模型 |
-| RT-DETR | 实时 Detection Transformer，许可边界更友好，适合定制训练 | 需要甲状腺超声数据微调 | Transformer 对照模型 |
-| RF-DETR | 实时 DETR 体系，适合做检测/实例分割方向探索 | 医疗落地需要本院数据评测 | Transformer 对照模型 |
+| RF-DETR-Medium | 本轮 TN5000 同 split 验证指标最高，mAP50=0.97141，Recall=0.95992 | 输入分辨率需使用 checkpoint 原生 576；仍需院内外部验证和推理性能评估 | 验证版主检测模型 |
+| YOLOv11 / Ultralytics YOLO 系列 | 实时性强、工程成熟、检测链路完整，本轮 YOLO11m mAP50=0.95886 | 默认 AGPL-3.0 或企业授权，进入正式部署前必须完成许可证审查 | 对照检测模型和工程兜底 |
+| RT-DETR | 实时 Detection Transformer，许可边界更友好，适合定制训练 | 本轮训练 epoch 4 达标后出现 NaN，需要继续调参 | 研究对照模型，暂不进入默认推理链路 |
 | MMDetection | PyTorch 检测工具箱，模型丰富 | 工程配置较重 | 训练评测平台和模型对比框架 |
 
-验证版采用双模型验证：
+验证版采用 RF-DETR-Medium 主检测 + YOLO11m 对照检测：
 
 ```text
-主模型：YOLOv11 / Ultralytics YOLO 系列
-对照模型：RT-DETR / RF-DETR
-输出策略：主模型给出 bbox、置信度和可追踪理由；对照模型用于一致性校验
+主模型：RF-DETR-Medium
+对照模型：YOLO11m
+研究对照：RT-DETR-L
+输出策略：RF-DETR 给出默认 bbox 候选；YOLO11m 用于一致性校验、疑似漏检补充和工程兜底
+评估策略：主 LLM 读取双模型结构化结果和 IoU 对比结果，输出医生复核重点
 ```
 
 检测理由不得由大模型自由生成，应来自以下可计算信号：
 
 | 理由信号 | 说明 |
 |---|---|
-| 主模型置信度 | YOLO 检测 confidence |
-| 对照模型一致性 | RT-DETR/RF-DETR 是否检出同一区域 |
+| 主模型置信度 | RF-DETR-Medium 检测 confidence |
+| 对照模型一致性 | YOLO11m 是否检出同一区域 |
 | bbox IoU | 主模型与对照模型 bbox 重叠度 |
 | 图像质量 | image-worker 或 ImageQcAgent 输出 |
 | 边界风险 | 是否靠近文字、标尺、边缘或强伪影区域 |
 | 小结节风险 | 小尺寸结节低置信度时强制医生复核 |
+
+主 LLM 只做结果评估，不做检测：
+
+```text
+RF-DETR-Medium bbox
++ YOLO11m bbox
++ IoU/置信度/面积差/中心点距离
++ ImageQC 风险
+-> 主 LLM 生成结构化评估
+-> 医生工作台展示复核优先级、冲突说明、推荐检查重点
+```
+
+主 LLM 不得新增、删除或移动 bbox；bbox 的最终修订只能来自医生操作或专用检测/分割模型重新推理。
 
 ### 5.4 分割与测量模型
 
@@ -755,6 +783,8 @@ Agent 只通过 MCP/HTTP 工具调用模型服务
 | Swin U-Net | Transformer U-Net 分割对照 | 适合评估边界、全局上下文和小结节分割 |
 
 测量逻辑必须基于 DICOM pixel spacing 或设备标定信息。缺少标定信息时，系统只能输出像素级尺寸，不得输出毫米级医学测量结论。
+
+视频分割和测量作为独立链路实现，不把视频简单拆成无关联单帧。`thyroid.SegmentVideoNodule` 负责基于关键帧 bbox/mask prompt 生成逐帧 mask、track_id 和跨帧质量评分；`thyroid.MeasureVideoNodule` 负责选择最大径高可信帧、计算长径/短径/面积，并输出时间稳定性摘要。完整方案见 `docs/SEGMENTATION_MODEL_INTEGRATION_PLAN.md`。
 
 ### 5.5 良恶性分类与 TI-RADS 特征识别模型
 
@@ -816,8 +846,8 @@ Qwen3.6 这类大模型在 32GB 显存下应采用量化运行。图像模型、
 | 报告生成 | Qwen3.6 主报告模型 + 模板 + RAG evidence pack |
 | 医学复核 | MedGemma 辅助复核和安全提示 |
 | 多模态解释 | Qwen3-VL / MedGemma 辅助，不参与最终分级 |
-| 结节检测 | YOLOv11 主模型 + RT-DETR/RF-DETR 对照验证 |
-| 分割测量 | MedSAM/MedSAM2 + nnU-Net + Swin U-Net |
+| 结节检测 | RF-DETR-Medium 主模型 + YOLO11m 对照验证 + RT-DETR 研究对照 |
+| 分割测量 | 静态图像 MedSAM + 视频 MedSAM2/SAM2 + nnU-Net + Swin U-Net |
 | 良恶性与特征识别 | ResNet50 + ViT/TC-ViT + ResNet-ViT 融合 + 多模态融合增强 |
 | Embedding/Reranker | Qwen3-Embedding-8B + Qwen3-Reranker-8B，BGE-M3 备选 |
 | 训练框架 | PyTorch + MONAI |
@@ -1691,6 +1721,45 @@ CREATE TABLE audit_log (
 }
 ```
 
+验证版实现状态：
+
+- MCP 工具已接入 model-gateway `/model/v1/infer/thyroid/segment-nodule`。
+- 默认进入 SQLite `model_job`，job_type 为 `thyroid.segment_nodule`。
+- 未配置真实分割模型时，worker 仅生成明确标记为 `bbox_fallback` 的矩形 mask，用于链路验证和医生复核，不作为真实结节轮廓。
+- 成功后写入 `segmentation.json` 和 `mask_nodule_<index>.png`，并将 `nodule.mask_uri` 更新为 mask artifact URI。
+- 真实 MedSAM / U-Net / Swin U-Net 权重和视频 MedSAM2/SAM2 接入方案见 `docs/SEGMENTATION_MODEL_INTEGRATION_PLAN.md`，要求通过 model-gateway 适配器接入，不改变已存在 MCP 契约。
+
+#### `thyroid.SegmentVideoNodule`
+
+输出：
+
+```json
+{
+  "status": "ok",
+  "result": {
+    "video_id": "V1",
+    "segmentation_uri": "artifact://model-output/thyroid-segment-video-nodule/study/V1/job/video_segmentation.json",
+    "tracks": [
+      {
+        "track_id": "T1",
+        "nodule_id": "N1",
+        "prompt_frame_index": 42,
+        "frame_count": 180,
+        "mean_confidence": 0.84
+      }
+    ]
+  }
+}
+```
+
+设计状态：
+
+- MCP 工具已接入 model-gateway `/model/v1/infer/thyroid/segment-video-nodule`。
+- 默认 job_type 为 `thyroid.segment_video_nodule`。
+- 第一阶段主模型设计为 MedSAM2/SAM2 video predictor，输入关键帧 bbox 或医生修订 mask prompt；验证版已接入可选 `Sam2VideoSegmenter` adapter，配置权重、config 和 `sam2` 包后可尝试真实视频传播。
+- 验证版当前使用明确标记的 `video_bbox_prompt_fallback`，只在 prompt 帧生成 bbox mask，用于链路验证和医生复核。
+- 输出 `video_segmentation.json`、prompt-frame mask PNG、track 质量评分和 warning。
+
 #### `thyroid.MeasureNodule`
 
 输出：
@@ -1708,6 +1777,43 @@ CREATE TABLE audit_log (
   }
 }
 ```
+
+验证版实现状态：
+
+- MCP 工具已接入 model-gateway `/model/v1/infer/thyroid/measure-nodule`。
+- 默认进入 SQLite `model_job`，job_type 为 `thyroid.measure_nodule`。
+- worker 优先基于 mask 计算测量；无 mask 时可回退到 bbox 粗测量并标记 `requires_doctor_review=true`。
+- 只有存在 DICOM `PixelSpacing` 或人工标尺时才输出毫米值；缺失标尺时只输出像素测量，`measurement` 表中的毫米字段保持 `NULL`。
+
+#### `thyroid.MeasureVideoNodule`
+
+输出：
+
+```json
+{
+  "status": "ok",
+  "result": {
+    "video_id": "V1",
+    "measurement_uri": "artifact://model-output/thyroid-measure-video-nodule/study/V1/job/video_measurement.json",
+    "measurements": [
+      {
+        "track_id": "T1",
+        "selected_frame_index": 58,
+        "selection_reason": "max_long_axis_high_confidence",
+        "long_axis_mm": 15.2,
+        "short_axis_mm": 8.1
+      }
+    ]
+  }
+}
+```
+
+设计状态：
+
+- MCP 工具已接入 model-gateway `/model/v1/infer/thyroid/measure-video-nodule`。
+- 默认 job_type 为 `thyroid.measure_video_nodule`。
+- 默认测量策略为 `max_long_axis_high_confidence`：排除低置信、目标丢失和面积突变帧后，选择长径最大的高可信帧；验证版在只有 prompt 帧时选择该帧。
+- 输出关键帧测量、逐帧像素测量摘要、时间稳定性摘要；缺少 PixelSpacing 时毫米字段保持 `NULL`。
 
 #### `thyroid.ClassifyTiradsFeatures`
 

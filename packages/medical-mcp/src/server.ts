@@ -93,6 +93,161 @@ const TOOLS: ToolDescriptor[] = [
     },
   },
   {
+    name: "thyroid.SegmentNodule",
+    description: "Create a thyroid nodule segmentation model_job through the model-gateway.",
+    inputSchema: {
+      ...IMAGE_REQUEST_SCHEMA,
+      properties: {
+        ...IMAGE_REQUEST_SCHEMA.properties,
+        agent_task_id: { type: "string" },
+        nodule_id: { type: "string" },
+        nodule_index: { type: "number", minimum: 1 },
+        bbox: { type: "array", minItems: 4, maxItems: 4, items: { type: "number" } },
+        nodules: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nodule_id: { type: "string" },
+              nodule_index: { type: "number", minimum: 1 },
+              bbox: { type: "array", minItems: 4, maxItems: 4, items: { type: "number" } },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+            },
+            additionalProperties: false,
+          },
+        },
+        model: { type: "string" },
+        model_version: { type: "string" },
+        allow_bbox_fallback: { type: "boolean" },
+        return_mask: { type: "boolean" },
+        priority: { type: "number", minimum: 0, maximum: 1000 },
+        max_attempts: { type: "number", minimum: 1, maximum: 5 },
+      },
+    },
+  },
+  {
+    name: "thyroid.MeasureNodule",
+    description: "Create a thyroid nodule measurement model_job through the model-gateway.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        study_id: { type: "string" },
+        image_id: { type: "string" },
+        image_uri: { type: "string" },
+        agent_task_id: { type: "string" },
+        nodule_id: { type: "string" },
+        nodule_index: { type: "number", minimum: 1 },
+        bbox: { type: "array", minItems: 4, maxItems: 4, items: { type: "number" } },
+        mask_uri: { type: "string" },
+        contour: {
+          type: "array",
+          items: { type: "array", minItems: 2, items: { type: "number" } },
+        },
+        nodules: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nodule_id: { type: "string" },
+              nodule_index: { type: "number", minimum: 1 },
+              bbox: { type: "array", minItems: 4, maxItems: 4, items: { type: "number" } },
+              mask_uri: { type: "string" },
+              contour: {
+                type: "array",
+                items: { type: "array", minItems: 2, items: { type: "number" } },
+              },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+            },
+            additionalProperties: false,
+          },
+        },
+        pixel_spacing: {},
+        model: { type: "string" },
+        model_version: { type: "string" },
+        priority: { type: "number", minimum: 0, maximum: 1000 },
+        max_attempts: { type: "number", minimum: 1, maximum: 5 },
+        metadata: { type: "object" },
+        trace_id: { type: "string" },
+      },
+      required: ["study_id", "image_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "thyroid.SegmentVideoNodule",
+    description: "Create a thyroid nodule video segmentation model_job through the model-gateway.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        study_id: { type: "string" },
+        video_id: { type: "string" },
+        video_uri: { type: "string" },
+        frame_manifest_uri: { type: "string" },
+        agent_task_id: { type: "string" },
+        targets: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              nodule_id: { type: "string" },
+              track_id: { type: "string" },
+              prompt_frame_index: { type: "number", minimum: 0 },
+              bbox: { type: "array", minItems: 4, maxItems: 4, items: { type: "number" } },
+              mask_uri: { type: "string" },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+              prompt_source: { type: "string" },
+            },
+            additionalProperties: false,
+          },
+        },
+        frame_range: {
+          type: "object",
+          properties: {
+            start: { type: "number", minimum: 0 },
+            end: { type: "number", minimum: 0 },
+            stride: { type: "number", minimum: 1 },
+          },
+          additionalProperties: false,
+        },
+        model: { type: "string" },
+        model_version: { type: "string" },
+        weights_hash: { type: "string" },
+        allow_framewise_fallback: { type: "boolean" },
+        return_masks: { type: "boolean" },
+        priority: { type: "number", minimum: 0, maximum: 1000 },
+        max_attempts: { type: "number", minimum: 1, maximum: 5 },
+        metadata: { type: "object" },
+        trace_id: { type: "string" },
+      },
+      required: ["study_id", "video_id", "video_uri"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "thyroid.MeasureVideoNodule",
+    description: "Create a thyroid nodule video measurement model_job through the model-gateway.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        study_id: { type: "string" },
+        video_id: { type: "string" },
+        segmentation_uri: { type: "string" },
+        agent_task_id: { type: "string" },
+        pixel_spacing: {},
+        measurement_policy: { type: "string" },
+        model: { type: "string" },
+        model_version: { type: "string" },
+        weights_hash: { type: "string" },
+        priority: { type: "number", minimum: 0, maximum: 1000 },
+        max_attempts: { type: "number", minimum: 1, maximum: 5 },
+        metadata: { type: "object" },
+        trace_id: { type: "string" },
+      },
+      required: ["study_id", "video_id", "segmentation_uri"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "thyroid.ClassifyTiradsFeatures",
     description: "Placeholder for TI-RADS feature classification; returns a clear not-configured response until model-gateway is wired.",
     inputSchema: {
@@ -274,6 +429,14 @@ export class MedicalMcpServer {
           return json(await this.imageWorker.call("/image/v1/image-quality-check", input));
         case "thyroid.DetectNodules":
           return json(await this.modelGateway.call("/model/v1/infer/thyroid/detect-nodules", input));
+        case "thyroid.SegmentNodule":
+          return json(await this.modelGateway.call("/model/v1/infer/thyroid/segment-nodule", input));
+        case "thyroid.MeasureNodule":
+          return json(await this.modelGateway.call("/model/v1/infer/thyroid/measure-nodule", input));
+        case "thyroid.SegmentVideoNodule":
+          return json(await this.modelGateway.call("/model/v1/infer/thyroid/segment-video-nodule", input));
+        case "thyroid.MeasureVideoNodule":
+          return json(await this.modelGateway.call("/model/v1/infer/thyroid/measure-video-nodule", input));
         case "thyroid.ClassifyTiradsFeatures":
           return json(notConfigured("model_gateway_not_configured", "TI-RADS feature classification model gateway is not wired yet."));
         case "thyroid.CalculateTirads":

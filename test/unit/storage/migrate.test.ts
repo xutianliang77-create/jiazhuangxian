@@ -87,6 +87,39 @@ describe("migrate · data", () => {
     expect(currentVersion(db)).toBe(v1);
     db.close();
   });
+
+  it("repairs older version-6 data DBs before medical seed migrations", () => {
+    const dbPath = tempPath("legacy-v6-data.db");
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE schema_version (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at INTEGER NOT NULL
+      );
+      INSERT INTO schema_version(version, name, applied_at)
+      VALUES (1, 'init', 1), (2, 'session_memory', 2), (3, 'cron_runs', 3),
+             (4, 'team_runs', 4), (5, 'team_claims', 5), (6, 'team_write_proposals', 6);
+    `);
+
+    const applied = migrateIfNeeded(db, "data");
+    expect(applied).toEqual([7, 8]);
+    expect(currentVersion(db)).toBe(8);
+
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all()
+      .map((r: unknown) => (r as { name: string }).name);
+    expect(tables).toContain("medical_documents");
+    expect(tables).toContain("medical_terms");
+    expect(tables).toContain("tirads_rules");
+
+    const documentCount = db.prepare("SELECT COUNT(*) AS c FROM medical_documents").get() as { c: number };
+    const termCount = db.prepare("SELECT COUNT(*) AS c FROM medical_terms").get() as { c: number };
+    expect(documentCount.c).toBeGreaterThan(0);
+    expect(termCount.c).toBeGreaterThan(0);
+    db.close();
+  });
 });
 
 describe("migrate · audit", () => {

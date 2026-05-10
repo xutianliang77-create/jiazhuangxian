@@ -9,6 +9,8 @@ export type {
   DoctorReviewRecord,
   ImageInput,
   ImageRecord,
+  MeasurementInput,
+  MeasurementRecord,
   ModelJobInput,
   ModelJobRecord,
   NoduleInput,
@@ -29,4 +31,5 @@ export type {
   TiradsFeatureRecord,
   TiradsResultInput,
   TiradsResultRecord,
+  TiradsRuleRecord,
 } from "./caseRepo";

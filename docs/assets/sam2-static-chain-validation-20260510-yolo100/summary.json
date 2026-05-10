@@ -1,0 +1,23 @@
+{
+  "schema_version": "thyroid.sam2_static_chain_validation.v1",
+  "total_cases": 100,
+  "succeeded": 97,
+  "failed": 3,
+  "model": "sam2-thyroid-segmenter",
+  "model_version": "sam2.1-large-official-detector-prompt",
+  "prompt_source": "detector",
+  "detector_model": "yolov11-thyroid-detector",
+  "detector_selection": "highest_confidence",
+  "mean_dice": 0.769584,
+  "median_dice": 0.837804,
+  "min_dice": 0.065372,
+  "mean_iou": 0.65661,
+  "median_iou": 0.720879,
+  "min_iou": 0.03379,
+  "dice_ge_090": 22,
+  "dice_ge_095": 3,
+  "annotations": "data/artifacts/datasets/tn3k/derived/detection/annotations/test.jsonl",
+  "limit": 100,
+  "offset": 0,
+  "bbox_padding_ratio": 0.0
+}

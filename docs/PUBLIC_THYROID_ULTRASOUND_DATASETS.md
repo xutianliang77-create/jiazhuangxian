@@ -8,6 +8,7 @@
 |---|---|---|---|
 | TN3K | 已下载并解压 | `data/artifacts/datasets/tn3k/` | 分割、良恶性分类、mask 转 bbox 后做检测预训练 |
 | Sample-of-UD-TN | 已下载公开样例 | `data/artifacts/datasets/ud-tn-sample/` | 轻量 smoke test、分类链路检查 |
+| FangDai Thyroid Ultrasound Images | 已下载，最终外部验证专用 | `data/artifacts/datasets/fangdai-thyroid-ultrasound-images/` | 甲状腺癌亚型分类最终验证，不进入训练/调参 |
 | TN5000 | TODO P0：需浏览器手工下载 | `data/artifacts/datasets/tn5000/` | YOLOv11/RT-DETR 结节检测主数据集 |
 | ThyroidXL | TODO P1：需 Hugging Face 人工授权 | `data/artifacts/datasets/thyroidxl/` | 检测、分割、分类、TI-RADS 评估 |
 | ThyUS2Path | TODO P1：需手工获取官方大文件 | `data/artifacts/datasets/thyus2path/` | 病理验证分类、外部验证 |
@@ -119,11 +120,45 @@ npm run datasets:tn3k:train-yolo -- \
 - 用来快速验证图片读取、手工注册、分类目录扫描和 UI 显示链路。
 - 不作为模型训练主数据集，也不作为公开评测结论依据。
 
+### FangDai Thyroid Ultrasound Images
+
+- 来源：`https://huggingface.co/datasets/FangDai/Thyroid_Ultrasound_Images`
+- 本次下载使用：`https://hf-mirror.com/datasets/FangDai/Thyroid_Ultrasound_Images`
+- 原因：本机直连 `huggingface.co` API 超时，镜像可解析同一仓库快照。
+- Access：Hugging Face `auto gated`
+- License：Apache-2.0，数据卡包含非商业使用确认条款
+- 本地目录：`data/artifacts/datasets/fangdai-thyroid-ultrasound-images/raw`
+- Metadata：`data/artifacts/datasets/fangdai-thyroid-ultrasound-images/metadata/download_summary.json`
+- File manifest：`data/artifacts/datasets/fangdai-thyroid-ultrasound-images/metadata/file_manifest.csv`
+- Final validation lock：`data/artifacts/datasets/fangdai-thyroid-ultrasound-images/metadata/final_validation_lock.json`
+- 使用协议：`docs/FANGDAI_FINAL_VALIDATION_PROTOCOL.md`
+- Repo snapshot：`ccd08799a57b8e5c045b71883900cf3e5872d1bc`
+- Last modified：`2025-12-29T05:25:32.000Z`
+
+本地下载结果：
+
+```text
+Thyroid/FTC/ 100 images
+Thyroid/MTC/  99 images
+Thyroid/PTC/  99 images
+Total        298 images
+```
+
+注意：数据集 README 写明 900 张图像，但本次通过仓库 API 列出的 303 个文件中，实际下载到 `Thyroid/` 下的图像文件为 298 张。因此本项目以本地 `download_summary.json` 和 `file_manifest.csv` 为验证口径。
+
+使用建议：
+
+- 仅用于最终外部验证，不进入训练集、验证集、调参集或低 Dice 修正决策。
+- 当前下载内容是分类文件夹标签，未发现 bbox 或 segmentation mask。
+- 适合评估甲状腺癌亚型分类能力，尤其是 PTC / FTC / MTC 分类，不适合作为结节检测或分割训练数据。
+- 若后续仓库补齐 900 张，应新增一个版本目录，不覆盖本次快照。
+- 每次最终验证前必须运行 `scripts/lock_final_validation_dataset.py` 校验文件数量、大小和 sha256。
+
 ## 未自动下载的原因
 
 ### TN5000
 
-TN5000 是当前最适合结节检测任务的公开数据集候选，因为它面向 thyroid nodule detection and classification，包含检测标注，适合训练 YOLOv11 主检测模型和 RT-DETR/RF-DETR 对照模型。
+TN5000 是当前最适合结节检测任务的公开数据集候选，因为它面向 thyroid nodule detection and classification，包含检测标注。本轮训练后，RF-DETR-Medium 暂定为主检测模型，YOLO11m 作为对照检测模型，RT-DETR-L 作为研究对照。
 
 本机命令行访问 Figshare 下载地址时返回 AWS WAF challenge：
 

@@ -1,0 +1,844 @@
+{
+  "total_cases": 576,
+  "below_080_count": 55,
+  "below_090_count": 269,
+  "category_counts_below_080": {
+    "multi_region_gt_partial": 12,
+    "location_shift": 5,
+    "oversegmentation": 13,
+    "boundary_or_shape_mismatch": 21,
+    "undersegmentation": 4
+  },
+  "category_counts_below_090": {
+    "multi_region_gt_partial": 49,
+    "location_shift": 5,
+    "oversegmentation": 13,
+    "boundary_or_shape_mismatch": 21,
+    "undersegmentation": 4,
+    "moderate_boundary_error": 177
+  },
+  "worst_20": [
+    {
+      "case_id": "tn3k_roi_0005",
+      "dice": 0.3877071313402102,
+      "iou": 0.2404694202130223,
+      "category": "multi_region_gt_partial",
+      "gt_area": 14197,
+      "pred_area": 37280,
+      "area_ratio_pred_gt": 2.625906881735578,
+      "overlap_area": 9979,
+      "false_positive_area": 27301,
+      "false_negative_area": 4218,
+      "recall_overlap_gt": 0.7028949778122139,
+      "precision_overlap_pred": 0.26767703862660946,
+      "gt_components_raw": 195,
+      "pred_components_raw": 1,
+      "gt_components_sig": 2,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        8951,
+        4663
+      ],
+      "pred_component_sizes_sig": [
+        37280
+      ],
+      "center_distance_px": 37.900932754275075,
+      "gt_bbox": [
+        0,
+        46,
+        294,
+        170
+      ],
+      "pred_bbox": [
+        38,
+        42,
+        331,
+        242
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0005_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0005.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0005.png"
+    },
+    {
+      "case_id": "tn3k_roi_0335",
+      "dice": 0.45862706681559334,
+      "iou": 0.297544518229012,
+      "category": "location_shift",
+      "gt_area": 28047,
+      "pred_area": 81179,
+      "area_ratio_pred_gt": 2.894391557029272,
+      "overlap_area": 25047,
+      "false_positive_area": 56132,
+      "false_negative_area": 3000,
+      "recall_overlap_gt": 0.8930366884158734,
+      "precision_overlap_pred": 0.3085403860604343,
+      "gt_components_raw": 253,
+      "pred_components_raw": 1,
+      "gt_components_sig": 1,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        27355
+      ],
+      "pred_component_sizes_sig": [
+        81179
+      ],
+      "center_distance_px": 97.93029055764218,
+      "gt_bbox": [
+        0,
+        25,
+        295,
+        220
+      ],
+      "pred_bbox": [
+        0,
+        33,
+        348,
+        383
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0335_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0335.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0335.png"
+    },
+    {
+      "case_id": "tn3k_roi_0430",
+      "dice": 0.46352815190081964,
+      "iou": 0.3016834655800987,
+      "category": "location_shift",
+      "gt_area": 55870,
+      "pred_area": 16967,
+      "area_ratio_pred_gt": 0.3036871308394487,
+      "overlap_area": 16881,
+      "false_positive_area": 86,
+      "false_negative_area": 38989,
+      "recall_overlap_gt": 0.30214784320744587,
+      "precision_overlap_pred": 0.9949313373018212,
+      "gt_components_raw": 299,
+      "pred_components_raw": 2,
+      "gt_components_sig": 1,
+      "pred_components_sig": 2,
+      "gt_component_sizes_sig": [
+        54913
+      ],
+      "pred_component_sizes_sig": [
+        9963,
+        7004
+      ],
+      "center_distance_px": 76.50878014865995,
+      "gt_bbox": [
+        0,
+        19,
+        383,
+        270
+      ],
+      "pred_bbox": [
+        40,
+        49,
+        383,
+        189
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0430_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0430.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0430.png"
+    },
+    {
+      "case_id": "tn3k_roi_0358",
+      "dice": 0.4735823685677741,
+      "iou": 0.3102574019165485,
+      "category": "oversegmentation",
+      "gt_area": 17101,
+      "pred_area": 43881,
+      "area_ratio_pred_gt": 2.5659902929653238,
+      "overlap_area": 14440,
+      "false_positive_area": 29441,
+      "false_negative_area": 2661,
+      "recall_overlap_gt": 0.8443950646161044,
+      "precision_overlap_pred": 0.3290718078439416,
+      "gt_components_raw": 90,
+      "pred_components_raw": 5,
+      "gt_components_sig": 1,
+      "pred_components_sig": 2,
+      "gt_component_sizes_sig": [
+        16731
+      ],
+      "pred_component_sizes_sig": [
+        42922,
+        956
+      ],
+      "center_distance_px": 45.69011424081988,
+      "gt_bbox": [
+        45,
+        21,
+        338,
+        104
+      ],
+      "pred_bbox": [
+        0,
+        23,
+        383,
+        279
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0358_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0358.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0358.png"
+    },
+    {
+      "case_id": "tn3k_roi_0146",
+      "dice": 0.49050856120623565,
+      "iou": 0.3249495483049585,
+      "category": "multi_region_gt_partial",
+      "gt_area": 24041,
+      "pred_area": 73784,
+      "area_ratio_pred_gt": 3.069090304063891,
+      "overlap_area": 23992,
+      "false_positive_area": 49792,
+      "false_negative_area": 49,
+      "recall_overlap_gt": 0.9979618152323114,
+      "precision_overlap_pred": 0.32516534750081316,
+      "gt_components_raw": 118,
+      "pred_components_raw": 1,
+      "gt_components_sig": 2,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        11488,
+        11345
+      ],
+      "pred_component_sizes_sig": [
+        73784
+      ],
+      "center_distance_px": 1.6523530096172414,
+      "gt_bbox": [
+        44,
+        65,
+        339,
+        318
+      ],
+      "pred_bbox": [
+        1,
+        63,
+        382,
+        320
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0146_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0146.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0146.png"
+    },
+    {
+      "case_id": "tn3k_roi_0537",
+      "dice": 0.49756025066257153,
+      "iou": 0.33116818886214516,
+      "category": "location_shift",
+      "gt_area": 18516,
+      "pred_area": 21857,
+      "area_ratio_pred_gt": 1.1804385396413912,
+      "overlap_area": 10044,
+      "false_positive_area": 11813,
+      "false_negative_area": 8472,
+      "recall_overlap_gt": 0.542449773169151,
+      "precision_overlap_pred": 0.4595324152445441,
+      "gt_components_raw": 131,
+      "pred_components_raw": 1,
+      "gt_components_sig": 2,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        9417,
+        8009
+      ],
+      "pred_component_sizes_sig": [
+        21857
+      ],
+      "center_distance_px": 89.09018231064273,
+      "gt_bbox": [
+        44,
+        91,
+        339,
+        292
+      ],
+      "pred_bbox": [
+        196,
+        71,
+        358,
+        235
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0537_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0537.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0537.png"
+    },
+    {
+      "case_id": "tn3k_roi_0223",
+      "dice": 0.5048023229841412,
+      "iou": 0.33761577532118314,
+      "category": "multi_region_gt_partial",
+      "gt_area": 31322,
+      "pred_area": 85080,
+      "area_ratio_pred_gt": 2.716301641019092,
+      "overlap_area": 29380,
+      "false_positive_area": 55700,
+      "false_negative_area": 1942,
+      "recall_overlap_gt": 0.9379988506481067,
+      "precision_overlap_pred": 0.345322049835449,
+      "gt_components_raw": 37,
+      "pred_components_raw": 1,
+      "gt_components_sig": 2,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        29543,
+        383
+      ],
+      "pred_component_sizes_sig": [
+        85080
+      ],
+      "center_distance_px": 52.73966455738911,
+      "gt_bbox": [
+        43,
+        112,
+        340,
+        271
+      ],
+      "pred_bbox": [
+        1,
+        63,
+        339,
+        382
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0223_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0223.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0223.png"
+    },
+    {
+      "case_id": "tn3k_roi_0541",
+      "dice": 0.5059482692455292,
+      "iou": 0.3386417343059694,
+      "category": "boundary_or_shape_mismatch",
+      "gt_area": 7412,
+      "pred_area": 5617,
+      "area_ratio_pred_gt": 0.7578251484079871,
+      "overlap_area": 3296,
+      "false_positive_area": 2321,
+      "false_negative_area": 4116,
+      "recall_overlap_gt": 0.44468429573664325,
+      "precision_overlap_pred": 0.5867901014776571,
+      "gt_components_raw": 139,
+      "pred_components_raw": 2,
+      "gt_components_sig": 2,
+      "pred_components_sig": 2,
+      "gt_component_sizes_sig": [
+        4006,
+        2923
+      ],
+      "pred_component_sizes_sig": [
+        4182,
+        1435
+      ],
+      "center_distance_px": 63.5020760211011,
+      "gt_bbox": [
+        89,
+        56,
+        383,
+        231
+      ],
+      "pred_bbox": [
+        102,
+        70,
+        274,
+        160
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0541_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0541.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0541.png"
+    },
+    {
+      "case_id": "tn3k_roi_0192",
+      "dice": 0.5067040764021906,
+      "iou": 0.33931926578985405,
+      "category": "location_shift",
+      "gt_area": 16924,
+      "pred_area": 20143,
+      "area_ratio_pred_gt": 1.1902032616402742,
+      "overlap_area": 9391,
+      "false_positive_area": 10752,
+      "false_negative_area": 7533,
+      "recall_overlap_gt": 0.5548924604112503,
+      "precision_overlap_pred": 0.466216551655662,
+      "gt_components_raw": 188,
+      "pred_components_raw": 2,
+      "gt_components_sig": 1,
+      "pred_components_sig": 2,
+      "gt_component_sizes_sig": [
+        16310
+      ],
+      "pred_component_sizes_sig": [
+        10450,
+        9693
+      ],
+      "center_distance_px": 101.46036430889696,
+      "gt_bbox": [
+        44,
+        27,
+        339,
+        135
+      ],
+      "pred_bbox": [
+        170,
+        36,
+        329,
+        296
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0192_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0192.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0192.png"
+    },
+    {
+      "case_id": "tn3k_roi_0216",
+      "dice": 0.5179320293890697,
+      "iou": 0.34946577327055417,
+      "category": "location_shift",
+      "gt_area": 13583,
+      "pred_area": 16224,
+      "area_ratio_pred_gt": 1.194434219244644,
+      "overlap_area": 7719,
+      "false_positive_area": 8505,
+      "false_negative_area": 5864,
+      "recall_overlap_gt": 0.5682838842670985,
+      "precision_overlap_pred": 0.47577662721893493,
+      "gt_components_raw": 110,
+      "pred_components_raw": 3,
+      "gt_components_sig": 2,
+      "pred_components_sig": 3,
+      "gt_component_sizes_sig": [
+        8037,
+        4944
+      ],
+      "pred_component_sizes_sig": [
+        7624,
+        5331,
+        3269
+      ],
+      "center_distance_px": 98.39124332616187,
+      "gt_bbox": [
+        163,
+        39,
+        305,
+        333
+      ],
+      "pred_bbox": [
+        38,
+        49,
+        304,
+        287
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0216_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0216.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0216.png"
+    },
+    {
+      "case_id": "tn3k_roi_0372",
+      "dice": 0.5420560747663551,
+      "iou": 0.3717948717948718,
+      "category": "undersegmentation",
+      "gt_area": 36578,
+      "pred_area": 13712,
+      "area_ratio_pred_gt": 0.37487014052162504,
+      "overlap_area": 13630,
+      "false_positive_area": 82,
+      "false_negative_area": 22948,
+      "recall_overlap_gt": 0.3726283558423096,
+      "precision_overlap_pred": 0.9940198366394399,
+      "gt_components_raw": 96,
+      "pred_components_raw": 2,
+      "gt_components_sig": 1,
+      "pred_components_sig": 2,
+      "gt_component_sizes_sig": [
+        35899
+      ],
+      "pred_component_sizes_sig": [
+        7649,
+        6063
+      ],
+      "center_distance_px": 11.580914031073185,
+      "gt_bbox": [
+        66,
+        81,
+        383,
+        243
+      ],
+      "pred_bbox": [
+        79,
+        86,
+        383,
+        201
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0372_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0372.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0372.png"
+    },
+    {
+      "case_id": "tn3k_roi_0512",
+      "dice": 0.5614315705288413,
+      "iou": 0.390271021542738,
+      "category": "oversegmentation",
+      "gt_area": 24433,
+      "pred_area": 45588,
+      "area_ratio_pred_gt": 1.8658371874104696,
+      "overlap_area": 19656,
+      "false_positive_area": 25932,
+      "false_negative_area": 4777,
+      "recall_overlap_gt": 0.8044857365039086,
+      "precision_overlap_pred": 0.4311660963411424,
+      "gt_components_raw": 125,
+      "pred_components_raw": 1,
+      "gt_components_sig": 1,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        23879
+      ],
+      "pred_component_sizes_sig": [
+        45588
+      ],
+      "center_distance_px": 94.29482613835734,
+      "gt_bbox": [
+        0,
+        30,
+        301,
+        167
+      ],
+      "pred_bbox": [
+        66,
+        43,
+        383,
+        259
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0512_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0512.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0512.png"
+    },
+    {
+      "case_id": "tn3k_roi_0429",
+      "dice": 0.6039601218499031,
+      "iou": 0.4326238321001369,
+      "category": "multi_region_gt_partial",
+      "gt_area": 24725,
+      "pred_area": 47495,
+      "area_ratio_pred_gt": 1.9209302325581394,
+      "overlap_area": 21809,
+      "false_positive_area": 25686,
+      "false_negative_area": 2916,
+      "recall_overlap_gt": 0.8820626895854399,
+      "precision_overlap_pred": 0.45918517738709336,
+      "gt_components_raw": 273,
+      "pred_components_raw": 1,
+      "gt_components_sig": 2,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        19893,
+        4013
+      ],
+      "pred_component_sizes_sig": [
+        47495
+      ],
+      "center_distance_px": 48.47021976358569,
+      "gt_bbox": [
+        18,
+        25,
+        344,
+        233
+      ],
+      "pred_bbox": [
+        15,
+        49,
+        336,
+        232
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0429_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0429.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0429.png"
+    },
+    {
+      "case_id": "tn3k_roi_0213",
+      "dice": 0.6404961039455886,
+      "iou": 0.4711248756288625,
+      "category": "oversegmentation",
+      "gt_area": 37148,
+      "pred_area": 67830,
+      "area_ratio_pred_gt": 1.8259394853020352,
+      "overlap_area": 33619,
+      "false_positive_area": 34211,
+      "false_negative_area": 3529,
+      "recall_overlap_gt": 0.9050016151609777,
+      "precision_overlap_pred": 0.4956361491965207,
+      "gt_components_raw": 54,
+      "pred_components_raw": 2,
+      "gt_components_sig": 1,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        36187
+      ],
+      "pred_component_sizes_sig": [
+        67829
+      ],
+      "center_distance_px": 27.428355003712714,
+      "gt_bbox": [
+        45,
+        95,
+        338,
+        288
+      ],
+      "pred_bbox": [
+        74,
+        23,
+        348,
+        330
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0213_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0213.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0213.png"
+    },
+    {
+      "case_id": "tn3k_roi_0012",
+      "dice": 0.6434858387799565,
+      "iou": 0.4743672105871772,
+      "category": "multi_region_gt_partial",
+      "gt_area": 27476,
+      "pred_area": 52849,
+      "area_ratio_pred_gt": 1.923460474596011,
+      "overlap_area": 25844,
+      "false_positive_area": 27005,
+      "false_negative_area": 1632,
+      "recall_overlap_gt": 0.9406027078177318,
+      "precision_overlap_pred": 0.48901587541864555,
+      "gt_components_raw": 170,
+      "pred_components_raw": 1,
+      "gt_components_sig": 2,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        16694,
+        10120
+      ],
+      "pred_component_sizes_sig": [
+        52849
+      ],
+      "center_distance_px": 21.920818173149733,
+      "gt_bbox": [
+        45,
+        27,
+        338,
+        319
+      ],
+      "pred_bbox": [
+        50,
+        32,
+        336,
+        308
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0012_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0012.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0012.png"
+    },
+    {
+      "case_id": "tn3k_roi_0170",
+      "dice": 0.6645466532226789,
+      "iou": 0.4976187710535486,
+      "category": "multi_region_gt_partial",
+      "gt_area": 39561,
+      "pred_area": 50690,
+      "area_ratio_pred_gt": 1.2813124036298376,
+      "overlap_area": 29988,
+      "false_positive_area": 20702,
+      "false_negative_area": 9573,
+      "recall_overlap_gt": 0.7580192613937969,
+      "precision_overlap_pred": 0.5915959755375814,
+      "gt_components_raw": 183,
+      "pred_components_raw": 1,
+      "gt_components_sig": 3,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        35568,
+        1583,
+        1145
+      ],
+      "pred_component_sizes_sig": [
+        50690
+      ],
+      "center_distance_px": 58.002273639936845,
+      "gt_bbox": [
+        44,
+        59,
+        339,
+        324
+      ],
+      "pred_bbox": [
+        10,
+        47,
+        328,
+        273
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0170_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0170.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0170.png"
+    },
+    {
+      "case_id": "tn3k_roi_0096",
+      "dice": 0.6661036218937795,
+      "iou": 0.49936684200272746,
+      "category": "oversegmentation",
+      "gt_area": 11178,
+      "pred_area": 19607,
+      "area_ratio_pred_gt": 1.7540704956163893,
+      "overlap_area": 10253,
+      "false_positive_area": 9354,
+      "false_negative_area": 925,
+      "recall_overlap_gt": 0.9172481660404366,
+      "precision_overlap_pred": 0.5229254857958893,
+      "gt_components_raw": 194,
+      "pred_components_raw": 2,
+      "gt_components_sig": 2,
+      "pred_components_sig": 2,
+      "gt_component_sizes_sig": [
+        5789,
+        4745
+      ],
+      "pred_component_sizes_sig": [
+        14332,
+        5275
+      ],
+      "center_distance_px": 17.580059609864445,
+      "gt_bbox": [
+        50,
+        122,
+        345,
+        261
+      ],
+      "pred_bbox": [
+        56,
+        111,
+        341,
+        252
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0096_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0096.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0096.png"
+    },
+    {
+      "case_id": "tn3k_roi_0354",
+      "dice": 0.668202588027493,
+      "iou": 0.50172990427863,
+      "category": "oversegmentation",
+      "gt_area": 21543,
+      "pred_area": 30543,
+      "area_ratio_pred_gt": 1.4177691129369168,
+      "overlap_area": 17402,
+      "false_positive_area": 13141,
+      "false_negative_area": 4141,
+      "recall_overlap_gt": 0.8077797892586919,
+      "precision_overlap_pred": 0.5697541171463183,
+      "gt_components_raw": 120,
+      "pred_components_raw": 2,
+      "gt_components_sig": 2,
+      "pred_components_sig": 2,
+      "gt_component_sizes_sig": [
+        10583,
+        9389
+      ],
+      "pred_component_sizes_sig": [
+        23172,
+        7371
+      ],
+      "center_distance_px": 35.05662739482747,
+      "gt_bbox": [
+        44,
+        90,
+        339,
+        293
+      ],
+      "pred_bbox": [
+        51,
+        91,
+        320,
+        315
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0354_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0354.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0354.png"
+    },
+    {
+      "case_id": "tn3k_roi_0135",
+      "dice": 0.6772218846352935,
+      "iou": 0.5119693747341557,
+      "category": "multi_region_gt_partial",
+      "gt_area": 30134,
+      "pred_area": 58732,
+      "area_ratio_pred_gt": 1.9490276763788412,
+      "overlap_area": 30091,
+      "false_positive_area": 28641,
+      "false_negative_area": 43,
+      "recall_overlap_gt": 0.9985730404194597,
+      "precision_overlap_pred": 0.5123442075870054,
+      "gt_components_raw": 43,
+      "pred_components_raw": 1,
+      "gt_components_sig": 2,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        28622,
+        388
+      ],
+      "pred_component_sizes_sig": [
+        58732
+      ],
+      "center_distance_px": 12.228277322026726,
+      "gt_bbox": [
+        45,
+        90,
+        338,
+        293
+      ],
+      "pred_bbox": [
+        38,
+        84,
+        361,
+        305
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0135_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0135.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0135.png"
+    },
+    {
+      "case_id": "tn3k_roi_0565",
+      "dice": 0.6840696963950867,
+      "iou": 0.5198373306862212,
+      "category": "oversegmentation",
+      "gt_area": 33123,
+      "pred_area": 61803,
+      "area_ratio_pred_gt": 1.8658635993116566,
+      "overlap_area": 32468,
+      "false_positive_area": 29335,
+      "false_negative_area": 655,
+      "recall_overlap_gt": 0.9802252211454276,
+      "precision_overlap_pred": 0.5253466660194489,
+      "gt_components_raw": 42,
+      "pred_components_raw": 1,
+      "gt_components_sig": 1,
+      "pred_components_sig": 1,
+      "gt_component_sizes_sig": [
+        30732
+      ],
+      "pred_component_sizes_sig": [
+        61803
+      ],
+      "center_distance_px": 27.58398820546784,
+      "gt_bbox": [
+        58,
+        67,
+        325,
+        229
+      ],
+      "pred_bbox": [
+        32,
+        53,
+        335,
+        308
+      ],
+      "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0565_0000.png",
+      "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0565.png",
+      "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0565.png"
+    }
+  ]
+}

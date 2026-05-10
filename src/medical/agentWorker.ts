@@ -8,7 +8,12 @@ import {
   type SafetyRuleRecord,
   type TiradsFeatureRecord,
   type TiradsResultRecord,
+  type TiradsRuleRecord,
 } from "./storage";
+import type { EngineMessage } from "../agent/types";
+import type { MedicalKnowledgeEvidence } from "./knowledge/search";
+import { streamProviderResponse } from "../provider/client";
+import type { ProviderStatus } from "../provider/types";
 import { calculateAcrTirads, type TiradsInput } from "../../packages/medical-mcp/src/tirads";
 
 type JsonObject = Record<string, unknown>;
@@ -18,6 +23,14 @@ export interface MedicalAgentWorkerOptions {
   now?: () => number;
   imageWorkerUrl?: string;
   fetchImpl?: FetchLike;
+  llmProvider?: ProviderStatus | null;
+  llmFetchImpl?: FetchLike;
+  medicalReviewProvider?: ProviderStatus | null;
+  medicalReviewFetchImpl?: FetchLike;
+  dataDbPath?: string;
+  ragDbPath?: string;
+  workspace?: string;
+  knowledgeTopK?: number;
 }
 
 export interface MedicalAgentWorkerResult {
@@ -32,6 +45,8 @@ export interface MedicalAgentWorkerResult {
 }
 
 const DETECT_JOB_TYPE = "thyroid.detect_nodules";
+const SEGMENT_JOB_TYPE = "thyroid.segment_nodule";
+const MEASURE_JOB_TYPE = "thyroid.measure_nodule";
 const IMAGE_QC_PATH = "/image/v1/image-quality-check";
 const THYROID_REPORT_TEMPLATE_ID = "tpl-thyroid-ultrasound-draft-v1";
 const THYROID_REPORT_TEMPLATE = `甲状腺超声AI辅助报告（草稿）
@@ -53,7 +68,7 @@ AI辅助分级：
 
 提示：本报告为AI辅助草稿，需医生审核确认后生效。`;
 
-type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+type FetchLike = typeof fetch;
 
 interface WorkerResponse {
   status: "ok" | "error";
@@ -81,7 +96,7 @@ export function runMedicalAgentWorkerOnce(
   if (!task) return { status: "idle", claimed: false, workerId };
 
   try {
-    return processClaimedTask(repo, task, workerId, now);
+    return processClaimedTask(repo, task, workerId, now, options);
   } catch (err) {
     const error = {
       code: "medical_agent_worker_error",
@@ -107,7 +122,7 @@ export async function runMedicalAgentWorkerOnceAsync(
   const workerId = options.workerId ?? "medical-agent-worker";
   const now = options.now ?? Date.now;
 
-  const synced = syncWaitingModelTask(repo, workerId, now);
+  const synced = await syncWaitingModelTaskAsync(repo, workerId, now, options);
   if (synced) return synced;
 
   const task = repo.claimNextAgentTask(now());
@@ -140,7 +155,7 @@ function syncWaitingModelTask(
 ): MedicalAgentWorkerResult | null {
   for (const task of repo.listWaitingModelAgentTasks()) {
     const modelJobId = optionalString(task.output?.model_job_id);
-    const modelJob = modelJobId ? repo.getModelJob(modelJobId) : repo.findModelJobByAgentTask(task.id, DETECT_JOB_TYPE);
+    const modelJob = modelJobId ? repo.getModelJob(modelJobId) : findTaskModelJob(repo, task);
     if (!modelJob) {
       const error = {
         code: "model_job_missing",
@@ -160,8 +175,10 @@ function syncWaitingModelTask(
     if (modelJob.status === "queued" || modelJob.status === "running") continue;
     if (modelJob.status === "succeeded") {
       const completedAt = now();
-      const output = detectorSuccessOutput(repo, modelJob, workerId, completedAt);
-      repo.completeAgentTask(task.id, output, completedAt);
+      const output = modelJobSuccessOutput(repo, modelJob, workerId, completedAt);
+      const downstreamTask = queueAutomaticDownstreamTask(repo, task, modelJob, output, completedAt);
+      const completedOutput = downstreamTask ? { ...output, auto_queued_task: downstreamTask } : output;
+      repo.completeAgentTask(task.id, completedOutput, completedAt);
       return {
         status: "succeeded",
         claimed: true,
@@ -169,12 +186,78 @@ function syncWaitingModelTask(
         taskId: task.id,
         taskType: task.taskType,
         modelJobId: modelJob.id,
-        output,
+        output: completedOutput,
       };
     }
     const error = {
       code: "model_job_failed",
-      message: "Detector model job did not complete successfully.",
+      message: "Model job did not complete successfully.",
+      detail: {
+        worker_id: workerId,
+        model_job_id: modelJob.id,
+        model_job_status: modelJob.status,
+        model_job_error: modelJob.error,
+      },
+    };
+    repo.failAgentTask(task.id, error, now());
+    return {
+      status: "failed",
+      claimed: true,
+      workerId,
+      taskId: task.id,
+      taskType: task.taskType,
+      modelJobId: modelJob.id,
+      error,
+    };
+  }
+  return null;
+}
+
+async function syncWaitingModelTaskAsync(
+  repo: MedicalCaseRepo,
+  workerId: string,
+  now: () => number,
+  options: MedicalAgentWorkerOptions
+): Promise<MedicalAgentWorkerResult | null> {
+  for (const task of repo.listWaitingModelAgentTasks()) {
+    const modelJobId = optionalString(task.output?.model_job_id);
+    const modelJob = modelJobId ? repo.getModelJob(modelJobId) : findTaskModelJob(repo, task);
+    if (!modelJob) {
+      const error = {
+        code: "model_job_missing",
+        message: "Waiting medical agent task has no model_job record.",
+        detail: { worker_id: workerId, task_id: task.id },
+      };
+      repo.failAgentTask(task.id, error, now());
+      return {
+        status: "failed",
+        claimed: true,
+        workerId,
+        taskId: task.id,
+        taskType: task.taskType,
+        error,
+      };
+    }
+    if (modelJob.status === "queued" || modelJob.status === "running") continue;
+    if (modelJob.status === "succeeded") {
+      const completedAt = now();
+      const output = await modelJobSuccessOutputAsync(repo, modelJob, workerId, completedAt, options);
+      const downstreamTask = queueAutomaticDownstreamTask(repo, task, modelJob, output, completedAt);
+      const completedOutput = downstreamTask ? { ...output, auto_queued_task: downstreamTask } : output;
+      repo.completeAgentTask(task.id, completedOutput, completedAt);
+      return {
+        status: "succeeded",
+        claimed: true,
+        workerId,
+        taskId: task.id,
+        taskType: task.taskType,
+        modelJobId: modelJob.id,
+        output: completedOutput,
+      };
+    }
+    const error = {
+      code: "model_job_failed",
+      message: "Model job did not complete successfully.",
       detail: {
         worker_id: workerId,
         model_job_id: modelJob.id,
@@ -200,16 +283,17 @@ function processClaimedTask(
   repo: MedicalCaseRepo,
   task: AgentTaskRecord,
   workerId: string,
-  now: () => number
+  now: () => number,
+  options: MedicalAgentWorkerOptions = {}
 ): MedicalAgentWorkerResult {
-  if (task.taskType === "detect_nodules") {
-    const modelJob = ensureDetectorModelJob(repo, task, now());
+  if (isModelTask(task.taskType)) {
+    const modelJob = ensureModelJobForTask(repo, task, now());
     const output = {
       status: "waiting_model",
       worker_id: workerId,
       model_job_id: modelJob.id,
       job_type: modelJob.jobType,
-      message: "Detector model job has been queued; run model-worker against the same data DB.",
+      message: "Model job has been queued; run model-worker against the same data DB.",
     };
     repo.markAgentTaskWaitingModel(task.id, output, now());
     return {
@@ -224,7 +308,7 @@ function processClaimedTask(
   }
 
   const completedAt = now();
-  const output = buildSynchronousTaskOutput(repo, task, workerId, completedAt);
+  const output = buildSynchronousTaskOutput(repo, task, workerId, completedAt, options);
   repo.completeAgentTask(task.id, output, completedAt);
   return {
     status: "succeeded",
@@ -243,12 +327,16 @@ async function processClaimedTaskAsync(
   now: () => number,
   options: MedicalAgentWorkerOptions
 ): Promise<MedicalAgentWorkerResult> {
-  if (task.taskType === "detect_nodules") return processClaimedTask(repo, task, workerId, now);
+  if (isModelTask(task.taskType)) return processClaimedTask(repo, task, workerId, now, options);
 
   const output =
     task.taskType === "image_qc"
       ? await buildImageQcTaskOutput(repo, task, workerId, options, now())
-      : buildSynchronousTaskOutput(repo, task, workerId, now());
+      : task.taskType === "draft_report"
+        ? await buildDraftReportTaskOutputAsync(repo, task, baseTaskOutput(task, workerId), workerId, now(), options)
+      : task.taskType === "safety_review"
+        ? await buildSafetyReviewTaskOutputAsync(repo, task, baseTaskOutput(task, workerId), workerId, now(), options)
+      : buildSynchronousTaskOutput(repo, task, workerId, now(), options);
   repo.completeAgentTask(task.id, output, now());
   return {
     status: "succeeded",
@@ -258,6 +346,13 @@ async function processClaimedTaskAsync(
     taskType: task.taskType,
     output,
   };
+}
+
+function ensureModelJobForTask(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobRecord {
+  if (task.taskType === "detect_nodules") return ensureDetectorModelJob(repo, task, now);
+  if (task.taskType === "segment_nodules") return ensureSegmentModelJob(repo, task, now);
+  if (task.taskType === "measure_nodules") return ensureMeasureModelJob(repo, task, now);
+  throw new Error(`unsupported model task type: ${task.taskType}`);
 }
 
 function ensureDetectorModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobRecord {
@@ -295,6 +390,113 @@ function ensureDetectorModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, no
     },
     now,
   });
+}
+
+function ensureSegmentModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobRecord {
+  const existing = repo.findModelJobByAgentTask(task.id, SEGMENT_JOB_TYPE);
+  if (existing) return existing;
+  const { studyId, imageId, image } = taskImage(repo, task);
+  const nodules = selectTaskNodules(repo.listNodulesByStudy(studyId), task);
+  return repo.createModelJob({
+    studyId,
+    imageId,
+    agentTaskId: task.id,
+    jobType: SEGMENT_JOB_TYPE,
+    priority: optionalNumber(task.input.priority) ?? 110,
+    maxAttempts: optionalNumber(task.input.max_attempts) ?? 1,
+    modelName: optionalString(task.input.model) ?? "nnunet-tight-roi-segmenter",
+    modelVersion: optionalString(task.input.model_version) ?? "tn3k-tight-roi-5fold-best",
+    weightsHash: optionalString(task.input.weights_hash),
+    input: {
+      study_id: studyId,
+      image_id: imageId,
+      image_uri: image.modelReadyUri ?? image.previewUri ?? image.fileUri,
+      nodules: nodules.map((nodule) => ({
+        nodule_id: nodule.id,
+        nodule_index: nodule.noduleIndex,
+        bbox: nodule.bbox,
+        confidence: nodule.detectionConfidence,
+      })),
+      allow_bbox_fallback: optionalBoolean(task.input.allow_bbox_fallback) ?? true,
+      return_mask: true,
+      metadata: {
+        file_type: image.fileType,
+        width: image.width,
+        height: image.height,
+        pixel_spacing: image.pixelSpacing,
+      },
+      trace_id: task.id,
+    },
+    now,
+  });
+}
+
+function ensureMeasureModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobRecord {
+  const existing = repo.findModelJobByAgentTask(task.id, MEASURE_JOB_TYPE);
+  if (existing) return existing;
+  const { studyId, imageId, image } = taskImage(repo, task);
+  const nodules = selectTaskNodules(repo.listNodulesByStudy(studyId), task);
+  return repo.createModelJob({
+    studyId,
+    imageId,
+    agentTaskId: task.id,
+    jobType: MEASURE_JOB_TYPE,
+    priority: optionalNumber(task.input.priority) ?? 120,
+    maxAttempts: optionalNumber(task.input.max_attempts) ?? 1,
+    modelName: optionalString(task.input.model) ?? "mask-measurement-worker",
+    modelVersion: optionalString(task.input.model_version) ?? "validation-measurement-v1",
+    weightsHash: optionalString(task.input.weights_hash),
+    input: {
+      study_id: studyId,
+      image_id: imageId,
+      image_uri: image.modelReadyUri ?? image.previewUri ?? image.fileUri,
+      nodules: nodules.map((nodule) => ({
+        nodule_id: nodule.id,
+        nodule_index: nodule.noduleIndex,
+        bbox: nodule.bbox,
+        mask_uri: nodule.maskUri,
+        confidence: nodule.detectionConfidence,
+      })),
+      pixel_spacing: image.pixelSpacing,
+      metadata: {
+        file_type: image.fileType,
+        width: image.width,
+        height: image.height,
+      },
+      trace_id: task.id,
+    },
+    now,
+  });
+}
+
+function selectTaskNodules(nodules: NoduleRecord[], task: AgentTaskRecord): NoduleRecord[] {
+  const targetIds = new Set(optionalStringArray(task.input.target_nodule_ids));
+  const targetId = optionalString(task.input.nodule_id);
+  if (targetId) targetIds.add(targetId);
+  const targetIndex = optionalInteger(task.input.nodule_index);
+
+  if (targetIds.size === 0 && targetIndex === undefined) return nodules;
+
+  const selected = nodules.filter(
+    (nodule) => targetIds.has(nodule.id) || (targetIndex !== undefined && nodule.noduleIndex === targetIndex)
+  );
+  if (selected.length === 0) {
+    throw new Error(`no nodules matched task target for ${task.taskType}: ${task.id}`);
+  }
+  return selected;
+}
+
+function taskImage(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord
+): { studyId: string; imageId: string; image: ImageRecord } {
+  const studyId = requiredString(task.input.study_id, "study_id");
+  const imageId = requiredString(task.input.image_id, "image_id");
+  const image = repo.getImage(imageId);
+  if (!image || image.studyId !== studyId) {
+    throw new Error(`image not found for task ${task.id}: ${imageId}`);
+  }
+  return { studyId, imageId, image };
 }
 
 async function buildImageQcTaskOutput(
@@ -429,18 +631,12 @@ function buildSynchronousTaskOutput(
   repo: MedicalCaseRepo,
   task: AgentTaskRecord,
   workerId: string,
-  now: number
+  now: number,
+  options: MedicalAgentWorkerOptions = {}
 ): JsonObject {
-  const studyId = optionalString(task.input.study_id);
+  const base = baseTaskOutput(task, workerId);
   const imageId = optionalString(task.input.image_id);
   const image = imageId ? repo.getImage(imageId) : null;
-  const base = {
-    status: "ok",
-    worker_id: workerId,
-    validation_mode: true,
-    study_id: studyId,
-    image_id: imageId,
-  };
 
   switch (task.taskType) {
     case "image_qc":
@@ -458,7 +654,7 @@ function buildSynchronousTaskOutput(
     case "calculate_tirads":
       return buildCalculateTiradsTaskOutput(repo, task, base, now);
     case "draft_report":
-      return buildDraftReportTaskOutput(repo, task, base, workerId, now);
+      return buildDraftReportTaskOutput(repo, task, base, workerId, now, options);
     case "safety_review":
       return buildSafetyReviewTaskOutput(repo, task, base, workerId, now);
     default:
@@ -466,56 +662,63 @@ function buildSynchronousTaskOutput(
   }
 }
 
+function baseTaskOutput(task: AgentTaskRecord, workerId: string): JsonObject {
+  return {
+    status: "ok",
+    worker_id: workerId,
+    validation_mode: true,
+    study_id: optionalString(task.input.study_id),
+    image_id: optionalString(task.input.image_id),
+  };
+}
+
+interface DraftReportContext {
+  studyId: string;
+  template: string;
+  draftText: string;
+  structured: JsonObject;
+  evidence: JsonObject[];
+  sections: Record<string, string>;
+  tiradsResults: TiradsResultRecord[];
+  knowledgeEvidence: JsonObject[];
+  knowledgeSearches: JsonObject[];
+  knowledgeWarnings: string[];
+}
+
+interface ModelResultEvidenceContext {
+  segmentationByNoduleId: Map<string, JsonObject>;
+  measurementByNoduleId: Map<string, JsonObject>;
+  evidence: JsonObject[];
+}
+
+interface ProviderDraftReport {
+  result: JsonObject;
+  warnings: string[];
+  draftText?: string;
+  error?: JsonObject;
+}
+
+interface ProviderMedicalReview {
+  result: JsonObject;
+  warnings: string[];
+  error?: JsonObject;
+}
+
 function buildDraftReportTaskOutput(
   repo: MedicalCaseRepo,
   task: AgentTaskRecord,
   base: JsonObject,
   workerId: string,
-  now: number
+  now: number,
+  options: MedicalAgentWorkerOptions = {}
 ): JsonObject {
-  const studyId = requiredString(task.input.study_id, "study_id");
-  const nodules = repo.listNodulesByStudy(studyId);
-  const noduleById = new Map(nodules.map((nodule) => [nodule.id, nodule]));
-  const tiradsResults = latestTiradsResultPerNodule(repo.listTiradsResultsByStudy(studyId), noduleById);
-  const reportNodules = tiradsResults.map((result) => {
-    const nodule = noduleById.get(result.noduleId);
-    return {
-      nodule_id: result.noduleId,
-      nodule_index: nodule?.noduleIndex ?? null,
-      tirads_result_id: result.id,
-      score: result.score,
-      category: result.category,
-      recommendation: result.recommendation,
-      evidence_rules: result.evidenceRules,
-    };
-  });
-  const sections = buildReportSections(nodules, tiradsResults, noduleById);
-  const template = repo.getActiveReportTemplateText(THYROID_REPORT_TEMPLATE_ID) ?? THYROID_REPORT_TEMPLATE;
-  const draftText = fillReportTemplate(template, sections);
-  const evidence = reportNodules.map((item) => ({
-    source: "tirads_result",
-    nodule_id: item.nodule_id,
-    tirads_result_id: item.tirads_result_id,
-    evidence_rules: item.evidence_rules,
-  }));
-  const report = repo.createReport({
-    studyId,
-    analysisSessionId: task.analysisSessionId,
-    reportType: "thyroid_ultrasound",
-    status: "draft",
-    templateId: THYROID_REPORT_TEMPLATE_ID,
-    draftText,
+  const context = buildDraftReportContext(repo, task, now, options);
+  const report = persistDraftReport(repo, task, workerId, context, {
+    draftText: context.draftText,
     structured: {
-      study_id: studyId,
-      analysis_session_id: task.analysisSessionId,
+      ...context.structured,
       generator: "structured_template_validation",
-      generated_at: now,
-      sections,
-      nodules: reportNodules,
-      review_required: true,
     },
-    evidence,
-    createdByAgent: workerId,
     now,
   });
 
@@ -533,9 +736,460 @@ function buildDraftReportTaskOutput(
     },
     warnings: uniqueStrings([
       "doctor_review_required",
-      tiradsResults.length === 0 ? "no_tirads_results_for_report" : undefined,
+      context.tiradsResults.length === 0 ? "no_tirads_results_for_report" : undefined,
     ]),
   };
+}
+
+async function buildDraftReportTaskOutputAsync(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  base: JsonObject,
+  workerId: string,
+  now: number,
+  options: MedicalAgentWorkerOptions
+): Promise<JsonObject> {
+  const context = buildDraftReportContext(repo, task, now, options);
+  const providerDraft = await draftReportWithProvider(task, context, options);
+  const usableProviderDraft = providerDraft?.draftText && !providerDraft.error ? providerDraft : null;
+  const draftText = ensureDoctorReviewNotice(usableProviderDraft?.draftText ?? context.draftText);
+  const medicalReview = await reviewReportWithMedicalProvider(task, context, draftText, options);
+  const usableMedicalReview = medicalReview && !medicalReview.error ? medicalReview : null;
+  const structured = {
+    ...context.structured,
+    generator: usableProviderDraft ? "llm_provider_structured_report" : "structured_template_validation",
+    ...(usableProviderDraft
+      ? {
+          llm_provider_report: usableProviderDraft.result,
+          provider: providerSnapshot(options.llmProvider!),
+        }
+      : {}),
+    ...(usableMedicalReview
+      ? {
+          medical_review_assistant: usableMedicalReview.result,
+          medical_review_provider: providerSnapshot(options.medicalReviewProvider!),
+        }
+      : {}),
+  };
+  const report = persistDraftReport(repo, task, workerId, context, { draftText, structured, now });
+  const draftAudit =
+    providerDraft && !providerDraft.error
+      ? repo.createAuditLog({
+          studyId: context.studyId,
+          actorType: "agent",
+          actorId: workerId,
+          action: "medical.report.llm_draft",
+          targetType: "report",
+          targetId: report.id,
+          detail: {
+            provider: providerSnapshot(options.llmProvider!),
+            report_id: report.id,
+            result: providerDraft.result,
+            warnings: providerDraft.warnings,
+          },
+          traceId: task.id,
+          now,
+        })
+      : null;
+  const reviewAudit =
+    medicalReview && !medicalReview.error
+      ? repo.createAuditLog({
+          studyId: context.studyId,
+          actorType: "agent",
+          actorId: workerId,
+          action: "medical.report.medgemma_review",
+          targetType: "report",
+          targetId: report.id,
+          detail: {
+            provider: providerSnapshot(options.medicalReviewProvider!),
+            report_id: report.id,
+            result: medicalReview.result,
+            warnings: medicalReview.warnings,
+          },
+          traceId: task.id,
+          now,
+        })
+      : null;
+
+  return {
+    ...base,
+    validation_mode: false,
+    result: {
+      report_id: report.id,
+      report_status: report.status,
+      report_type: report.reportType,
+      template_id: report.templateId,
+      draft_text: report.draftText,
+      structured: report.structured,
+      evidence: report.evidence,
+      ...(providerDraft
+        ? {
+            llm_provider_report: {
+              ...providerDraft.result,
+              ...(draftAudit ? { audit_log_id: draftAudit.id } : {}),
+              provider: providerSnapshot(options.llmProvider!),
+            },
+          }
+        : {}),
+      ...(providerDraft?.error ? { llm_provider_error: providerDraft.error } : {}),
+      ...(medicalReview
+        ? {
+            medical_review_assistant: {
+              ...medicalReview.result,
+              ...(reviewAudit ? { audit_log_id: reviewAudit.id } : {}),
+              provider: providerSnapshot(options.medicalReviewProvider!),
+            },
+          }
+        : {}),
+      ...(medicalReview?.error ? { medical_review_error: medicalReview.error } : {}),
+    },
+    warnings: uniqueStrings([
+      "doctor_review_required",
+      context.tiradsResults.length === 0 ? "no_tirads_results_for_report" : undefined,
+      ...(providerDraft?.warnings ?? []),
+      ...(medicalReview?.warnings ?? []),
+    ]),
+  };
+}
+
+function buildDraftReportContext(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  now: number,
+  options: MedicalAgentWorkerOptions = {}
+): DraftReportContext {
+  const studyId = requiredString(task.input.study_id, "study_id");
+  const nodules = repo.listNodulesByStudy(studyId);
+  const noduleById = new Map(nodules.map((nodule) => [nodule.id, nodule]));
+  const modelResultEvidence = buildModelResultEvidence(repo, studyId, nodules);
+  const tiradsResults = latestTiradsResultPerNodule(repo.listTiradsResultsByStudy(studyId), noduleById);
+  const reportNodules = tiradsResults.map((result) => {
+    const nodule = noduleById.get(result.noduleId);
+    return {
+      nodule_id: result.noduleId,
+      nodule_index: nodule?.noduleIndex ?? null,
+      tirads_result_id: result.id,
+      score: result.score,
+      category: result.category,
+      recommendation: result.recommendation,
+      evidence_rules: result.evidenceRules,
+      segmentation: modelResultEvidence.segmentationByNoduleId.get(result.noduleId) ?? null,
+      measurement: modelResultEvidence.measurementByNoduleId.get(result.noduleId) ?? null,
+    };
+  });
+  const sections = buildReportSections(nodules, tiradsResults, noduleById, modelResultEvidence);
+  const template = repo.getActiveReportTemplateText(THYROID_REPORT_TEMPLATE_ID) ?? THYROID_REPORT_TEMPLATE;
+  const tiradsResultEvidence = reportNodules.map((item) => ({
+    source: "tirads_result",
+    nodule_id: item.nodule_id,
+    tirads_result_id: item.tirads_result_id,
+    evidence_rules: item.evidence_rules,
+  }));
+  const ruleCodes = uniqueStrings(tiradsResults.flatMap((result) => evidenceRuleCodes(result.evidenceRules)));
+  const tiradsRuleEvidence = buildTiradsRuleEvidence(repo, ruleCodes);
+  const guidelineEvidence = buildGuidelineEvidence(repo, tiradsResults, options);
+  const knowledgeWarnings = uniqueStrings([
+    ...guidelineEvidence.warnings,
+    tiradsRuleEvidence.missingRuleCodes.length > 0
+      ? `tirads_rule_missing:${tiradsRuleEvidence.missingRuleCodes.join(",")}`
+      : undefined,
+  ]);
+  const knowledgeEvidence = [...tiradsRuleEvidence.evidence, ...guidelineEvidence.evidence];
+  const evidence = [...tiradsResultEvidence, ...modelResultEvidence.evidence, ...knowledgeEvidence];
+  sections.evidence_summary = formatReportEvidenceSummary(evidence);
+  return {
+    studyId,
+    template,
+    draftText: fillReportTemplate(template, sections),
+    structured: {
+      study_id: studyId,
+      analysis_session_id: task.analysisSessionId,
+      generator: "structured_template_validation",
+      generated_at: now,
+      sections,
+      nodules: reportNodules,
+      knowledge_evidence: {
+        tirads_rule_count: tiradsRuleEvidence.evidence.length,
+        missing_rule_codes: tiradsRuleEvidence.missingRuleCodes,
+        guideline_chunk_count: guidelineEvidence.evidence.length,
+        searches: guidelineEvidence.searches,
+        warnings: knowledgeWarnings,
+      },
+      model_evidence: {
+        segmentation_count: modelResultEvidence.segmentationByNoduleId.size,
+        measurement_count: modelResultEvidence.measurementByNoduleId.size,
+      },
+      review_required: true,
+    },
+    evidence,
+    sections,
+    tiradsResults,
+    knowledgeEvidence,
+    knowledgeSearches: guidelineEvidence.searches,
+    knowledgeWarnings,
+  };
+}
+
+function persistDraftReport(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  workerId: string,
+  context: DraftReportContext,
+  input: {
+    draftText: string;
+    structured: JsonObject;
+    now: number;
+  }
+): ReportRecord {
+  return repo.createReport({
+    studyId: context.studyId,
+    analysisSessionId: task.analysisSessionId,
+    reportType: "thyroid_ultrasound",
+    status: "draft",
+    templateId: THYROID_REPORT_TEMPLATE_ID,
+    draftText: input.draftText,
+    structured: input.structured,
+    evidence: context.evidence,
+    createdByAgent: workerId,
+    now: input.now,
+  });
+}
+
+async function draftReportWithProvider(
+  task: AgentTaskRecord,
+  context: DraftReportContext,
+  options: MedicalAgentWorkerOptions
+): Promise<ProviderDraftReport | null> {
+  const provider = options.llmProvider;
+  if (!provider) return null;
+
+  let text = "";
+  try {
+    for await (const chunk of streamProviderResponse(provider, draftReportMessages(task, context), {
+      fetchImpl: options.llmFetchImpl ?? fetch,
+      disablePromptRedact: true,
+    })) {
+      text += chunk;
+    }
+  } catch (err) {
+    return {
+      result: {
+        status: "provider_failed",
+        provider: providerSnapshot(provider),
+      },
+      error: {
+        code: "llm_provider_report_failed",
+        message: err instanceof Error ? err.message : String(err),
+        detail: providerSnapshot(provider),
+      },
+      warnings: ["llm_provider_report_failed"],
+    };
+  }
+
+  const parsed = parseProviderJson(text);
+  if (!parsed) {
+    return {
+      result: {
+        status: "unstructured_response",
+        raw_text: text.slice(0, 4000),
+      },
+      warnings: ["llm_provider_report_parse_failed"],
+    };
+  }
+
+  const draftText = providerDraftText(parsed, context);
+  return {
+    result: parsed,
+    draftText,
+    warnings: uniqueStrings([
+      ...optionalStringArray(parsed.warnings),
+      draftText ? undefined : "llm_provider_report_missing_draft_text",
+    ]),
+  };
+}
+
+function draftReportMessages(task: AgentTaskRecord, context: DraftReportContext): EngineMessage[] {
+  return [
+    {
+      id: `medical-report-draft-system-${task.id}`,
+      role: "system",
+      source: "local",
+      text: [
+        "你是甲状腺超声 AI 辅助报告草稿生成模型。",
+        "只能根据输入的结构化结节、TI-RADS 规则结果、模板字段、规则库和医学知识库证据生成草稿。",
+        "不得给出最终诊断，不得新增未提供的结节、尺寸、分级、建议或证据。",
+        "涉及分级、随访、FNA 或安全边界的表达必须绑定 evidence 中的 tirads_rule 或 medical_guideline。",
+        "必须保留医生审核确认提示；最终报告必须由医生确认。",
+        "只输出 JSON，不要输出 Markdown。",
+      ].join("\n"),
+    },
+    {
+      id: `medical-report-draft-user-${task.id}`,
+      role: "user",
+      source: "local",
+      text: JSON.stringify({
+        task: "draft_thyroid_ultrasound_report",
+        required_schema: {
+          status: "drafted",
+          draft_text: "string",
+          sections: {
+            thyroid_description: "string",
+            nodule_descriptions: "string",
+            tirads_summary: "string",
+            recommendation: "string",
+            evidence_summary: "string",
+          },
+          doctor_review_required: true,
+          warnings: ["string"],
+          limitations: ["string"],
+        },
+        constraints: [
+          "Use only the supplied structured findings, TI-RADS rules, and medical knowledge evidence.",
+          "Do not invent measurements, TI-RADS categories, FNA/follow-up recommendations, or diagnoses.",
+          "If guideline evidence is missing, state that evidence is insufficient and keep doctor review required.",
+          "Do not state malignancy as a final diagnosis.",
+          "The report is an AI-assisted draft and must require doctor review.",
+        ],
+        template_id: THYROID_REPORT_TEMPLATE_ID,
+        template: context.template,
+        fallback_sections: context.sections,
+        structured: context.structured,
+        evidence: providerEvidencePack(context.evidence),
+      }, null, 2),
+    },
+  ];
+}
+
+async function reviewReportWithMedicalProvider(
+  task: AgentTaskRecord,
+  context: DraftReportContext,
+  draftText: string,
+  options: MedicalAgentWorkerOptions
+): Promise<ProviderMedicalReview | null> {
+  const provider = options.medicalReviewProvider;
+  if (!provider) return null;
+
+  let text = "";
+  try {
+    for await (const chunk of streamProviderResponse(provider, medicalReviewMessages(task, context, draftText), {
+      fetchImpl: options.medicalReviewFetchImpl ?? fetch,
+      disablePromptRedact: true,
+    })) {
+      text += chunk;
+    }
+  } catch (err) {
+    return {
+      result: {
+        status: "provider_failed",
+        provider: providerSnapshot(provider),
+      },
+      error: {
+        code: "medical_review_provider_failed",
+        message: err instanceof Error ? err.message : String(err),
+        detail: providerSnapshot(provider),
+      },
+      warnings: ["medical_review_provider_failed"],
+    };
+  }
+
+  const parsed = parseProviderJson(text);
+  if (!parsed) {
+    return {
+      result: {
+        status: "unstructured_response",
+        raw_text: text.slice(0, 4000),
+      },
+      warnings: ["medical_review_provider_parse_failed"],
+    };
+  }
+
+  return {
+    result: normalizeMedicalReviewResult(parsed),
+    warnings: stringArrayValue(parsed.warnings),
+  };
+}
+
+function medicalReviewMessages(
+  task: AgentTaskRecord,
+  context: DraftReportContext,
+  draftText: string
+): EngineMessage[] {
+  return [
+    {
+      id: `medical-report-review-system-${task.id}`,
+      role: "system",
+      source: "local",
+      text: [
+        "你是医学复核辅助模型 MedGemma，用于复核甲状腺超声 AI 辅助报告草稿。",
+        "你的任务是发现医学表达、安全风险、证据缺口和医生复核重点。",
+        "你不能替代 Qwen3.6 生成主报告，不能改写 bbox，不能给出最终诊断。",
+        "不要复述输入，不要输出 required_schema，不要输出 Markdown 代码块。",
+        "只输出 JSON，不要输出 Markdown。",
+      ].join("\n"),
+    },
+    {
+      id: `medical-report-review-user-${task.id}`,
+      role: "user",
+      source: "local",
+      text: JSON.stringify({
+        task: "review_thyroid_ultrasound_report_draft",
+        required_schema: {
+          status: "reviewed",
+          medical_expression_assessment: "acceptable | needs_revision | unsafe",
+          safety_assessment: "safe | needs_review | unsafe",
+          summary_zh: "string",
+          doctor_review_focus: ["string"],
+          suggested_edits: ["string"],
+          warnings: ["string"],
+          limitations: ["string"],
+          role: "medical_review_assistant",
+        },
+        constraints: [
+          "Return one JSON object only.",
+          "Do not echo the input payload or schema.",
+          "Do not rewrite the main report.",
+          "Do not add or remove findings, measurements, TI-RADS categories, or recommendations.",
+          "Check whether the report statements are supported by the supplied tirads_rule and medical_guideline evidence.",
+          "Do not give a final diagnosis.",
+          "Focus on medical expression, safety, evidence gaps, and doctor review priorities.",
+        ],
+        draft_text: draftText,
+        structured: context.structured,
+        evidence: providerEvidencePack(context.evidence),
+      }, null, 2),
+    },
+  ];
+}
+
+function providerDraftText(parsed: JsonObject, context: DraftReportContext): string | undefined {
+  const direct = optionalString(parsed.draft_text);
+  if (direct) return direct;
+  const providerSections = asJsonObject(parsed.sections);
+  if (!providerSections) return undefined;
+  const sections = { ...context.sections };
+  for (const key of Object.keys(sections)) {
+    const value = optionalString(providerSections[key]);
+    if (value) sections[key] = value;
+  }
+  return fillReportTemplate(context.template, sections);
+}
+
+function normalizeMedicalReviewResult(parsed: JsonObject): JsonObject {
+  return {
+    ...parsed,
+    status: optionalString(parsed.status) ?? "reviewed",
+    doctor_review_focus: stringArrayValue(parsed.doctor_review_focus),
+    suggested_edits: stringArrayValue(parsed.suggested_edits),
+    warnings: stringArrayValue(parsed.warnings),
+    limitations: stringArrayValue(parsed.limitations),
+    role: "medical_review_assistant",
+  };
+}
+
+function ensureDoctorReviewNotice(text: string): string {
+  return /医生审核|医生确认|doctor review/i.test(text)
+    ? text
+    : `${text.trim()}\n\n提示：本报告为AI辅助草稿，需医生审核确认后生效。`;
 }
 
 function buildSafetyReviewTaskOutput(
@@ -590,6 +1244,194 @@ function buildSafetyReviewTaskOutput(
   };
 }
 
+async function buildSafetyReviewTaskOutputAsync(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  base: JsonObject,
+  workerId: string,
+  now: number,
+  options: MedicalAgentWorkerOptions
+): Promise<JsonObject> {
+  const output = buildSafetyReviewTaskOutput(repo, task, base, workerId, now);
+  const reportId = optionalString((output.result as JsonObject | undefined)?.report_id);
+  const report = reportId ? repo.getReport(reportId) : null;
+  if (!report || !options.medicalReviewProvider) return output;
+
+  const studyId = requiredString(task.input.study_id, "study_id");
+  const medicalReview = await reviewPersistedReportWithMedicalProvider(task, report, options);
+  const warnings = uniqueStrings([...optionalStringArray(output.warnings), ...(medicalReview?.warnings ?? [])]);
+  if (!medicalReview) return { ...output, warnings };
+
+  if (medicalReview.error) {
+    return {
+      ...output,
+      result: {
+        ...(output.result as JsonObject),
+        medical_review_error: medicalReview.error,
+      },
+      warnings,
+    };
+  }
+
+  const structured = {
+    ...report.structured,
+    medical_review_assistant: medicalReview.result,
+    medical_review_provider: providerSnapshot(options.medicalReviewProvider),
+  };
+  repo.updateReportStructured(report.id, structured, now);
+  const audit = repo.createAuditLog({
+    studyId,
+    actorType: "agent",
+    actorId: workerId,
+    action: "medical.report.medgemma_review",
+    targetType: "report",
+    targetId: report.id,
+    detail: {
+      provider: providerSnapshot(options.medicalReviewProvider),
+      result: medicalReview.result,
+      mode: "safety_review",
+    },
+    traceId: task.id,
+    now,
+  });
+
+  return {
+    ...output,
+    result: {
+      ...(output.result as JsonObject),
+      medical_review_assistant: {
+        ...medicalReview.result,
+        audit_log_id: audit.id,
+        provider: providerSnapshot(options.medicalReviewProvider),
+      },
+    },
+    warnings,
+  };
+}
+
+async function reviewPersistedReportWithMedicalProvider(
+  task: AgentTaskRecord,
+  report: ReportRecord,
+  options: MedicalAgentWorkerOptions
+): Promise<ProviderMedicalReview | null> {
+  const provider = options.medicalReviewProvider;
+  if (!provider) return null;
+  let text = "";
+  try {
+    for await (const chunk of streamProviderResponse(provider, persistedReportReviewMessages(task, report), {
+      fetchImpl: options.medicalReviewFetchImpl ?? fetch,
+      disablePromptRedact: true,
+    })) {
+      text += chunk;
+    }
+  } catch (err) {
+    return {
+      result: {
+        status: "provider_failed",
+        provider: providerSnapshot(provider),
+      },
+      error: {
+        code: "medical_review_provider_failed",
+        message: err instanceof Error ? err.message : String(err),
+        detail: providerSnapshot(provider),
+      },
+      warnings: ["medical_review_provider_failed"],
+    };
+  }
+  const parsed = parseProviderJson(text);
+  if (!parsed) {
+    return {
+      result: {
+        status: "unstructured_response",
+        raw_text: text.slice(0, 4000),
+      },
+      warnings: ["medical_review_provider_parse_failed"],
+    };
+  }
+  return {
+    result: normalizeMedicalReviewResult(parsed),
+    warnings: stringArrayValue(parsed.warnings),
+  };
+}
+
+function persistedReportReviewMessages(task: AgentTaskRecord, report: ReportRecord): EngineMessage[] {
+  return [
+    {
+      id: `medical-report-review-system-${task.id}`,
+      role: "system",
+      source: "local",
+      text: [
+        "你是医学复核辅助模型 MedGemma，用于复核甲状腺超声 AI 辅助报告草稿。",
+        "你的任务是发现医学表达、安全风险、证据缺口和医生复核重点。",
+        "你不能替代 Qwen3.6 生成主报告，不能改写 bbox，不能给出最终诊断。",
+        "不要复述输入，不要输出 schema，不要输出 Markdown 代码块。",
+        "只输出 JSON，不要输出 Markdown。",
+      ].join("\n"),
+    },
+    {
+      id: `medical-report-review-user-${task.id}`,
+      role: "user",
+      source: "local",
+      text: [
+        "请复核下面这份甲状腺超声 AI 辅助报告草稿。",
+        "只输出一个 JSON 对象，不要复述输入，不要输出 Markdown，不要输出 schema。",
+        "JSON 字段必须包含：status, medical_expression_assessment, safety_assessment, summary_zh, doctor_review_focus, suggested_edits, warnings, limitations, role。",
+        "status 固定为 reviewed；role 固定为 medical_review_assistant。",
+        "不要改写报告，不要新增或删除结节、尺寸、TI-RADS 分级、建议或诊断；只指出医学表达、安全风险、证据缺口和医生复核重点。",
+        "",
+        `report_id: ${report.id}`,
+        "",
+        "报告草稿：",
+        report.draftText ?? "",
+        "",
+        "结构化摘要：",
+        formatStructuredForReview(compactReportStructured(report.structured)),
+        "",
+        "证据摘要：",
+        formatEvidenceForReview(compactEvidenceForReview(asRecordArray(report.evidence))),
+      ].join("\n"),
+    },
+  ];
+}
+
+function isModelTask(taskType: string): boolean {
+  return taskType === "detect_nodules" || taskType === "segment_nodules" || taskType === "measure_nodules";
+}
+
+function modelJobTypeForTask(taskType: string): string | undefined {
+  if (taskType === "detect_nodules") return DETECT_JOB_TYPE;
+  if (taskType === "segment_nodules") return SEGMENT_JOB_TYPE;
+  if (taskType === "measure_nodules") return MEASURE_JOB_TYPE;
+  return undefined;
+}
+
+function findTaskModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord): ModelJobRecord | null {
+  const jobType = modelJobTypeForTask(task.taskType);
+  return jobType ? repo.findModelJobByAgentTask(task.id, jobType) : null;
+}
+
+function modelJobSuccessOutput(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  workerId: string,
+  now: number
+): JsonObject {
+  if (modelJob.jobType === SEGMENT_JOB_TYPE) return segmentationSuccessOutput(repo, modelJob, workerId, now);
+  if (modelJob.jobType === MEASURE_JOB_TYPE) return measurementSuccessOutput(repo, modelJob, workerId, now);
+  return detectorSuccessOutput(repo, modelJob, workerId, now);
+}
+
+async function modelJobSuccessOutputAsync(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  workerId: string,
+  now: number,
+  options: MedicalAgentWorkerOptions
+): Promise<JsonObject> {
+  if (modelJob.jobType !== DETECT_JOB_TYPE) return modelJobSuccessOutput(repo, modelJob, workerId, now);
+  return detectorSuccessOutputAsync(repo, modelJob, workerId, now, options);
+}
+
 function detectorSuccessOutput(
   repo: MedicalCaseRepo,
   modelJob: ModelJobRecord,
@@ -605,6 +1447,295 @@ function detectorSuccessOutput(
     result: modelJob.output ?? {},
     artifact_uri: modelJob.artifactUri,
     persisted_nodules: persistedNodules,
+  };
+}
+
+function segmentationSuccessOutput(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  workerId: string,
+  now: number
+): JsonObject {
+  const persistedSegmentations = persistSegmentations(repo, modelJob, now);
+  return {
+    status: "ok",
+    worker_id: workerId,
+    model_job_id: modelJob.id,
+    job_type: modelJob.jobType,
+    result: modelJob.output ?? {},
+    artifact_uri: modelJob.artifactUri,
+    persisted_segmentations: persistedSegmentations,
+    warnings: optionalStringArray(modelJob.output?.warnings),
+  };
+}
+
+function measurementSuccessOutput(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  workerId: string,
+  now: number
+): JsonObject {
+  const persistedMeasurements = persistMeasurements(repo, modelJob, now);
+  return {
+    status: "ok",
+    worker_id: workerId,
+    model_job_id: modelJob.id,
+    job_type: modelJob.jobType,
+    result: modelJob.output ?? {},
+    artifact_uri: modelJob.artifactUri,
+    persisted_measurements: persistedMeasurements,
+    warnings: optionalStringArray(modelJob.output?.warnings),
+  };
+}
+
+async function detectorSuccessOutputAsync(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  workerId: string,
+  now: number,
+  options: MedicalAgentWorkerOptions
+): Promise<JsonObject> {
+  const output = detectorSuccessOutput(repo, modelJob, workerId, now);
+  const llmEvaluation = await evaluateDetectorResultWithProvider(repo, modelJob, workerId, now, options);
+  if (!llmEvaluation) return output;
+  return {
+    ...output,
+    result: {
+      ...(asJsonObject(output.result) ?? {}),
+      llm_provider_evaluation: llmEvaluation.result,
+      ...(llmEvaluation.error ? { llm_provider_error: llmEvaluation.error } : {}),
+    },
+    warnings: uniqueStrings([
+      ...optionalStringArray(output.warnings),
+      ...llmEvaluation.warnings,
+    ]),
+  };
+}
+
+function queueAutomaticDownstreamTask(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  modelJob: ModelJobRecord,
+  output: JsonObject,
+  now: number
+): JsonObject | null {
+  if (hasExplicitChildTask(repo, task)) return null;
+  if (modelJob.jobType === DETECT_JOB_TYPE) {
+    const persistedNodules = asRecordArray(output.persisted_nodules);
+    if (persistedNodules.length === 0) return null;
+    return createAutomaticAgentTask(repo, task, {
+      taskType: "segment_nodules",
+      agentName: "segment_nodules_agent",
+      input: {
+        study_id: modelJob.studyId ?? task.input.study_id,
+        image_id: modelJob.imageId ?? task.input.image_id,
+        model: "nnunet-tight-roi-segmenter",
+        model_version: "tn3k-tight-roi-5fold-best",
+        auto_queued_from_task_id: task.id,
+        auto_queued_from_job_type: modelJob.jobType,
+      },
+      now,
+    });
+  }
+  if (modelJob.jobType === SEGMENT_JOB_TYPE) {
+    const persistedSegmentations = asRecordArray(output.persisted_segmentations);
+    if (persistedSegmentations.length === 0) return null;
+    return createAutomaticAgentTask(repo, task, {
+      taskType: "measure_nodules",
+      agentName: "measure_nodules_agent",
+      input: {
+        study_id: modelJob.studyId ?? task.input.study_id,
+        image_id: modelJob.imageId ?? task.input.image_id,
+        model: "mask-measurement-worker",
+        model_version: "validation-measurement-v1",
+        auto_queued_from_task_id: task.id,
+        auto_queued_from_job_type: modelJob.jobType,
+      },
+      now,
+    });
+  }
+  return null;
+}
+
+function createAutomaticAgentTask(
+  repo: MedicalCaseRepo,
+  parentTask: AgentTaskRecord,
+  input: {
+    taskType: string;
+    agentName: string;
+    input: JsonObject;
+    now: number;
+  }
+): JsonObject {
+  const task = repo.createAgentTask({
+    analysisSessionId: parentTask.analysisSessionId,
+    parentTaskId: parentTask.id,
+    agentName: input.agentName,
+    taskType: input.taskType,
+    input: input.input,
+    now: input.now,
+  });
+  return {
+    task_id: task.id,
+    task_type: task.taskType,
+    parent_task_id: task.parentTaskId,
+    status: task.status,
+    input: task.input,
+  };
+}
+
+function hasExplicitChildTask(repo: MedicalCaseRepo, task: AgentTaskRecord): boolean {
+  const studyId = optionalString(task.input.study_id) ?? repo.getAnalysisSession(task.analysisSessionId)?.studyId;
+  if (!studyId) return false;
+  const bundle = repo.getStudyBundle(studyId);
+  return (
+    bundle?.agentTasks.some(
+      (candidate) => candidate.analysisSessionId === task.analysisSessionId && candidate.parentTaskId === task.id
+    ) ?? false
+  );
+}
+
+async function evaluateDetectorResultWithProvider(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  workerId: string,
+  now: number,
+  options: MedicalAgentWorkerOptions
+): Promise<{ result: JsonObject; warnings: string[]; error?: JsonObject } | null> {
+  const provider = options.llmProvider;
+  if (!provider) return null;
+  const detectorOutput = asJsonObject(modelJob.output);
+  const pendingPack = asJsonObject(detectorOutput?.llm_evaluation);
+  if (!pendingPack) return null;
+
+  const messages = detectorEvaluationMessages(modelJob, detectorOutput, pendingPack);
+  let text = "";
+  try {
+    for await (const chunk of streamProviderResponse(provider, messages, {
+      fetchImpl: options.llmFetchImpl ?? fetch,
+      disablePromptRedact: true,
+    })) {
+      text += chunk;
+    }
+  } catch (err) {
+    const error = {
+      code: "llm_provider_evaluation_failed",
+      message: err instanceof Error ? err.message : String(err),
+      detail: providerSnapshot(provider),
+    };
+    return {
+      result: {
+        status: "provider_failed",
+        provider: providerSnapshot(provider),
+      },
+      error,
+      warnings: ["llm_provider_evaluation_failed"],
+    };
+  }
+
+  const parsed = parseProviderJson(text);
+  const result = parsed ?? {
+    status: "unstructured_response",
+    raw_text: text.slice(0, 4000),
+  };
+  const warnings = parsed ? [] : ["llm_provider_evaluation_parse_failed"];
+  const audit = repo.createAuditLog({
+    studyId: modelJob.studyId,
+    actorType: "agent",
+    actorId: workerId,
+    action: "medical.detector.llm_evaluation",
+    targetType: "model_job",
+    targetId: modelJob.id,
+    detail: {
+      provider: providerSnapshot(provider),
+      model_job_id: modelJob.id,
+      artifact_uri: modelJob.artifactUri,
+      result,
+      warnings,
+    },
+    traceId: modelJob.agentTaskId ?? modelJob.id,
+    now,
+  });
+  return {
+    result: {
+      ...result,
+      audit_log_id: audit.id,
+      provider: providerSnapshot(provider),
+    },
+    warnings,
+  };
+}
+
+function detectorEvaluationMessages(
+  modelJob: ModelJobRecord,
+  detectorOutput: JsonObject | undefined,
+  pendingPack: JsonObject
+): EngineMessage[] {
+  const comparison = asJsonObject(detectorOutput?.comparison);
+  const nodules = asRecordArray(detectorOutput?.nodules).map((nodule) => ({
+    nodule_index: nodule.nodule_index,
+    bbox: nodule.bbox,
+    confidence: nodule.confidence,
+    model_name: nodule.model_name,
+  }));
+  return [
+    {
+      id: `medical-detector-eval-system-${modelJob.id}`,
+      role: "system",
+      source: "local",
+      text: [
+        "你是甲状腺超声 AI 辅助系统的结构化复核模型。",
+        "只根据输入的结构化检测结果、IoU 对比和模型元数据输出复核意见。",
+        "严禁新增、删除或移动 bbox 坐标；不得给出最终诊断；必须提示医生最终确认。",
+        "只输出 JSON，不要输出 Markdown。",
+      ].join("\n"),
+    },
+    {
+      id: `medical-detector-eval-user-${modelJob.id}`,
+      role: "user",
+      source: "local",
+      text: JSON.stringify({
+        task: "evaluate_thyroid_detector_consensus",
+        required_schema: {
+          status: "reviewed",
+          overall_assessment: "consistent | needs_review | unsafe",
+          summary_zh: "string",
+          doctor_review_focus: ["string"],
+          warnings: ["string"],
+          bbox_policy: "must_not_modify_bbox",
+        },
+        model_job: {
+          id: modelJob.id,
+          study_id: modelJob.studyId,
+          image_id: modelJob.imageId,
+          artifact_uri: modelJob.artifactUri,
+        },
+        llm_evaluation_pack: pendingPack,
+        comparison,
+        nodules,
+      }, null, 2),
+    },
+  ];
+}
+
+function parseProviderJson(text: string): JsonObject | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const direct = parseJson(trimmed);
+  if (isJsonObject(direct)) return direct;
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  const extracted = parseJson(trimmed.slice(start, end + 1));
+  return isJsonObject(extracted) ? extracted : null;
+}
+
+function providerSnapshot(provider: ProviderStatus): JsonObject {
+  return {
+    instance_id: provider.instanceId,
+    type: provider.type,
+    model: provider.model,
+    display_name: provider.displayName,
   };
 }
 
@@ -634,6 +1765,12 @@ function optionalStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function stringArrayValue(value: unknown): string[] {
+  const direct = optionalString(value);
+  if (direct) return [direct];
+  return optionalStringArray(value).filter((item) => item.trim().length > 0);
+}
+
 function deriveImageQuality(result: JsonObject, isAnalyzable: boolean | undefined, fallback: string | null): string {
   const explicit = optionalString(result.image_quality);
   if (explicit) return explicit;
@@ -653,6 +1790,10 @@ function isWorkerResponse(value: unknown): value is WorkerResponse {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return record.status === "ok" || record.status === "error";
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
@@ -787,15 +1928,386 @@ function latestTiradsResultPerNodule(
   });
 }
 
+interface TiradsRuleEvidenceResult {
+  evidence: JsonObject[];
+  missingRuleCodes: string[];
+}
+
+interface GuidelineEvidenceResult {
+  evidence: JsonObject[];
+  searches: JsonObject[];
+  warnings: string[];
+}
+
+function buildTiradsRuleEvidence(repo: MedicalCaseRepo, ruleCodes: string[]): TiradsRuleEvidenceResult {
+  const codes = uniqueStrings(ruleCodes);
+  if (codes.length === 0) return { evidence: [], missingRuleCodes: [] };
+  const rules = repo.listActiveTiradsRulesByCodes(codes);
+  const found = new Set(rules.map((rule) => rule.ruleCode));
+  return {
+    evidence: rules.map(tiradsRuleToEvidence),
+    missingRuleCodes: codes.filter((code) => !found.has(code)),
+  };
+}
+
+function tiradsRuleToEvidence(rule: TiradsRuleRecord): JsonObject {
+  return {
+    source: "tirads_rule",
+    rule_code: rule.ruleCode,
+    system_name: rule.systemName,
+    system_version: rule.systemVersion,
+    feature_group: rule.featureGroup,
+    feature_name: rule.featureName,
+    points: rule.points,
+    category: rule.category,
+    min_score: rule.minScore,
+    max_score: rule.maxScore,
+    recommendation: rule.recommendation,
+    rule: rule.rule,
+    evidence_document_id: rule.evidenceDocumentId,
+    status: rule.status,
+  };
+}
+
+function buildGuidelineEvidence(
+  repo: MedicalCaseRepo,
+  tiradsResults: TiradsResultRecord[],
+  options: MedicalAgentWorkerOptions
+): GuidelineEvidenceResult {
+  const queries = guidelineEvidenceQueries(tiradsResults);
+  const evidence = new Map<string, JsonObject>();
+  const searches: JsonObject[] = [];
+  const warnings: string[] = [];
+
+  for (const query of queries) {
+    const result = repo.searchMedicalKnowledge({
+      query,
+      topK: options.knowledgeTopK ?? 3,
+      filters: { bodyPart: "thyroid" },
+    }, {
+      dataDbPath: options.dataDbPath,
+      ragDbPath: options.ragDbPath,
+      workspace: options.workspace ?? process.cwd(),
+    });
+    searches.push({
+      query: result.query,
+      mode: result.mode,
+      count: result.count,
+      warnings: result.warnings,
+    });
+    warnings.push(...result.warnings);
+    for (const item of result.evidence) {
+      if (!evidence.has(item.chunkId)) evidence.set(item.chunkId, guidelineEvidenceToReportEvidence(item));
+    }
+  }
+
+  return {
+    evidence: [...evidence.values()],
+    searches,
+    warnings: uniqueStrings(warnings),
+  };
+}
+
+function guidelineEvidenceQueries(tiradsResults: TiradsResultRecord[]): string[] {
+  const queries = new Set<string>();
+  for (const result of tiradsResults) {
+    const recommendation = (result.recommendation ?? "").toLowerCase();
+    const terms = ["ACR", "TI", "RADS", result.category ?? "", "thyroid", "nodule", "guideline"];
+    if (/follow|随访/.test(recommendation)) terms.push("follow", "follow_up", "threshold");
+    if (/fna|穿刺/.test(recommendation)) terms.push("FNA", "threshold");
+    queries.add(terms.filter(Boolean).join(" "));
+  }
+  queries.add("AI report generation evidence required doctor review ACR TI RADS thyroid");
+  return [...queries].slice(0, 4);
+}
+
+function guidelineEvidenceToReportEvidence(item: MedicalKnowledgeEvidence): JsonObject {
+  return {
+    source: "medical_guideline",
+    chunk_id: item.chunkId,
+    score: item.score,
+    hits: item.hits,
+    text: item.text.slice(0, 2000),
+    document: item.document,
+    metadata: item.metadata,
+  };
+}
+
+function buildModelResultEvidence(
+  repo: MedicalCaseRepo,
+  studyId: string,
+  nodules: NoduleRecord[]
+): ModelResultEvidenceContext {
+  const noduleByIndex = new Map(nodules.map((nodule) => [nodule.noduleIndex, nodule]));
+  const segmentationByNoduleId = new Map<string, JsonObject>();
+  const measurementByNoduleId = new Map<string, JsonObject>();
+  for (const modelJob of repo.listModelJobsByStudy(studyId)) {
+    if (modelJob.status !== "succeeded") continue;
+    if (modelJob.jobType === SEGMENT_JOB_TYPE) {
+      for (const item of asRecordArray(modelJob.output?.segmentations)) {
+        const nodule = resolveNoduleFromOutput(repo, studyId, item, noduleByIndex, segmentationByNoduleId.size);
+        if (!nodule) continue;
+        segmentationByNoduleId.set(nodule.id, {
+          source: "segmentation_result",
+          nodule_id: nodule.id,
+          nodule_index: nodule.noduleIndex,
+          model_job_id: modelJob.id,
+          artifact_uri: modelJob.artifactUri,
+          model_name: optionalString(item.model_name) ?? modelJob.modelName,
+          model_version: optionalString(item.model_version) ?? modelJob.modelVersion,
+          segmentation_source: optionalString(item.segmentation_source) ?? "unknown",
+          mask_uri: optionalString(item.mask_uri) ?? nodule.maskUri,
+          confidence: optionalNumber(item.confidence),
+          requires_doctor_review: optionalBoolean(item.requires_doctor_review) ?? true,
+          metadata: asJsonObject(item.metadata) ?? {},
+        });
+      }
+    }
+    if (modelJob.jobType === MEASURE_JOB_TYPE) {
+      for (const item of asRecordArray(modelJob.output?.measurements)) {
+        const nodule = resolveNoduleFromOutput(repo, studyId, item, noduleByIndex, measurementByNoduleId.size);
+        if (!nodule) continue;
+        measurementByNoduleId.set(nodule.id, {
+          source: "measurement_result",
+          nodule_id: nodule.id,
+          nodule_index: nodule.noduleIndex,
+          model_job_id: modelJob.id,
+          artifact_uri: modelJob.artifactUri,
+          model_name: modelJob.modelName,
+          model_version: modelJob.modelVersion,
+          measurement_source: optionalString(item.measurement_source) ?? "unknown",
+          long_axis_mm: optionalNullableNumber(item.long_axis_mm),
+          short_axis_mm: optionalNullableNumber(item.short_axis_mm),
+          ap_axis_mm: optionalNullableNumber(item.ap_axis_mm),
+          area_mm2: optionalNullableNumber(item.area_mm2),
+          aspect_ratio: optionalNullableNumber(item.aspect_ratio),
+          pixel_measurements: asJsonObject(item.pixel_measurements) ?? {},
+          confidence: optionalNullableNumber(item.confidence),
+          requires_doctor_review: optionalBoolean(item.requires_doctor_review) ?? true,
+        });
+      }
+    }
+  }
+  return {
+    segmentationByNoduleId,
+    measurementByNoduleId,
+    evidence: [...segmentationByNoduleId.values(), ...measurementByNoduleId.values()],
+  };
+}
+
+function providerEvidencePack(evidence: JsonObject[]): JsonObject[] {
+  return evidence.map((item) => {
+    const source = optionalString(item.source);
+    if (source === "medical_guideline") {
+      const document = asJsonObject(item.document);
+      const metadata = asJsonObject(item.metadata);
+      return {
+        source,
+        chunk_id: item.chunk_id,
+        score: item.score,
+        document: {
+          id: document?.id,
+          title: document?.title,
+          source_name: document?.sourceName,
+          version: document?.version,
+          review_status: document?.reviewStatus,
+        },
+        section_title: metadata?.sectionTitle,
+        chunk_type: metadata?.chunkType,
+        evidence_level: metadata?.evidenceLevel,
+        tirads_system: metadata?.tiradsSystem,
+        body_part: metadata?.bodyPart,
+        text: optionalString(item.text)?.slice(0, 700),
+      };
+    }
+    if (source === "tirads_rule") {
+      return {
+        source,
+        rule_code: item.rule_code,
+        system_name: item.system_name,
+        system_version: item.system_version,
+        feature_group: item.feature_group,
+        category: item.category,
+        recommendation: item.recommendation,
+        rule: item.rule,
+        evidence_document_id: item.evidence_document_id,
+      };
+    }
+    if (source === "segmentation_result" || source === "measurement_result") {
+      return {
+        source,
+        nodule_id: item.nodule_id,
+        nodule_index: item.nodule_index,
+        model_job_id: item.model_job_id,
+        artifact_uri: item.artifact_uri,
+        model_name: item.model_name,
+        model_version: item.model_version,
+        segmentation_source: item.segmentation_source,
+        measurement_source: item.measurement_source,
+        mask_uri: item.mask_uri,
+        long_axis_mm: item.long_axis_mm,
+        short_axis_mm: item.short_axis_mm,
+        pixel_measurements: item.pixel_measurements,
+        metadata: item.metadata,
+      };
+    }
+    return item;
+  });
+}
+
+function compactReportStructured(structured: JsonObject): JsonObject {
+  return {
+    generator: structured.generator,
+    review_required: structured.review_required,
+    nodules: structured.nodules,
+    knowledge_evidence: structured.knowledge_evidence,
+    model_evidence: structured.model_evidence,
+    sections: {
+      tirads_summary: asJsonObject(structured.sections)?.tirads_summary,
+      recommendation: asJsonObject(structured.sections)?.recommendation,
+      evidence_summary: asJsonObject(structured.sections)?.evidence_summary,
+    },
+  };
+}
+
+function compactEvidenceForReview(evidence: JsonObject[]): JsonObject[] {
+  return evidence.map((item) => {
+    const source = optionalString(item.source);
+    if (source === "medical_guideline") {
+      const document = asJsonObject(item.document);
+      const metadata = asJsonObject(item.metadata);
+      return {
+        source,
+        chunk_id: item.chunk_id,
+        document_title: document?.title,
+        document_version: document?.version,
+        review_status: document?.reviewStatus,
+        section_title: metadata?.sectionTitle,
+        evidence_level: metadata?.evidenceLevel,
+        text: optionalString(item.text)?.slice(0, 280),
+      };
+    }
+    if (source === "tirads_rule") {
+      return {
+        source,
+        rule_code: item.rule_code,
+        system_version: item.system_version,
+        category: item.category,
+        recommendation: item.recommendation,
+        rule: item.rule,
+      };
+    }
+    if (source === "segmentation_result" || source === "measurement_result") {
+      return {
+        source,
+        nodule_id: item.nodule_id,
+        nodule_index: item.nodule_index,
+        model_name: item.model_name,
+        model_version: item.model_version,
+        segmentation_source: item.segmentation_source,
+        measurement_source: item.measurement_source,
+        artifact_uri: item.artifact_uri,
+        mask_uri: item.mask_uri,
+        long_axis_mm: item.long_axis_mm,
+        short_axis_mm: item.short_axis_mm,
+        pixel_measurements: item.pixel_measurements,
+        metadata: item.metadata,
+      };
+    }
+    return {
+      source,
+      nodule_id: item.nodule_id,
+      tirads_result_id: item.tirads_result_id,
+      evidence_rules: item.evidence_rules,
+    };
+  });
+}
+
+function formatStructuredForReview(structured: JsonObject): string {
+  const nodules = asRecordArray(structured.nodules)
+    .map((nodule) => {
+      const index = nodule.nodule_index ?? "未知";
+      return `结节${index}: score=${nodule.score ?? "未知"}, category=${nodule.category ?? "未知"}, recommendation=${nodule.recommendation ?? "无"}`;
+    })
+    .join("\n");
+  const sections = asJsonObject(structured.sections) ?? {};
+  const knowledge = asJsonObject(structured.knowledge_evidence) ?? {};
+  return [
+    `generator: ${optionalString(structured.generator) ?? "unknown"}`,
+    `review_required: ${structured.review_required === true ? "true" : "unknown"}`,
+    nodules || "无结构化结节摘要",
+    `recommendation: ${optionalString(sections.recommendation) ?? "无"}`,
+    `evidence_summary: ${optionalString(sections.evidence_summary) ?? "无"}`,
+    `knowledge: tirads_rule_count=${knowledge.tirads_rule_count ?? 0}, guideline_chunk_count=${knowledge.guideline_chunk_count ?? 0}`,
+  ].join("\n");
+}
+
+function formatEvidenceForReview(evidence: JsonObject[]): string {
+  return evidence
+    .slice(0, 8)
+    .map((item, index) => {
+      const source = optionalString(item.source) ?? "unknown";
+      if (source === "medical_guideline") {
+        return `${index + 1}. medical_guideline ${item.chunk_id ?? ""}: ${item.section_title ?? ""}; ${item.text ?? ""}`;
+      }
+      if (source === "tirads_rule") {
+        return `${index + 1}. tirads_rule ${item.rule_code ?? ""}: category=${item.category ?? ""}; recommendation=${item.recommendation ?? ""}`;
+      }
+      return `${index + 1}. ${source}: ${JSON.stringify(item).slice(0, 260)}`;
+    })
+    .join("\n");
+}
+
+function formatReportEvidenceSummary(evidence: JsonObject[]): string {
+  const ruleCodes = uniqueStrings([
+    ...evidence.flatMap((item) => {
+      if (item.source === "tirads_result") return asRecordArray(item.evidence_rules).flatMap(evidenceRuleCodesFromValue);
+      return [];
+    }),
+    ...evidence.flatMap((item) => (item.source === "tirads_rule" ? [optionalString(item.rule_code)] : [])),
+  ]);
+  const guidelineRefs = uniqueStrings(
+    evidence.flatMap((item) => {
+      if (item.source !== "medical_guideline") return [];
+      const document = asJsonObject(item.document);
+      const metadata = asJsonObject(item.metadata);
+      const title = optionalString(document?.title);
+      const section = optionalString(metadata?.sectionTitle);
+      const chunkId = optionalString(item.chunk_id);
+      return title && chunkId ? [`${title}${section ? `/${section}` : ""}(${chunkId})`] : [];
+    })
+  ).slice(0, 3);
+  const modelRefs = uniqueStrings(
+    evidence.flatMap((item) => {
+      if (item.source === "segmentation_result") {
+        return [`分割-结节${item.nodule_index ?? "未知"}:${item.segmentation_source ?? item.model_name ?? "unknown"}`];
+      }
+      if (item.source === "measurement_result") {
+        return [`测量-结节${item.nodule_index ?? "未知"}:${item.measurement_source ?? item.model_name ?? "unknown"}`];
+      }
+      return [];
+    })
+  ).slice(0, 4);
+  const parts = [
+    modelRefs.length > 0 ? `模型结果：${modelRefs.join("；")}` : undefined,
+    ruleCodes.length > 0 ? `规则库：${ruleCodes.join("、")}` : undefined,
+    guidelineRefs.length > 0 ? `知识库：${guidelineRefs.join("；")}` : undefined,
+  ];
+  return uniqueStrings(parts).join("\n") || "暂无规则或知识库证据，需医生复核。";
+}
+
 function buildReportSections(
   nodules: NoduleRecord[],
   tiradsResults: TiradsResultRecord[],
-  noduleById: Map<string, NoduleRecord>
+  noduleById: Map<string, NoduleRecord>,
+  modelEvidence: ModelResultEvidenceContext
 ): Record<string, string> {
   const noduleDescriptions =
     tiradsResults.length > 0
-      ? tiradsResults.map((result) => formatNoduleDescription(result, noduleById.get(result.noduleId))).join("\n")
-      : formatUnclassifiedNodules(nodules);
+      ? tiradsResults
+          .map((result) => formatNoduleDescription(result, noduleById.get(result.noduleId), modelEvidence))
+          .join("\n")
+      : formatUnclassifiedNodules(nodules, modelEvidence);
   const tiradsSummary =
     tiradsResults.length > 0
       ? tiradsResults
@@ -819,20 +2331,56 @@ function buildReportSections(
   };
 }
 
-function formatUnclassifiedNodules(nodules: NoduleRecord[]): string {
+function formatUnclassifiedNodules(nodules: NoduleRecord[], modelEvidence: ModelResultEvidenceContext): string {
   if (nodules.length === 0) return "未检测到结构化结节结果，需医生结合图像复核。";
   return nodules
-    .map((nodule) => `结节${nodule.noduleIndex}：AI已检测到结节，尚无可用TI-RADS结构化分级。`)
+    .map((nodule) => {
+      const modelSummary = formatModelResultForReport(nodule.id, modelEvidence);
+      return `结节${nodule.noduleIndex}：AI已检测到结节，尚无可用TI-RADS结构化分级。${modelSummary ? ` ${modelSummary}` : ""}`;
+    })
     .join("\n");
 }
 
-function formatNoduleDescription(result: TiradsResultRecord, nodule: NoduleRecord | undefined): string {
+function formatNoduleDescription(
+  result: TiradsResultRecord,
+  nodule: NoduleRecord | undefined,
+  modelEvidence: ModelResultEvidenceContext
+): string {
   const confidenceValue = nodule?.detectionConfidence;
   const confidence = confidenceValue === null || confidenceValue === undefined ? "未记录" : confidenceValue.toFixed(2);
   const noduleIndex = nodule?.noduleIndex ?? "未知";
   const category = result.category ?? "未分级";
   const score = result.score ?? "未计算";
-  return `结节${noduleIndex}：AI检测结节，检测置信度${confidence}，TI-RADS ${category}，评分${score}分。`;
+  const modelSummary = nodule ? formatModelResultForReport(nodule.id, modelEvidence) : "";
+  return `结节${noduleIndex}：AI检测结节，检测置信度${confidence}，TI-RADS ${category}，评分${score}分。${modelSummary ? ` ${modelSummary}` : ""}`;
+}
+
+function formatModelResultForReport(noduleId: string, modelEvidence: ModelResultEvidenceContext): string {
+  const segmentation = modelEvidence.segmentationByNoduleId.get(noduleId);
+  const measurement = modelEvidence.measurementByNoduleId.get(noduleId);
+  const parts = [];
+  if (segmentation) {
+    const source = optionalString(segmentation.segmentation_source) ?? optionalString(segmentation.model_name) ?? "未知分割模型";
+    const metadata = asJsonObject(segmentation.metadata);
+    const cropBox = optionalNumberArray(metadata?.crop_box_xyxy);
+    parts.push(`分割来源${source}${cropBox ? `，ROI=${cropBox.join(",")}` : ""}`);
+  }
+  if (measurement) {
+    const source = optionalString(measurement.measurement_source) ?? optionalString(measurement.model_name) ?? "未知测量来源";
+    const longAxisMm = optionalNullableNumber(measurement.long_axis_mm);
+    const shortAxisMm = optionalNullableNumber(measurement.short_axis_mm);
+    const pixelMeasurements = asJsonObject(measurement.pixel_measurements);
+    const longAxisPx = optionalNumber(pixelMeasurements?.long_axis_px);
+    const shortAxisPx = optionalNumber(pixelMeasurements?.short_axis_px);
+    const size =
+      longAxisMm !== null && shortAxisMm !== null
+        ? `${longAxisMm}mm x ${shortAxisMm}mm`
+        : longAxisPx !== undefined && shortAxisPx !== undefined
+          ? `${longAxisPx}px x ${shortAxisPx}px`
+          : "尺寸待复核";
+    parts.push(`测量来源${source}，${size}`);
+  }
+  return parts.length > 0 ? `模型依据：${parts.join("；")}。` : "";
 }
 
 function evidenceRuleCodes(evidenceRules: unknown[]): string[] {
@@ -1097,10 +2645,87 @@ function persistDetectorNodules(repo: MedicalCaseRepo, modelJob: ModelJobRecord,
   });
 }
 
+function persistSegmentations(repo: MedicalCaseRepo, modelJob: ModelJobRecord, now: number): JsonObject[] {
+  if (!modelJob.studyId) return [];
+  const noduleByIndex = new Map(repo.listNodulesByStudy(modelJob.studyId).map((nodule) => [nodule.noduleIndex, nodule]));
+  const segmentations = asRecordArray(modelJob.output?.segmentations);
+  return segmentations.flatMap((segmentation, index) => {
+    const nodule = resolveNoduleFromOutput(repo, modelJob.studyId!, segmentation, noduleByIndex, index);
+    const maskUri = optionalString(segmentation.mask_uri);
+    if (!nodule || !maskUri) return [];
+    const updated = repo.updateNoduleMask(nodule.id, maskUri, now);
+    return [
+      {
+        nodule_id: updated.id,
+        nodule_index: updated.noduleIndex,
+        mask_uri: updated.maskUri,
+        segmentation_source: optionalString(segmentation.segmentation_source) ?? "unknown",
+        confidence: optionalNumber(segmentation.confidence),
+        requires_doctor_review: optionalBoolean(segmentation.requires_doctor_review) ?? true,
+      },
+    ];
+  });
+}
+
+function persistMeasurements(repo: MedicalCaseRepo, modelJob: ModelJobRecord, now: number): JsonObject[] {
+  if (!modelJob.studyId) return [];
+  const noduleByIndex = new Map(repo.listNodulesByStudy(modelJob.studyId).map((nodule) => [nodule.noduleIndex, nodule]));
+  const measurements = asRecordArray(modelJob.output?.measurements);
+  return measurements.flatMap((item, index) => {
+    const nodule = resolveNoduleFromOutput(repo, modelJob.studyId!, item, noduleByIndex, index);
+    if (!nodule) return [];
+    const measurement = repo.createMeasurement({
+      noduleId: nodule.id,
+      longAxisMm: optionalNullableNumber(item.long_axis_mm),
+      shortAxisMm: optionalNullableNumber(item.short_axis_mm),
+      apAxisMm: optionalNullableNumber(item.ap_axis_mm),
+      areaMm2: optionalNullableNumber(item.area_mm2),
+      aspectRatio: optionalNullableNumber(item.aspect_ratio),
+      measurementSource: optionalString(item.measurement_source) ?? "model",
+      confidence: optionalNullableNumber(item.confidence),
+      now,
+    });
+    return [
+      {
+        measurement_id: measurement.id,
+        nodule_id: nodule.id,
+        nodule_index: nodule.noduleIndex,
+        long_axis_mm: measurement.longAxisMm,
+        short_axis_mm: measurement.shortAxisMm,
+        area_mm2: measurement.areaMm2,
+        aspect_ratio: measurement.aspectRatio,
+        measurement_source: measurement.measurementSource,
+        pixel_measurements: asJsonObject(item.pixel_measurements) ?? {},
+        requires_doctor_review: optionalBoolean(item.requires_doctor_review) ?? true,
+      },
+    ];
+  });
+}
+
+function resolveNoduleFromOutput(
+  repo: MedicalCaseRepo,
+  studyId: string,
+  item: JsonObject,
+  noduleByIndex: Map<number, NoduleRecord>,
+  index: number
+): NoduleRecord | undefined {
+  const noduleId = optionalString(item.nodule_id);
+  if (noduleId) {
+    const nodule = repo.getNodule(noduleId);
+    if (nodule?.studyId === studyId) return nodule;
+  }
+  const noduleIndex = optionalInteger(item.nodule_index) ?? index + 1;
+  return noduleByIndex.get(noduleIndex);
+}
+
 function asRecordArray(value: unknown): JsonObject[] {
   return Array.isArray(value)
     ? value.filter((item): item is JsonObject => typeof item === "object" && item !== null && !Array.isArray(item))
     : [];
+}
+
+function optionalNullableNumber(value: unknown): number | null {
+  return value === null ? null : optionalNumber(value) ?? null;
 }
 
 function optionalNumberArray(value: unknown): number[] | undefined {

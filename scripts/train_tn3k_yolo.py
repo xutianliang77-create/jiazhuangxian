@@ -18,12 +18,14 @@ DEFAULT_MODEL = "data/artifacts/model-weights/yolo/yolo11m.pt"
 TARGET_METRIC = "metrics/mAP50(B)"
 TARGET_THRESHOLD = 0.93
 TRAIN_RATIO = 0.8
+MODEL_FAMILIES = ("yolo", "rtdetr")
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare and train YOLOv11 on TN3K mask-derived bbox annotations.")
+    parser = argparse.ArgumentParser(description="Prepare and train an Ultralytics detector on thyroid bbox annotations.")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--model", default=os.environ.get("JZX_YOLOV11_BASE_WEIGHTS", DEFAULT_MODEL))
+    parser.add_argument("--model-family", choices=MODEL_FAMILIES, default="yolo")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--name", default=f"tn3k-yolo11-80-20-{time.strftime('%Y%m%d%H%M%S')}")
     parser.add_argument("--train-ratio", type=float, default=TRAIN_RATIO)
@@ -36,6 +38,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--device", default=os.environ.get("JZX_MODEL_DEVICE", "0"))
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--cache", default="disk", choices=("false", "ram", "disk"))
+    parser.add_argument("--optimizer", default="auto")
+    parser.add_argument("--lr0", type=float, default=0.01)
+    parser.add_argument("--lrf", type=float, default=0.01)
+    parser.add_argument("--warmup-epochs", type=float, default=3.0)
     parser.add_argument("--target-metric", default=TARGET_METRIC)
     parser.add_argument("--target-threshold", type=float, default=TARGET_THRESHOLD)
     parser.add_argument("--close-mosaic", type=int, default=15)
@@ -124,6 +130,7 @@ def prepare_dataset(
         materialize_split(dataset_root=dataset_root, split=split_name, rows=split_rows, copy_images=copy_images)
 
     data_yaml = dataset_root / "data.yaml"
+    class_names = class_names_from_rows(rows)
     data_yaml.write_text(
         "\n".join(
             [
@@ -132,7 +139,7 @@ def prepare_dataset(
                 "val: images/val",
                 "test: images/val",
                 "names:",
-                "  0: thyroid_nodule",
+                *[f"  {index}: {name}" for index, name in enumerate(class_names)],
                 "",
             ]
         ),
@@ -148,6 +155,7 @@ def prepare_dataset(
         "fixed_split_field": fixed_split_field or None,
         "seed": seed,
         "image_mode": "copy" if copy_images else "symlink",
+        "class_names": class_names,
         "total_samples": len(rows),
         "splits": split_summary,
     }
@@ -176,13 +184,17 @@ def materialize_split(*, dataset_root: Path, split: str, rows: list[dict[str, An
         image_target = image_dir / f"{target_stem}{image_path.suffix}"
         link_or_copy(image_path.resolve(), image_target, copy_file=copy_images)
 
-        bbox = row.get("bbox_xyxy")
-        if not valid_bbox(bbox):
-            raise ValueError(f"invalid bbox for {image_path}: {bbox}")
+        boxes, class_ids = boxes_and_class_ids(row)
+        for bbox in boxes:
+            if not valid_bbox(bbox):
+                raise ValueError(f"invalid bbox for {image_path}: {bbox}")
         width = int(row["width"])
         height = int(row["height"])
         label_target = label_dir / f"{target_stem}.txt"
-        label_target.write_text(yolo_line(bbox, width, height), encoding="utf-8")
+        label_target.write_text(
+            "".join(yolo_line(bbox, width, height, class_id=class_id) for bbox, class_id in zip(boxes, class_ids, strict=True)),
+            encoding="utf-8",
+        )
 
         manifest_row = {
             **row,
@@ -213,33 +225,69 @@ def required_string(row: dict[str, Any], key: str) -> str:
     return value
 
 
+def boxes_and_class_ids(row: dict[str, Any]) -> tuple[list[list[int | float]], list[int]]:
+    raw_boxes = row.get("bboxes_xyxy")
+    if isinstance(raw_boxes, list) and raw_boxes and all(valid_bbox(item) for item in raw_boxes):
+        boxes = raw_boxes
+    else:
+        bbox = row.get("bbox_xyxy")
+        boxes = [bbox] if valid_bbox(bbox) else []
+    if not boxes:
+        raise ValueError(f"manifest row has no valid boxes: {row.get('image_path')}")
+    raw_class_ids = row.get("yolo_class_ids")
+    if isinstance(raw_class_ids, list) and len(raw_class_ids) == len(boxes):
+        class_ids = [int(value) for value in raw_class_ids]
+    else:
+        class_ids = [0 for _ in boxes]
+    return boxes, class_ids
+
+
+def class_names_from_rows(rows: list[dict[str, Any]]) -> list[str]:
+    class_names: list[str] | None = None
+    for row in rows:
+        raw = row.get("yolo_class_names")
+        if not isinstance(raw, list) or not raw or not all(isinstance(item, str) and item for item in raw):
+            continue
+        candidate = list(raw)
+        if class_names is None:
+            class_names = candidate
+        elif class_names != candidate:
+            raise ValueError("manifest rows contain inconsistent yolo_class_names")
+    if class_names is not None:
+        return class_names
+    return ["thyroid_nodule"]
+
+
 def valid_bbox(value: Any) -> bool:
     return (
         isinstance(value, list)
         and len(value) == 4
-        and all(isinstance(item, int | float) for item in value)
+        and all(isinstance(item, (int, float)) for item in value)
         and value[2] > value[0]
         and value[3] > value[1]
     )
 
 
-def yolo_line(bbox: list[int | float], width: int, height: int) -> str:
+def yolo_line(bbox: list[int | float], width: int, height: int, *, class_id: int) -> str:
     left, top, right, bottom = [float(item) for item in bbox]
     box_width = right - left
     box_height = bottom - top
     x_center = (left + box_width / 2) / width
     y_center = (top + box_height / 2) / height
-    return f"0 {x_center:.6f} {y_center:.6f} {box_width / width:.6f} {box_height / height:.6f}\n"
+    return f"{class_id} {x_center:.6f} {y_center:.6f} {box_width / width:.6f} {box_height / height:.6f}\n"
 
 
 def split_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
     labels: dict[str, int] = {}
     original_splits: dict[str, int] = {}
+    boxes = 0
     for row in rows:
         labels[str(row.get("classification_label", "unknown"))] = labels.get(str(row.get("classification_label", "unknown")), 0) + 1
         original_splits[str(row.get("split", "unknown"))] = original_splits.get(str(row.get("split", "unknown")), 0) + 1
+        boxes += len(boxes_and_class_ids(row)[0])
     return {
         "samples": len(rows),
+        "boxes": boxes,
         "classification_labels": labels,
         "source_splits": original_splits,
     }
@@ -263,10 +311,11 @@ def replace_dir(path: Path) -> None:
     path.mkdir(parents=True)
 
 
-def train_yolo(
+def train_ultralytics_detector(
     *,
     data_yaml: Path,
     model_ref: str,
+    model_family: str,
     output_root: Path,
     name: str,
     epochs: int,
@@ -276,6 +325,10 @@ def train_yolo(
     device: str,
     workers: int,
     cache: str,
+    optimizer: str,
+    lr0: float,
+    lrf: float,
+    warmup_epochs: float,
     close_mosaic: int,
     multi_scale: bool,
     mosaic: float,
@@ -291,14 +344,14 @@ def train_yolo(
         raise FileNotFoundError(f"YOLO data.yaml not found: {data_yaml}")
 
     try:
-        from ultralytics import YOLO  # type: ignore[import-not-found]
+        from ultralytics import RTDETR, YOLO  # type: ignore[import-not-found]
     except ImportError as exc:
         raise RuntimeError("ultralytics is required in the active Python environment") from exc
 
     effective_model_ref = effective_model_reference(model_ref)
     project = output_root / "runs"
     project.mkdir(parents=True, exist_ok=True)
-    model = YOLO(effective_model_ref)
+    model = RTDETR(effective_model_ref) if model_family == "rtdetr" else YOLO(effective_model_ref)
     cache_value: bool | str = False if cache == "false" else cache
     result = model.train(
         data=str(data_yaml),
@@ -309,7 +362,10 @@ def train_yolo(
         device=device,
         workers=workers,
         cache=cache_value,
-        optimizer="auto",
+        optimizer=optimizer,
+        lr0=lr0,
+        lrf=lrf,
+        warmup_epochs=warmup_epochs,
         cos_lr=True,
         close_mosaic=close_mosaic,
         multi_scale=multi_scale,
@@ -345,6 +401,8 @@ def effective_model_reference(model_ref: str) -> str:
     if path.exists():
         return str(path)
     if path.name.startswith("yolo11") and path.name.endswith(".pt"):
+        return path.name
+    if path.name.startswith("rtdetr") and path.name.endswith(".pt"):
         return path.name
     return model_ref
 
@@ -402,10 +460,11 @@ def main(argv: list[str] | None = None) -> int:
         copy_images=args.copy_images,
     )
     summary: dict[str, Any] = {
-        "schema_version": "tn3k.yolo11.training.v1",
+        "schema_version": "thyroid.ultralytics_detector.training.v1",
         "status": "prepared" if args.prepare_only else "running",
         "name": args.name,
         "model": args.model,
+        "model_family": args.model_family,
         "output_root": str(args.output_root),
         "params": {
             "train_ratio": args.train_ratio,
@@ -418,6 +477,10 @@ def main(argv: list[str] | None = None) -> int:
             "device": args.device,
             "workers": args.workers,
             "cache": args.cache,
+            "optimizer": args.optimizer,
+            "lr0": args.lr0,
+            "lrf": args.lrf,
+            "warmup_epochs": args.warmup_epochs,
             "close_mosaic": args.close_mosaic,
             "multi_scale": args.multi_scale,
             "mosaic": args.mosaic,
@@ -439,9 +502,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
-    summary["training"] = train_yolo(
+    summary["training"] = train_ultralytics_detector(
         data_yaml=Path(dataset["data_yaml"]),
         model_ref=args.model,
+        model_family=args.model_family,
         output_root=args.output_root,
         name=args.name,
         epochs=args.epochs,
@@ -451,6 +515,10 @@ def main(argv: list[str] | None = None) -> int:
         device=args.device,
         workers=args.workers,
         cache=args.cache,
+        optimizer=args.optimizer,
+        lr0=args.lr0,
+        lrf=args.lrf,
+        warmup_epochs=args.warmup_epochs,
         close_mosaic=args.close_mosaic,
         multi_scale=args.multi_scale,
         mosaic=args.mosaic,

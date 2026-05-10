@@ -1,0 +1,26 @@
+{
+  "dataset": {
+    "data_root": "data/artifacts/datasets/tn3k/processed/datasets/tn3k",
+    "total_samples": 2879,
+    "train_samples": 2303,
+    "val_samples": 576,
+    "split": "seeded 80/20 train/validation split",
+    "seed": 20260510
+  },
+  "training": {
+    "epochs": 30,
+    "batch_size": 16,
+    "image_size": 256,
+    "base_channels": 32,
+    "lr": 0.001,
+    "device": "cuda",
+    "duration_seconds": 188.401
+  },
+  "best": {
+    "epoch": 15,
+    "val_dice": 0.70551,
+    "val_iou": 0.576197,
+    "state_dict": "data/models/segmentation/tn3k-unet-v1/best_state.pt",
+    "torchscript": "data/models/segmentation/tn3k-unet-v1/best_torchscript.pt"
+  }
+}

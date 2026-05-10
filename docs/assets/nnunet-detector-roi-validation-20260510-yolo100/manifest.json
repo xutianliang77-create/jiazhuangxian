@@ -1,0 +1,2345 @@
+[
+  {
+    "case_id": "tn3k_test_0000",
+    "image_id": "0000",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.85617,
+    "source_iou": 0.748512,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0000.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0000.jpg",
+    "detector_bbox": [
+      107.03662872314453,
+      72.19985961914062,
+      188.2184600830078,
+      137.7720947265625
+    ],
+    "crop_box_xyxy": [
+      95,
+      52,
+      201,
+      158
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0000_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0000.png"
+  },
+  {
+    "case_id": "tn3k_test_0001",
+    "image_id": "0001",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.927139,
+    "source_iou": 0.864174,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0001.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0001.jpg",
+    "detector_bbox": [
+      393.8895263671875,
+      126.51133728027344,
+      686.8154296875,
+      412.9872131347656
+    ],
+    "crop_box_xyxy": [
+      350,
+      79,
+      731,
+      460
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0001_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0001.png"
+  },
+  {
+    "case_id": "tn3k_test_0002",
+    "image_id": "0002",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.45882,
+    "source_iou": 0.297707,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0002.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0002.jpg",
+    "detector_bbox": [
+      167.82260131835938,
+      98.82662200927734,
+      395.0702209472656,
+      249.64865112304688
+    ],
+    "crop_box_xyxy": [
+      133,
+      26,
+      429,
+      322
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0002_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0002.png"
+  },
+  {
+    "case_id": "tn3k_test_0003",
+    "image_id": "0003",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.60801,
+    "source_iou": 0.436792,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0003.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0003.jpg",
+    "detector_bbox": [
+      24.22786521911621,
+      67.82038116455078,
+      311.1931457519531,
+      250.55714416503906
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      373,
+      334
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0003_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0003.png"
+  },
+  {
+    "case_id": "tn3k_test_0004",
+    "image_id": "0004",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.752101,
+    "source_iou": 0.602694,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0004.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0004.jpg",
+    "detector_bbox": [
+      168.84820556640625,
+      154.27439880371094,
+      214.6258544921875,
+      191.92257690429688
+    ],
+    "crop_box_xyxy": [
+      152,
+      133,
+      232,
+      213
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0004_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0004.png"
+  },
+  {
+    "case_id": "tn3k_test_0005",
+    "image_id": "0005",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.929922,
+    "source_iou": 0.869023,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0005.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0005.jpg",
+    "detector_bbox": [
+      3.2861952781677246,
+      2.9437012672424316,
+      246.9751434326172,
+      149.83126831054688
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      318,
+      318
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0005_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0005.png"
+  },
+  {
+    "case_id": "tn3k_test_0006",
+    "image_id": "0006",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.845133,
+    "source_iou": 0.731802,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0006.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0006.jpg",
+    "detector_bbox": [
+      218.538818359375,
+      29.749431610107422,
+      401.1855773925781,
+      166.7193603515625
+    ],
+    "crop_box_xyxy": [
+      186,
+      0,
+      423,
+      237
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0006_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0006.png"
+  },
+  {
+    "case_id": "tn3k_test_0007",
+    "image_id": "0007",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.867465,
+    "source_iou": 0.76595,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0007.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0007.jpg",
+    "detector_bbox": [
+      291.99957275390625,
+      164.9423370361328,
+      383.2283630371094,
+      247.84371948242188
+    ],
+    "crop_box_xyxy": [
+      278,
+      146,
+      398,
+      266
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0007_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0007.png"
+  },
+  {
+    "case_id": "tn3k_test_0008",
+    "image_id": "0008",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.700965,
+    "source_iou": 0.539604,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0008.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0008.jpg",
+    "detector_bbox": [
+      79.72193908691406,
+      37.94721984863281,
+      221.43392944335938,
+      133.94168090820312
+    ],
+    "crop_box_xyxy": [
+      59,
+      0,
+      243,
+      184
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0008_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0008.png"
+  },
+  {
+    "case_id": "tn3k_test_0009",
+    "image_id": "0009",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.924404,
+    "source_iou": 0.859434,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0009.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0009.jpg",
+    "detector_bbox": [
+      3.8489725589752197,
+      60.115684509277344,
+      409.1639709472656,
+      376.2457275390625
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      469,
+      380
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0009_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0009.png"
+  },
+  {
+    "case_id": "tn3k_test_0010",
+    "image_id": "0010",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.943638,
+    "source_iou": 0.893291,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0010.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0010.jpg",
+    "detector_bbox": [
+      126.37824249267578,
+      43.46718215942383,
+      376.26190185546875,
+      229.3799285888672
+    ],
+    "crop_box_xyxy": [
+      89,
+      0,
+      413,
+      324
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0010_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0010.png"
+  },
+  {
+    "case_id": "tn3k_test_0011",
+    "image_id": "0011",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.772804,
+    "source_iou": 0.629731,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0011.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0011.jpg",
+    "detector_bbox": [
+      58.33442306518555,
+      37.37174987792969,
+      342.4154052734375,
+      245.1258544921875
+    ],
+    "crop_box_xyxy": [
+      15,
+      0,
+      386,
+      371
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0011_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0011.png"
+  },
+  {
+    "case_id": "tn3k_test_0012",
+    "image_id": "0012",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.489228,
+    "source_iou": 0.323826,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0012.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0012.jpg",
+    "detector_bbox": [
+      84.40186309814453,
+      49.30727767944336,
+      359.5771179199219,
+      172.6590576171875
+    ],
+    "crop_box_xyxy": [
+      43,
+      0,
+      401,
+      358
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0012_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0012.png"
+  },
+  {
+    "case_id": "tn3k_test_0013",
+    "image_id": "0013",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.927662,
+    "source_iou": 0.865084,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0013.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0013.jpg",
+    "detector_bbox": [
+      121.04576110839844,
+      37.287330627441406,
+      274.7142028808594,
+      159.5789337158203
+    ],
+    "crop_box_xyxy": [
+      98,
+      0,
+      298,
+      200
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0013_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0013.png"
+  },
+  {
+    "case_id": "tn3k_test_0014",
+    "image_id": "0014",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.900428,
+    "source_iou": 0.81889,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0014.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0014.jpg",
+    "detector_bbox": [
+      5.220797538757324,
+      59.2911262512207,
+      294.6572265625,
+      269.11285400390625
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      376,
+      376
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0014_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0014.png"
+  },
+  {
+    "case_id": "tn3k_test_0015",
+    "image_id": "0015",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.830471,
+    "source_iou": 0.71009,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0015.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0015.jpg",
+    "detector_bbox": [
+      310.02020263671875,
+      85.0146713256836,
+      362.5496520996094,
+      125.02951049804688
+    ],
+    "crop_box_xyxy": [
+      296,
+      65,
+      376,
+      145
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0015_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0015.png"
+  },
+  {
+    "case_id": "tn3k_test_0016",
+    "image_id": "0016",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.870125,
+    "source_iou": 0.770107,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0016.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0016.jpg",
+    "detector_bbox": [
+      241.92640686035156,
+      68.36367797851562,
+      306.30853271484375,
+      124.07493591308594
+    ],
+    "crop_box_xyxy": [
+      232,
+      54,
+      317,
+      139
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0016_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0016.png"
+  },
+  {
+    "case_id": "tn3k_test_0017",
+    "image_id": "0017",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.673569,
+    "source_iou": 0.507805,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0017.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0017.jpg",
+    "detector_bbox": [
+      238.5995330810547,
+      64.63850402832031,
+      302.2646484375,
+      116.64183807373047
+    ],
+    "crop_box_xyxy": [
+      228,
+      49,
+      312,
+      133
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0017_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0017.png"
+  },
+  {
+    "case_id": "tn3k_test_0018",
+    "image_id": "0018",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.964222,
+    "source_iou": 0.930916,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0018.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0018.jpg",
+    "detector_bbox": [
+      93.13701629638672,
+      75.08695220947266,
+      416.54205322265625,
+      292.28900146484375
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      418,
+      391
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0018_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0018.png"
+  },
+  {
+    "case_id": "tn3k_test_0019",
+    "image_id": "0019",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.799744,
+    "source_iou": 0.666311,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0019.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0019.jpg",
+    "detector_bbox": [
+      155.00799560546875,
+      110.0176773071289,
+      314.65911865234375,
+      243.55079650878906
+    ],
+    "crop_box_xyxy": [
+      131,
+      73,
+      339,
+      281
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0019_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0019.png"
+  },
+  {
+    "case_id": "tn3k_test_0020",
+    "image_id": "0020",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.869472,
+    "source_iou": 0.769085,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0020.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0020.jpg",
+    "detector_bbox": [
+      19.367368698120117,
+      36.548179626464844,
+      239.37826538085938,
+      214.72911071777344
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      287,
+      280
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0020_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0020.png"
+  },
+  {
+    "case_id": "tn3k_test_0021",
+    "image_id": "0021",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.908476,
+    "source_iou": 0.832301,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0021.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0021.jpg",
+    "detector_bbox": [
+      307.0772705078125,
+      84.1280288696289,
+      826.2872924804688,
+      503.9837951660156
+    ],
+    "crop_box_xyxy": [
+      204,
+      0,
+      880,
+      676
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0021_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0021.png"
+  },
+  {
+    "case_id": "tn3k_test_0022",
+    "image_id": "0022",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.900316,
+    "source_iou": 0.818704,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0022.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0022.jpg",
+    "detector_bbox": [
+      158.0393524169922,
+      79.382568359375,
+      345.14691162109375,
+      193.46009826660156
+    ],
+    "crop_box_xyxy": [
+      130,
+      14,
+      374,
+      258
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0022_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0022.png"
+  },
+  {
+    "case_id": "tn3k_test_0023",
+    "image_id": "0023",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.88335,
+    "source_iou": 0.791072,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0023.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0023.jpg",
+    "detector_bbox": [
+      125.39434051513672,
+      101.13871765136719,
+      257.4463195800781,
+      171.1282196044922
+    ],
+    "crop_box_xyxy": [
+      105,
+      50,
+      278,
+      223
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0023_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0023.png"
+  },
+  {
+    "case_id": "tn3k_test_0024",
+    "image_id": "0024",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.891546,
+    "source_iou": 0.804315,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0024.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0024.jpg",
+    "detector_bbox": [
+      123.34323120117188,
+      49.89543533325195,
+      358.26214599609375,
+      248.9871826171875
+    ],
+    "crop_box_xyxy": [
+      88,
+      0,
+      393,
+      305
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0024_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0024.png"
+  },
+  {
+    "case_id": "tn3k_test_0025",
+    "image_id": "0025",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.882255,
+    "source_iou": 0.789317,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0025.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0025.jpg",
+    "detector_bbox": [
+      90.05809020996094,
+      58.1745491027832,
+      298.4912109375,
+      257.9283752441406
+    ],
+    "crop_box_xyxy": [
+      59,
+      23,
+      330,
+      294
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0025_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0025.png"
+  },
+  {
+    "case_id": "tn3k_test_0026",
+    "image_id": "0026",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.926909,
+    "source_iou": 0.863775,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0026.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0026.jpg",
+    "detector_bbox": [
+      61.40532684326172,
+      97.28815460205078,
+      212.30911254882812,
+      190.15289306640625
+    ],
+    "crop_box_xyxy": [
+      38,
+      45,
+      235,
+      242
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0026_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0026.png"
+  },
+  {
+    "case_id": "tn3k_test_0027",
+    "image_id": "0027",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.786402,
+    "source_iou": 0.647993,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0027.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0027.jpg",
+    "detector_bbox": [
+      132.3164520263672,
+      77.52106475830078,
+      227.17051696777344,
+      143.5330047607422
+    ],
+    "crop_box_xyxy": [
+      118,
+      49,
+      241,
+      172
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0027_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0027.png"
+  },
+  {
+    "case_id": "tn3k_test_0028",
+    "image_id": "0028",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.885836,
+    "source_iou": 0.795068,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0028.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0028.jpg",
+    "detector_bbox": [
+      82.33683776855469,
+      41.78821563720703,
+      347.2796936035156,
+      172.016845703125
+    ],
+    "crop_box_xyxy": [
+      42,
+      0,
+      387,
+      345
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0028_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0028.png"
+  },
+  {
+    "case_id": "tn3k_test_0029",
+    "image_id": "0029",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.893336,
+    "source_iou": 0.807234,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0029.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0029.jpg",
+    "detector_bbox": [
+      3.9861161708831787,
+      46.74091720581055,
+      344.1275329589844,
+      243.44566345214844
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      434,
+      351
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0029_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0029.png"
+  },
+  {
+    "case_id": "tn3k_test_0030",
+    "image_id": "0030",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.739296,
+    "source_iou": 0.586416,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0030.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0030.jpg",
+    "detector_bbox": [
+      123.2373046875,
+      118.26348876953125,
+      154.56088256835938,
+      161.2218780517578
+    ],
+    "crop_box_xyxy": [
+      99,
+      100,
+      179,
+      180
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0030_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0030.png"
+  },
+  {
+    "case_id": "tn3k_test_0031",
+    "image_id": "0031",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.714357,
+    "source_iou": 0.555642,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0031.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0031.jpg",
+    "detector_bbox": [
+      205.8843536376953,
+      69.86601257324219,
+      242.68650817871094,
+      98.21361541748047
+    ],
+    "crop_box_xyxy": [
+      184,
+      44,
+      264,
+      124
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0031_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0031.png"
+  },
+  {
+    "case_id": "tn3k_test_0032",
+    "image_id": "0032",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.95095,
+    "source_iou": 0.906486,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0032.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0032.jpg",
+    "detector_bbox": [
+      0.0,
+      85.34001159667969,
+      134.79945373535156,
+      319.1208801269531
+    ],
+    "crop_box_xyxy": [
+      0,
+      50,
+      304,
+      354
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0032_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0032.png"
+  },
+  {
+    "case_id": "tn3k_test_0033",
+    "image_id": "0033",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.847791,
+    "source_iou": 0.735795,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0033.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0033.jpg",
+    "detector_bbox": [
+      236.28128051757812,
+      92.45667266845703,
+      318.48724365234375,
+      167.62942504882812
+    ],
+    "crop_box_xyxy": [
+      224,
+      77,
+      331,
+      184
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0033_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0033.png"
+  },
+  {
+    "case_id": "tn3k_test_0034",
+    "image_id": "0034",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.877331,
+    "source_iou": 0.781469,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0034.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0034.jpg",
+    "detector_bbox": [
+      85.24166870117188,
+      79.29802703857422,
+      242.76397705078125,
+      134.47169494628906
+    ],
+    "crop_box_xyxy": [
+      61,
+      4,
+      267,
+      210
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0034_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0034.png"
+  },
+  {
+    "case_id": "tn3k_test_0035",
+    "image_id": "0035",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.814566,
+    "source_iou": 0.687146,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0035.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0035.jpg",
+    "detector_bbox": [
+      177.51356506347656,
+      39.88272476196289,
+      253.98680114746094,
+      100.11387634277344
+    ],
+    "crop_box_xyxy": [
+      166,
+      20,
+      265,
+      119
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0035_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0035.png"
+  },
+  {
+    "case_id": "tn3k_test_0036",
+    "image_id": "0036",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.623471,
+    "source_iou": 0.45293,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0036.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0036.jpg",
+    "detector_bbox": [
+      257.7676696777344,
+      59.74174880981445,
+      324.92706298828125,
+      103.0949478149414
+    ],
+    "crop_box_xyxy": [
+      247,
+      37,
+      335,
+      125
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0036_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0036.png"
+  },
+  {
+    "image_id": "0037",
+    "status": "detector_empty",
+    "error": "missing_detector_bbox"
+  },
+  {
+    "case_id": "tn3k_test_0038",
+    "image_id": "0038",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.077499,
+    "source_iou": 0.040311,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0038.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0038.jpg",
+    "detector_bbox": [
+      689.97412109375,
+      35.822940826416016,
+      848.3839721679688,
+      131.2652587890625
+    ],
+    "crop_box_xyxy": [
+      666,
+      0,
+      873,
+      207
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0038_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0038.png"
+  },
+  {
+    "case_id": "tn3k_test_0039",
+    "image_id": "0039",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.715012,
+    "source_iou": 0.556435,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0039.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0039.jpg",
+    "detector_bbox": [
+      161.28273010253906,
+      117.46617889404297,
+      222.1433563232422,
+      172.26419067382812
+    ],
+    "crop_box_xyxy": [
+      152,
+      105,
+      232,
+      185
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0039_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0039.png"
+  },
+  {
+    "case_id": "tn3k_test_0040",
+    "image_id": "0040",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.606077,
+    "source_iou": 0.434799,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0040.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0040.jpg",
+    "detector_bbox": [
+      71.22555541992188,
+      79.76850891113281,
+      280.7414855957031,
+      247.84791564941406
+    ],
+    "crop_box_xyxy": [
+      40,
+      28,
+      312,
+      300
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0040_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0040.png"
+  },
+  {
+    "case_id": "tn3k_test_0041",
+    "image_id": "0041",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.065372,
+    "source_iou": 0.03379,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0041.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0041.jpg",
+    "detector_bbox": [
+      67.66980743408203,
+      95.34062194824219,
+      138.83836364746094,
+      144.02000427246094
+    ],
+    "crop_box_xyxy": [
+      56,
+      73,
+      150,
+      167
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0041_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0041.png"
+  },
+  {
+    "case_id": "tn3k_test_0042",
+    "image_id": "0042",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.306745,
+    "source_iou": 0.181157,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0042.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0042.jpg",
+    "detector_bbox": [
+      81.05003356933594,
+      36.861106872558594,
+      460.9512939453125,
+      297.89837646484375
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      463,
+      378
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0042_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0042.png"
+  },
+  {
+    "case_id": "tn3k_test_0043",
+    "image_id": "0043",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.936086,
+    "source_iou": 0.879851,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0043.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0043.jpg",
+    "detector_bbox": [
+      115.63743591308594,
+      38.57227325439453,
+      428.43597412109375,
+      298.6800842285156
+    ],
+    "crop_box_xyxy": [
+      56,
+      0,
+      463,
+      379
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0043_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0043.png"
+  },
+  {
+    "case_id": "tn3k_test_0044",
+    "image_id": "0044",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.692056,
+    "source_iou": 0.529118,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0044.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0044.jpg",
+    "detector_bbox": [
+      450.492431640625,
+      87.75837707519531,
+      695.500732421875,
+      247.74514770507812
+    ],
+    "crop_box_xyxy": [
+      413,
+      8,
+      733,
+      328
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0044_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0044.png"
+  },
+  {
+    "case_id": "tn3k_test_0045",
+    "image_id": "0045",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.928627,
+    "source_iou": 0.866764,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0045.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0045.jpg",
+    "detector_bbox": [
+      226.05935668945312,
+      97.0523681640625,
+      404.9053649902344,
+      206.07289123535156
+    ],
+    "crop_box_xyxy": [
+      183,
+      35,
+      416,
+      268
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0045_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0045.png"
+  },
+  {
+    "case_id": "tn3k_test_0046",
+    "image_id": "0046",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.885553,
+    "source_iou": 0.794612,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0046.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0046.jpg",
+    "detector_bbox": [
+      274.65679931640625,
+      113.7757568359375,
+      368.2315979003906,
+      177.17747497558594
+    ],
+    "crop_box_xyxy": [
+      260,
+      84,
+      382,
+      206
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0046_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0046.png"
+  },
+  {
+    "case_id": "tn3k_test_0047",
+    "image_id": "0047",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.495907,
+    "source_iou": 0.329705,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0047.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0047.jpg",
+    "detector_bbox": [
+      101.98217010498047,
+      91.15242767333984,
+      238.15036010742188,
+      234.19082641601562
+    ],
+    "crop_box_xyxy": [
+      77,
+      70,
+      263,
+      256
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0047_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0047.png"
+  },
+  {
+    "case_id": "tn3k_test_0048",
+    "image_id": "0048",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.600164,
+    "source_iou": 0.428739,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0048.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0048.jpg",
+    "detector_bbox": [
+      77.75550842285156,
+      62.28901672363281,
+      273.5386962890625,
+      153.82196044921875
+    ],
+    "crop_box_xyxy": [
+      49,
+      0,
+      303,
+      254
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0048_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0048.png"
+  },
+  {
+    "case_id": "tn3k_test_0049",
+    "image_id": "0049",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.693526,
+    "source_iou": 0.530838,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0049.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0049.jpg",
+    "detector_bbox": [
+      48.10874938964844,
+      39.72576141357422,
+      255.35568237304688,
+      198.9883575439453
+    ],
+    "crop_box_xyxy": [
+      17,
+      0,
+      287,
+      270
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0049_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0049.png"
+  },
+  {
+    "case_id": "tn3k_test_0050",
+    "image_id": "0050",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.492342,
+    "source_iou": 0.326561,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0050.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0050.jpg",
+    "detector_bbox": [
+      168.85415649414062,
+      62.14010238647461,
+      234.37765502929688,
+      100.6412124633789
+    ],
+    "crop_box_xyxy": [
+      159,
+      38,
+      245,
+      124
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0050_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0050.png"
+  },
+  {
+    "case_id": "tn3k_test_0051",
+    "image_id": "0051",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.7601,
+    "source_iou": 0.613034,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0051.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0051.jpg",
+    "detector_bbox": [
+      31.236879348754883,
+      58.76324462890625,
+      179.39083862304688,
+      169.70216369628906
+    ],
+    "crop_box_xyxy": [
+      9,
+      18,
+      202,
+      211
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0051_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0051.png"
+  },
+  {
+    "case_id": "tn3k_test_0052",
+    "image_id": "0052",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.909273,
+    "source_iou": 0.83364,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0052.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0052.jpg",
+    "detector_bbox": [
+      55.43048858642578,
+      22.972322463989258,
+      301.9495544433594,
+      233.575927734375
+    ],
+    "crop_box_xyxy": [
+      18,
+      0,
+      339,
+      321
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0052_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0052.png"
+  },
+  {
+    "case_id": "tn3k_test_0053",
+    "image_id": "0053",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.881614,
+    "source_iou": 0.788291,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0053.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0053.jpg",
+    "detector_bbox": [
+      207.54759216308594,
+      35.24612808227539,
+      328.1653747558594,
+      171.14703369140625
+    ],
+    "crop_box_xyxy": [
+      166,
+      15,
+      342,
+      191
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0053_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0053.png"
+  },
+  {
+    "case_id": "tn3k_test_0054",
+    "image_id": "0054",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.603834,
+    "source_iou": 0.432495,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0054.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0054.jpg",
+    "detector_bbox": [
+      212.00770568847656,
+      133.8746795654297,
+      986.2198486328125,
+      411.1031494140625
+    ],
+    "crop_box_xyxy": [
+      96,
+      0,
+      1103,
+      736
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0054_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0054.png"
+  },
+  {
+    "case_id": "tn3k_test_0055",
+    "image_id": "0055",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.89194,
+    "source_iou": 0.804956,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0055.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0055.jpg",
+    "detector_bbox": [
+      415.1969299316406,
+      168.80767822265625,
+      807.1435546875,
+      489.30572509765625
+    ],
+    "crop_box_xyxy": [
+      356,
+      74,
+      866,
+      584
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0055_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0055.png"
+  },
+  {
+    "case_id": "tn3k_test_0056",
+    "image_id": "0056",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.887763,
+    "source_iou": 0.798178,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0056.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0056.jpg",
+    "detector_bbox": [
+      336.7093200683594,
+      112.68339538574219,
+      589.9049682617188,
+      347.4944763183594
+    ],
+    "crop_box_xyxy": [
+      298,
+      65,
+      628,
+      395
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0056_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0056.png"
+  },
+  {
+    "case_id": "tn3k_test_0057",
+    "image_id": "0057",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.485667,
+    "source_iou": 0.320713,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0057.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0057.jpg",
+    "detector_bbox": [
+      2.4285850524902344,
+      54.629966735839844,
+      232.2677459716797,
+      246.75247192382812
+    ],
+    "crop_box_xyxy": [
+      0,
+      2,
+      298,
+      300
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0057_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0057.png"
+  },
+  {
+    "case_id": "tn3k_test_0058",
+    "image_id": "0058",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.837804,
+    "source_iou": 0.720879,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0058.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0058.jpg",
+    "detector_bbox": [
+      54.20486831665039,
+      57.71604919433594,
+      806.8029174804688,
+      696.9700927734375
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      979,
+      743
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0058_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0058.png"
+  },
+  {
+    "case_id": "tn3k_test_0059",
+    "image_id": "0059",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.881777,
+    "source_iou": 0.788551,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0059.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0059.jpg",
+    "detector_bbox": [
+      243.01361083984375,
+      73.83728790283203,
+      421.0,
+      272.9781799316406
+    ],
+    "crop_box_xyxy": [
+      161,
+      43,
+      421,
+      303
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0059_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0059.png"
+  },
+  {
+    "case_id": "tn3k_test_0060",
+    "image_id": "0060",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.639007,
+    "source_iou": 0.469515,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0060.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0060.jpg",
+    "detector_bbox": [
+      73.02399444580078,
+      69.80549621582031,
+      392.2355041503906,
+      224.3370361328125
+    ],
+    "crop_box_xyxy": [
+      3,
+      0,
+      419,
+      389
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0060_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0060.png"
+  },
+  {
+    "case_id": "tn3k_test_0061",
+    "image_id": "0061",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.907512,
+    "source_iou": 0.830685,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0061.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0061.jpg",
+    "detector_bbox": [
+      439.3114318847656,
+      169.4625701904297,
+      586.39453125,
+      253.93362426757812
+    ],
+    "crop_box_xyxy": [
+      417,
+      116,
+      609,
+      308
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0061_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0061.png"
+  },
+  {
+    "case_id": "tn3k_test_0062",
+    "image_id": "0062",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.926186,
+    "source_iou": 0.86252,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0062.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0062.jpg",
+    "detector_bbox": [
+      167.80223083496094,
+      76.46145629882812,
+      857.9129028320312,
+      516.706298828125
+    ],
+    "crop_box_xyxy": [
+      63,
+      0,
+      962,
+      769
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0062_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0062.png"
+  },
+  {
+    "case_id": "tn3k_test_0063",
+    "image_id": "0063",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.819783,
+    "source_iou": 0.694604,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0063.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0063.jpg",
+    "detector_bbox": [
+      20.882850646972656,
+      54.86088180541992,
+      331.2208557128906,
+      252.9473114013672
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      405,
+      364
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0063_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0063.png"
+  },
+  {
+    "case_id": "tn3k_test_0064",
+    "image_id": "0064",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.768527,
+    "source_iou": 0.624071,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0064.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0064.jpg",
+    "detector_bbox": [
+      62.32380294799805,
+      48.05936050415039,
+      445.4813537597656,
+      317.3873596191406
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      467,
+      378
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0064_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0064.png"
+  },
+  {
+    "case_id": "tn3k_test_0065",
+    "image_id": "0065",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.602973,
+    "source_iou": 0.431612,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0065.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0065.jpg",
+    "detector_bbox": [
+      168.28480529785156,
+      41.977783203125,
+      464.84478759765625,
+      202.48927307128906
+    ],
+    "crop_box_xyxy": [
+      124,
+      0,
+      509,
+      284
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0065_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0065.png"
+  },
+  {
+    "case_id": "tn3k_test_0066",
+    "image_id": "0066",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.91179,
+    "source_iou": 0.83788,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0066.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0066.jpg",
+    "detector_bbox": [
+      17.56964683532715,
+      81.43234252929688,
+      322.08685302734375,
+      290.289794921875
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      397,
+      336
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0066_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0066.png"
+  },
+  {
+    "case_id": "tn3k_test_0067",
+    "image_id": "0067",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.47615,
+    "source_iou": 0.312465,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0067.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0067.jpg",
+    "detector_bbox": [
+      283.0610046386719,
+      113.73107147216797,
+      378.0907897949219,
+      203.96319580078125
+    ],
+    "crop_box_xyxy": [
+      269,
+      97,
+      393,
+      221
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0067_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0067.png"
+  },
+  {
+    "case_id": "tn3k_test_0068",
+    "image_id": "0068",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.0984,
+    "source_iou": 0.051746,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0068.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0068.jpg",
+    "detector_bbox": [
+      67.96305084228516,
+      65.05984497070312,
+      424.6250915527344,
+      264.62176513671875
+    ],
+    "crop_box_xyxy": [
+      2,
+      0,
+      465,
+      379
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0068_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0068.png"
+  },
+  {
+    "case_id": "tn3k_test_0069",
+    "image_id": "0069",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.933907,
+    "source_iou": 0.87601,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0069.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0069.jpg",
+    "detector_bbox": [
+      21.896860122680664,
+      47.04381561279297,
+      354.5200500488281,
+      365.0505065917969
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      357,
+      398
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0069_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0069.png"
+  },
+  {
+    "case_id": "tn3k_test_0070",
+    "image_id": "0070",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.895882,
+    "source_iou": 0.811401,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0070.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0070.jpg",
+    "detector_bbox": [
+      54.681434631347656,
+      57.63746643066406,
+      332.9822082519531,
+      398.0
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      355,
+      398
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0070_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0070.png"
+  },
+  {
+    "case_id": "tn3k_test_0071",
+    "image_id": "0071",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.838706,
+    "source_iou": 0.722216,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0071.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0071.jpg",
+    "detector_bbox": [
+      7.7803754806518555,
+      63.52518844604492,
+      411.2903137207031,
+      265.599853515625
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      416,
+      382
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0071_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0071.png"
+  },
+  {
+    "case_id": "tn3k_test_0072",
+    "image_id": "0072",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.813108,
+    "source_iou": 0.685073,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0072.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0072.jpg",
+    "detector_bbox": [
+      112.48721313476562,
+      36.30105209350586,
+      279.8335266113281,
+      119.34468841552734
+    ],
+    "crop_box_xyxy": [
+      87,
+      0,
+      305,
+      218
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0072_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0072.png"
+  },
+  {
+    "case_id": "tn3k_test_0073",
+    "image_id": "0073",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.862777,
+    "source_iou": 0.758669,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0073.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0073.jpg",
+    "detector_bbox": [
+      235.1384735107422,
+      68.53874206542969,
+      366.0690002441406,
+      144.02879333496094
+    ],
+    "crop_box_xyxy": [
+      215,
+      21,
+      386,
+      192
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0073_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0073.png"
+  },
+  {
+    "case_id": "tn3k_test_0074",
+    "image_id": "0074",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.797609,
+    "source_iou": 0.663353,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0074.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0074.jpg",
+    "detector_bbox": [
+      230.3378448486328,
+      131.2821044921875,
+      310.2541198730469,
+      179.85482788085938
+    ],
+    "crop_box_xyxy": [
+      218,
+      104,
+      322,
+      208
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0074_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0074.png"
+  },
+  {
+    "case_id": "tn3k_test_0075",
+    "image_id": "0075",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.810142,
+    "source_iou": 0.680874,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0075.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0075.jpg",
+    "detector_bbox": [
+      66.75630950927734,
+      109.84922790527344,
+      186.07640075683594,
+      245.28176879882812
+    ],
+    "crop_box_xyxy": [
+      38,
+      90,
+      214,
+      266
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0075_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0075.png"
+  },
+  {
+    "case_id": "tn3k_test_0076",
+    "image_id": "0076",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.64753,
+    "source_iou": 0.478776,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0076.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0076.jpg",
+    "detector_bbox": [
+      253.0662841796875,
+      89.43479919433594,
+      440.7818298339844,
+      229.81124877929688
+    ],
+    "crop_box_xyxy": [
+      225,
+      38,
+      469,
+      282
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0076_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0076.png"
+  },
+  {
+    "case_id": "tn3k_test_0077",
+    "image_id": "0077",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.791971,
+    "source_iou": 0.65559,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0077.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0077.jpg",
+    "detector_bbox": [
+      82.36542510986328,
+      111.831298828125,
+      158.49082946777344,
+      194.9810028076172
+    ],
+    "crop_box_xyxy": [
+      66,
+      99,
+      174,
+      207
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0077_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0077.png"
+  },
+  {
+    "case_id": "tn3k_test_0078",
+    "image_id": "0078",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.767851,
+    "source_iou": 0.62318,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0078.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0078.jpg",
+    "detector_bbox": [
+      159.02398681640625,
+      117.24108123779297,
+      197.12258911132812,
+      162.72434997558594
+    ],
+    "crop_box_xyxy": [
+      138,
+      100,
+      218,
+      180
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0078_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0078.png"
+  },
+  {
+    "case_id": "tn3k_test_0079",
+    "image_id": "0079",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.819366,
+    "source_iou": 0.694006,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0079.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0079.jpg",
+    "detector_bbox": [
+      91.08592987060547,
+      75.18766784667969,
+      403.939697265625,
+      208.6447296142578
+    ],
+    "crop_box_xyxy": [
+      29,
+      0,
+      436,
+      307
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0079_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0079.png"
+  },
+  {
+    "case_id": "tn3k_test_0080",
+    "image_id": "0080",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.658127,
+    "source_iou": 0.490454,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0080.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0080.jpg",
+    "detector_bbox": [
+      16.167404174804688,
+      58.31179428100586,
+      310.6128845214844,
+      273.4881286621094
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      383,
+      382
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0080_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0080.png"
+  },
+  {
+    "case_id": "tn3k_test_0081",
+    "image_id": "0081",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.829678,
+    "source_iou": 0.708932,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0081.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0081.jpg",
+    "detector_bbox": [
+      123.98638153076172,
+      102.2892074584961,
+      212.68869018554688,
+      194.9022216796875
+    ],
+    "crop_box_xyxy": [
+      108,
+      88,
+      229,
+      209
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0081_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0081.png"
+  },
+  {
+    "case_id": "tn3k_test_0082",
+    "image_id": "0082",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.873581,
+    "source_iou": 0.775538,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0082.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0082.jpg",
+    "detector_bbox": [
+      231.48687744140625,
+      111.7613525390625,
+      331.23187255859375,
+      205.1654510498047
+    ],
+    "crop_box_xyxy": [
+      216,
+      93,
+      346,
+      223
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0082_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0082.png"
+  },
+  {
+    "case_id": "tn3k_test_0083",
+    "image_id": "0083",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.865296,
+    "source_iou": 0.762575,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0083.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0083.jpg",
+    "detector_bbox": [
+      13.733930587768555,
+      22.77029800415039,
+      477.022216796875,
+      328.3787536621094
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      486,
+      536
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0083_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0083.png"
+  },
+  {
+    "case_id": "tn3k_test_0084",
+    "image_id": "0084",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.404205,
+    "source_iou": 0.253294,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0084.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0084.jpg",
+    "detector_bbox": [
+      68.13619995117188,
+      42.241233825683594,
+      353.87420654296875,
+      249.36434936523438
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      365,
+      333
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0084_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0084.png"
+  },
+  {
+    "image_id": "0085",
+    "status": "detector_empty",
+    "error": "missing_detector_bbox"
+  },
+  {
+    "case_id": "tn3k_test_0086",
+    "image_id": "0086",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.623041,
+    "source_iou": 0.452476,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0086.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0086.jpg",
+    "detector_bbox": [
+      306.2843933105469,
+      227.7689971923828,
+      525.0003662109375,
+      365.5645446777344
+    ],
+    "crop_box_xyxy": [
+      273,
+      154,
+      558,
+      439
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0086_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0086.png"
+  },
+  {
+    "image_id": "0087",
+    "status": "detector_empty",
+    "error": "missing_detector_bbox"
+  },
+  {
+    "case_id": "tn3k_test_0088",
+    "image_id": "0088",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.891422,
+    "source_iou": 0.804113,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0088.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0088.jpg",
+    "detector_bbox": [
+      215.08413696289062,
+      130.24961853027344,
+      352.3560791015625,
+      220.0055694580078
+    ],
+    "crop_box_xyxy": [
+      194,
+      85,
+      374,
+      265
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0088_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0088.png"
+  },
+  {
+    "case_id": "tn3k_test_0089",
+    "image_id": "0089",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.88584,
+    "source_iou": 0.795074,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0089.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0089.jpg",
+    "detector_bbox": [
+      119.71663665771484,
+      33.71562957763672,
+      317.04156494140625,
+      248.45936584472656
+    ],
+    "crop_box_xyxy": [
+      79,
+      2,
+      358,
+      281
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0089_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0089.png"
+  },
+  {
+    "case_id": "tn3k_test_0090",
+    "image_id": "0090",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.827279,
+    "source_iou": 0.705436,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0090.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0090.jpg",
+    "detector_bbox": [
+      146.226806640625,
+      83.78422546386719,
+      211.19358825683594,
+      141.5067596435547
+    ],
+    "crop_box_xyxy": [
+      136,
+      70,
+      221,
+      155
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0090_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0090.png"
+  },
+  {
+    "case_id": "tn3k_test_0091",
+    "image_id": "0091",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.723488,
+    "source_iou": 0.566769,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0091.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0091.jpg",
+    "detector_bbox": [
+      110.62454986572266,
+      84.68403625488281,
+      160.41180419921875,
+      114.37458801269531
+    ],
+    "crop_box_xyxy": [
+      96,
+      60,
+      176,
+      140
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0091_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0091.png"
+  },
+  {
+    "case_id": "tn3k_test_0092",
+    "image_id": "0092",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.868266,
+    "source_iou": 0.7672,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0092.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0092.jpg",
+    "detector_bbox": [
+      88.2321548461914,
+      84.95590209960938,
+      262.9537048339844,
+      237.23541259765625
+    ],
+    "crop_box_xyxy": [
+      62,
+      48,
+      289,
+      275
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0092_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0092.png"
+  },
+  {
+    "case_id": "tn3k_test_0093",
+    "image_id": "0093",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.909283,
+    "source_iou": 0.833657,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0093.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0093.jpg",
+    "detector_bbox": [
+      118.61113739013672,
+      152.64254760742188,
+      254.91290283203125,
+      261.74407958984375
+    ],
+    "crop_box_xyxy": [
+      98,
+      119,
+      275,
+      296
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0093_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0093.png"
+  },
+  {
+    "case_id": "tn3k_test_0094",
+    "image_id": "0094",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.875484,
+    "source_iou": 0.778543,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0094.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0094.jpg",
+    "detector_bbox": [
+      203.6767120361328,
+      66.5225601196289,
+      311.3193054199219,
+      162.94017028808594
+    ],
+    "crop_box_xyxy": [
+      187,
+      45,
+      327,
+      185
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0094_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0094.png"
+  },
+  {
+    "case_id": "tn3k_test_0095",
+    "image_id": "0095",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.684725,
+    "source_iou": 0.520595,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0095.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0095.jpg",
+    "detector_bbox": [
+      73.3100357055664,
+      87.50933074951172,
+      105.89532470703125,
+      106.23332977294922
+    ],
+    "crop_box_xyxy": [
+      50,
+      57,
+      130,
+      137
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0095_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0095.png"
+  },
+  {
+    "case_id": "tn3k_test_0096",
+    "image_id": "0096",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.957873,
+    "source_iou": 0.919151,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0096.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0096.jpg",
+    "detector_bbox": [
+      13.901582717895508,
+      46.4507942199707,
+      289.07073974609375,
+      305.1049499511719
+    ],
+    "crop_box_xyxy": [
+      0,
+      0,
+      290,
+      329
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0096_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0096.png"
+  },
+  {
+    "case_id": "tn3k_test_0097",
+    "image_id": "0097",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.941734,
+    "source_iou": 0.889884,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0097.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0097.jpg",
+    "detector_bbox": [
+      0.3611428737640381,
+      43.5682258605957,
+      153.44960021972656,
+      256.249755859375
+    ],
+    "crop_box_xyxy": [
+      0,
+      11,
+      277,
+      288
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0097_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0097.png"
+  },
+  {
+    "case_id": "tn3k_test_0098",
+    "image_id": "0098",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.941937,
+    "source_iou": 0.890247,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0098.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0098.jpg",
+    "detector_bbox": [
+      158.49072265625,
+      51.783634185791016,
+      430.1448669433594,
+      240.27236938476562
+    ],
+    "crop_box_xyxy": [
+      109,
+      0,
+      463,
+      354
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0098_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0098.png"
+  },
+  {
+    "case_id": "tn3k_test_0099",
+    "image_id": "0099",
+    "status": "prepared",
+    "source_status": "succeeded",
+    "source_dice": 0.68684,
+    "source_iou": 0.523043,
+    "image_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-image/0099.jpg",
+    "mask_path": "/home/beelink/jiazhuangxian/data/artifacts/datasets/tn3k/processed/datasets/tn3k/test-mask/0099.jpg",
+    "detector_bbox": [
+      85.27774047851562,
+      36.416587829589844,
+      309.0676574707031,
+      164.54164123535156
+    ],
+    "crop_box_xyxy": [
+      51,
+      0,
+      343,
+      288
+    ],
+    "roi_image": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/images/tn3k_test_0099_0000.png",
+    "roi_label": "data/artifacts/reports/nnunet-detector-roi-validation-20260510-yolo100/labels_roi/tn3k_test_0099.png"
+  }
+]

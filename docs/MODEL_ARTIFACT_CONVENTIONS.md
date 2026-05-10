@@ -44,23 +44,46 @@ artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_
     "unit": "pixel"
   },
   "primary_model": {
-    "adapter": "yolov11-ultralytics",
-    "family": "yolov11",
-    "name": "yolov11-thyroid-detector",
+    "adapter": "rf-detr",
+    "family": "rf-detr",
+    "name": "rf-detr-medium-thyroid-detector",
     "version": "validation-placeholder",
     "weights_hash": "sha256:..."
   },
   "detectors": {
-    "primary": {},
-    "comparators": [],
+    "primary": {
+      "adapter": "rf-detr",
+      "family": "rf-detr",
+      "name": "rf-detr-medium-thyroid-detector",
+      "version": "validation-placeholder"
+    },
+    "comparators": [
+      {
+        "adapter": "yolov11-ultralytics",
+        "family": "yolov11",
+        "name": "yolov11-thyroid-detector",
+        "version": "validation-comparator"
+      }
+    ],
     "consensus": {
-      "status": "single_model_only"
+      "status": "matched",
+      "matched_count": 1,
+      "primary_only_count": 0,
+      "comparator_only_count": 0
     }
   },
   "artifacts": {
     "detections_json": "artifact://model-output/thyroid-detect-nodules/S1/IMG1/MJ1/detections.json",
     "overlay_image": "artifact://model-output/thyroid-detect-nodules/S1/IMG1/MJ1/overlay.png",
-    "model_comparison_json": null
+    "model_comparison_json": "artifact://model-output/thyroid-detect-nodules/S1/IMG1/MJ1/comparison.json"
+  },
+  "llm_evaluation": {
+    "status": "pending_llm",
+    "intended_model": "qwen3.6",
+    "overall_assessment": "consistent",
+    "doctor_review_focus": [
+      "Matched detections can be reviewed at lower priority unless ImageQC flags risk."
+    ]
   },
   "detections": [
     {
@@ -69,7 +92,7 @@ artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_
       "confidence": 0.91,
       "class_id": 0,
       "source": "ai",
-      "model_name": "yolov11-thyroid-detector",
+      "model_name": "rf-detr-medium-thyroid-detector",
       "model_version": "validation-placeholder"
     }
   ],
@@ -93,13 +116,90 @@ artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_
 - Overlay 不是诊断依据，不替代原始图像、DICOM 图像、测量结果或医生修订记录。
 - 如果 Pillow 缺失、源图像不存在或源图像格式无法打开，检测 JSON 仍会写入，`warnings` 会包含 `overlay_unavailable:*`，`artifacts.overlay_image` 为 `null`。
 
-## 双模型对比预留
+## 双模型对比
 
-验证版先支持单主模型输出。后续 YOLOv11 主模型和 RT-DETR/RF-DETR 对照模型同时运行时，写入：
+验证版检测链路采用 RF-DETR-Medium 主模型和 YOLO11m 对照模型。产物写入：
 
-- `detectors.primary`：主模型输出摘要。
-- `detectors.comparators`：对照模型输出摘要列表。
+- `detectors.primary`：RF-DETR-Medium 主模型输出摘要。
+- `detectors.comparators`：YOLO11m 对照模型输出摘要列表。
 - `detectors.consensus`：一致性判断，例如 `matched`、`conflict`、`primary_only`。
 - `artifacts.model_comparison_json`：独立对比 JSON 产物 URI。
+- `llm_evaluation`：主 LLM 对双模型检测结果的结构化评估，包括复核优先级、冲突说明和医生检查重点。
 
 医生工作台和安全审核只应展示可追踪的 artifact URI、模型名、版本、权重 hash 和置信度，不展示无法追溯的临时内存结果。
+
+主 LLM 只评估结构化结果，不直接生成或修改 bbox。所有 bbox 坐标必须来自 RF-DETR-Medium、YOLO11m、后续分割/测量模型或医生人工修订。
+
+## 分割 JSON
+
+验证版 `thyroid.segment_nodule` 写入：
+
+```text
+artifact://model-output/thyroid-segment-nodule/<study_id>/<image_id>/<model_job_id>/segmentation.json
+artifact://model-output/thyroid-segment-nodule/<study_id>/<image_id>/<model_job_id>/mask_nodule_<index>.png
+```
+
+核心字段：
+
+- `schema_version = thyroid.segmentation.output.v1`
+- `artifact_kind = thyroid_nodule_segmentation`
+- `coordinate_system.type = pixel_xy`
+- `segmentations[]`：`nodule_id`、`nodule_index`、`bbox`、`contour`、`mask_uri`、`confidence`、`segmentation_source`、`requires_doctor_review`
+- `artifacts.mask_images[]`：mask PNG 列表
+
+当前未接入真实分割权重时，worker 只允许生成明确标记为 `bbox_fallback` 的矩形 mask。该 mask 用于验证链路和医生复核，不得当作真实结节轮廓或临床分割结果。
+
+## 测量 JSON
+
+验证版 `thyroid.measure_nodule` 写入：
+
+```text
+artifact://model-output/thyroid-measure-nodule/<study_id>/<image_id>/<model_job_id>/measurements.json
+```
+
+核心字段：
+
+- `schema_version = thyroid.measurement.output.v1`
+- `artifact_kind = thyroid_nodule_measurement`
+- `measurements[]`：`nodule_id`、`nodule_index`、`long_axis_mm`、`short_axis_mm`、`area_mm2`、`aspect_ratio`、`pixel_measurements`、`measurement_source`、`requires_doctor_review`
+- `pixel_spacing`：行/列方向毫米间距
+
+当图像没有 DICOM `PixelSpacing` 或人工标尺时，`long_axis_mm`、`short_axis_mm`、`area_mm2` 必须保持 `null`，同时输出像素测量和 `pixel_spacing_missing:mm_measurement_unavailable` warning。报告生成不得把像素值伪装成毫米值。
+
+## 视频分割 JSON
+
+视频版 `thyroid.segment_video_nodule` 写入：
+
+```text
+artifact://model-output/thyroid-segment-video-nodule/<study_id>/<video_id>/<model_job_id>/video_segmentation.json
+artifact://model-output/thyroid-segment-video-nodule/<study_id>/<video_id>/<model_job_id>/track_<track_id>/frame_<frame_index>.png
+```
+
+核心字段：
+
+- `schema_version = thyroid.video_segmentation.output.v1`
+- `artifact_kind = thyroid_nodule_video_segmentation`
+- `video.frame_count`、`video.fps`、`video.processed_frame_range`
+- `tracks[]`：`track_id`、`nodule_id`、`prompt_frame_index`、`prompt_bbox`、`frames[]`、`quality`
+- `tracks[].frames[]`：`frame_index`、`time_ms`、`bbox`、`contour`、`mask_uri`、`confidence`、`requires_doctor_review`
+- `tracks[].quality`：`mean_confidence`、`min_confidence`、`mask_area_cv`、`track_dropout_frames`、`temporal_jitter_score`
+
+视频分割不得静默逐帧 fallback。若使用逐帧 MedSAM/U-Net/Swin U-Net 加跟踪兜底，必须写入 `segmentation_source = framewise_segmentation_with_tracker` 和 warning；若使用 MedSAM2/SAM2，则写入 `segmentation_source = medsam2_video_prompt` 或 `sam2_video_prompt`。
+
+## 视频测量 JSON
+
+视频版 `thyroid.measure_video_nodule` 写入：
+
+```text
+artifact://model-output/thyroid-measure-video-nodule/<study_id>/<video_id>/<model_job_id>/video_measurement.json
+```
+
+核心字段：
+
+- `schema_version = thyroid.video_measurement.output.v1`
+- `artifact_kind = thyroid_nodule_video_measurement`
+- `measurements[]`：`track_id`、`nodule_id`、`selected_frame_index`、`selection_reason`、`long_axis_mm`、`short_axis_mm`、`area_mm2`、`frame_measurements`、`temporal_summary`、`requires_doctor_review`
+- `frame_measurements[]`：逐帧或抽样帧的像素长径、短径、面积
+- `temporal_summary`：`max_long_axis_px`、`median_long_axis_px`、`area_cv`、`stable_frame_count`
+
+默认测量策略为 `max_long_axis_high_confidence`：排除低置信、目标丢失、mask 面积突变和贴边帧后，选择长径最大的高可信帧。缺少 DICOM `PixelSpacing` 或人工标尺时，视频测量同样只输出像素值，毫米字段保持 `null`。

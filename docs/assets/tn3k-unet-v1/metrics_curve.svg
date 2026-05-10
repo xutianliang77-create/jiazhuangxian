@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+<rect width="100%" height="100%" fill="#ffffff" />
+<text x="70" y="22" font-family="Arial, sans-serif" font-size="18" font-weight="700">TN3K U-Net v1 Training Metrics</text>
+<line x1="70" y1="30" x2="70" y2="360" stroke="#222" stroke-width="1" />
+<line x1="70" y1="360" x2="870" y2="360" stroke="#222" stroke-width="1" />
+<line x1="70" y1="360.0" x2="870" y2="360.0" stroke="#e6e6e6" stroke-width="1" />
+<text x="58" y="364.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#555">0.0</text>
+<line x1="70" y1="294.0" x2="870" y2="294.0" stroke="#e6e6e6" stroke-width="1" />
+<text x="58" y="298.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#555">0.2</text>
+<line x1="70" y1="228.0" x2="870" y2="228.0" stroke="#e6e6e6" stroke-width="1" />
+<text x="58" y="232.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#555">0.4</text>
+<line x1="70" y1="162.0" x2="870" y2="162.0" stroke="#e6e6e6" stroke-width="1" />
+<text x="58" y="166.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#555">0.6</text>
+<line x1="70" y1="96.0" x2="870" y2="96.0" stroke="#e6e6e6" stroke-width="1" />
+<text x="58" y="100.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#555">0.8</text>
+<line x1="70" y1="30.0" x2="870" y2="30.0" stroke="#e6e6e6" stroke-width="1" />
+<text x="58" y="34.0" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#555">1.0</text>
+<line x1="70.0" y1="360" x2="70.0" y2="366" stroke="#222" stroke-width="1" />
+<text x="70.0" y="384" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">1</text>
+<line x1="180.3" y1="360" x2="180.3" y2="366" stroke="#222" stroke-width="1" />
+<text x="180.3" y="384" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">5</text>
+<line x1="318.3" y1="360" x2="318.3" y2="366" stroke="#222" stroke-width="1" />
+<text x="318.3" y="384" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">10</text>
+<line x1="456.2" y1="360" x2="456.2" y2="366" stroke="#222" stroke-width="1" />
+<text x="456.2" y="384" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">15</text>
+<line x1="594.1" y1="360" x2="594.1" y2="366" stroke="#222" stroke-width="1" />
+<text x="594.1" y="384" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">20</text>
+<line x1="732.1" y1="360" x2="732.1" y2="366" stroke="#222" stroke-width="1" />
+<text x="732.1" y="384" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">25</text>
+<line x1="870.0" y1="360" x2="870.0" y2="366" stroke="#222" stroke-width="1" />
+<text x="870.0" y="384" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#555">30</text>
+<polyline points="70.0,30.0 97.6,95.9 125.2,116.8 152.8,134.1 180.3,146.3 207.9,156.0 235.5,167.0 263.1,173.8 290.7,179.6 318.3,184.9 345.9,191.2 373.4,193.6 401.0,194.3 428.6,201.9 456.2,206.1 483.8,208.2 511.4,211.2 539.0,216.8 566.6,220.2 594.1,224.9 621.7,228.0 649.3,232.8 676.9,235.8 704.5,243.4 732.1,242.9 759.7,251.5 787.2,258.8 814.8,263.8 842.4,268.0 870.0,271.6" fill="none" stroke="#8a5cf6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+<polyline points="70.0,207.9 97.6,179.2 125.2,189.7 152.8,157.5 180.3,160.3 207.9,174.7 235.5,146.7 263.1,174.7 290.7,156.0 318.3,135.2 345.9,140.8 373.4,138.3 401.0,131.2 428.6,139.2 456.2,127.2 483.8,135.2 511.4,132.1 539.0,131.2 566.6,131.3 594.1,135.5 621.7,136.0 649.3,130.9 676.9,131.0 704.5,155.1 732.1,142.6 759.7,129.7 787.2,135.6 814.8,130.4 842.4,132.8 870.0,134.2" fill="none" stroke="#1677ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+<polyline points="70.0,250.9 97.6,226.0 125.2,235.2 152.8,203.8 180.3,205.5 207.9,218.8 235.5,193.1 263.1,215.5 290.7,200.7 318.3,178.9 345.9,185.4 373.4,182.1 401.0,174.7 428.6,183.1 456.2,169.9 483.8,178.8 511.4,175.2 539.0,173.8 566.6,173.4 594.1,178.0 621.7,178.2 649.3,172.6 676.9,172.4 704.5,194.2 732.1,184.1 759.7,172.2 787.2,178.4 814.8,172.5 842.4,176.5 870.0,177.8" fill="none" stroke="#00a36c" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+<circle cx="456.2" cy="127.2" r="6" fill="#1677ff" stroke="#fff" stroke-width="2" />
+<text x="466.2" y="119.2" font-family="Arial, sans-serif" font-size="12" fill="#1677ff">Best Dice 0.7055 @ epoch 15</text>
+<line x1="70" y1="402" x2="98" y2="402" stroke="#8a5cf6" stroke-width="4" />
+<text x="106" y="406" font-family="Arial, sans-serif" font-size="13" fill="#333">train_loss scaled</text>
+<line x1="240" y1="402" x2="268" y2="402" stroke="#1677ff" stroke-width="4" />
+<text x="276" y="406" font-family="Arial, sans-serif" font-size="13" fill="#333">val_dice</text>
+<line x1="410" y1="402" x2="438" y2="402" stroke="#00a36c" stroke-width="4" />
+<text x="446" y="406" font-family="Arial, sans-serif" font-size="13" fill="#333">val_iou</text>
+<text x="470.0" y="412" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#666">Epoch</text>
+</svg>

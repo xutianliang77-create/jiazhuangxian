@@ -17,6 +17,7 @@ import {
   type MedicalDoctorReview,
   type MedicalImage,
   type MedicalKnowledgeSearchResult,
+  type MedicalMeasurement,
   type MedicalModelGatewayCheck,
   type MedicalModelJob,
   type MedicalNodule,
@@ -40,6 +41,9 @@ const COUNT_LABELS: Array<[keyof MedicalSummary["counts"], string]> = [
   ["reports", "Reports"],
   ["pendingReviews", "Review"],
 ];
+
+const SEGMENT_MODEL_JOB_TYPE = "thyroid.segment_nodule";
+const MEASURE_MODEL_JOB_TYPE = "thyroid.measure_nodule";
 
 interface ManualCaseFormState {
   externalPatientId: string;
@@ -657,6 +661,7 @@ function StudyDetail({
     study,
     images,
     nodules,
+    measurements,
     tiradsResults,
     reports,
     auditLogs,
@@ -739,6 +744,15 @@ function StudyDetail({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="mt-4">
+        <ModelEvidencePanel
+          nodules={nodules}
+          measurements={measurements}
+          reports={reports}
+          modelJobs={modelJobs}
+        />
       </div>
 
       <div className="mt-4">
@@ -1011,6 +1025,9 @@ function ModelJobRow({ job }: { job: MedicalModelJob }) {
   const artifacts = objectValue(job.output?.artifacts);
   const detectionsJsonUri = job.artifactUri ?? stringValue(artifacts?.detections_json);
   const overlayUri = stringValue(artifacts?.overlay_image);
+  const comparisonJsonUri = stringValue(artifacts?.model_comparison_json);
+  const comparison = objectValue(job.output?.comparison);
+  const llmEvaluation = objectValue(job.output?.llm_evaluation);
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
@@ -1029,6 +1046,10 @@ function ModelJobRow({ job }: { job: MedicalModelJob }) {
       {overlayUri && (
         <ArtifactLine label="overlay" value={overlayUri} />
       )}
+      {comparisonJsonUri && (
+        <ArtifactLine label="comparison" value={comparisonJsonUri} />
+      )}
+      <DetectorComparisonSummary comparison={comparison} llmEvaluation={llmEvaluation} />
       {overlayUri && (
         <img
           src={medicalArtifactUrl(overlayUri)}
@@ -1045,6 +1066,59 @@ function ModelJobRow({ job }: { job: MedicalModelJob }) {
   );
 }
 
+function DetectorComparisonSummary({
+  comparison,
+  llmEvaluation,
+}: {
+  comparison?: Record<string, unknown>;
+  llmEvaluation?: Record<string, unknown>;
+}) {
+  const consensus = objectValue(comparison?.consensus) ?? objectValue(llmEvaluation?.comparison_summary);
+  if (!consensus && !llmEvaluation) return null;
+  const focus = stringList(llmEvaluation?.doctor_review_focus);
+  const constraints = stringList(llmEvaluation?.constraints);
+  const intendedModel = stringValue(llmEvaluation?.intended_model) ?? "Qwen3.6";
+  const llmStatus = stringValue(llmEvaluation?.status) ?? "pending_llm";
+  const assessment = stringValue(llmEvaluation?.overall_assessment) ?? "needs_review";
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">Detector Consensus</span>
+        <span className="border border-border rounded px-1.5 py-0.5">
+          {stringValue(consensus?.status) ?? "unknown"}
+        </span>
+      </div>
+      {consensus && (
+        <div className="grid grid-cols-2 gap-2">
+          <Metric label="matched" value={numberLabel(consensus.matched_count)} />
+          <Metric label="primary only" value={numberLabel(consensus.primary_only_count)} />
+          <Metric label="YOLO only" value={numberLabel(consensus.comparator_only_count)} />
+          <Metric label="detectors" value={`${numberLabel(consensus.primary_count)}/${numberLabel(consensus.comparator_count)}`} />
+        </div>
+      )}
+      {llmEvaluation && (
+        <div className="text-muted">
+          {intendedModel} · {llmStatus} · {assessment}
+        </div>
+      )}
+      {focus.length > 0 && (
+        <div className="space-y-1">
+          {focus.map((item, index) => (
+            <div key={index} className="rounded border border-warning/40 px-2 py-1 text-warning">
+              {item}
+            </div>
+          ))}
+        </div>
+      )}
+      {constraints.length > 0 && (
+        <div className="text-[11px] text-muted">
+          {constraints[0]}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ArtifactLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="mt-2 min-w-0">
@@ -1052,6 +1126,184 @@ function ArtifactLine({ label, value }: { label: string; value: string }) {
       <span className="font-mono text-[11px] text-muted break-all">{value}</span>
     </div>
   );
+}
+
+interface NoduleModelEvidence {
+  nodule: MedicalNodule;
+  segmentationEvidence: Record<string, unknown> | null;
+  measurementEvidence: Record<string, unknown> | null;
+  measurement: MedicalMeasurement | null;
+  segmentationJob: MedicalModelJob | null;
+  measurementJob: MedicalModelJob | null;
+}
+
+function ModelEvidencePanel({
+  nodules,
+  measurements,
+  reports,
+  modelJobs,
+}: {
+  nodules: MedicalNodule[];
+  measurements: MedicalMeasurement[];
+  reports: MedicalReport[];
+  modelJobs: MedicalModelJob[];
+}) {
+  if (nodules.length === 0) return null;
+  const rows = buildNoduleModelEvidence(nodules, measurements, reports, modelJobs);
+  return (
+    <div>
+      <h4 className="text-xs uppercase text-muted mb-2">Model Evidence</h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {rows.map((row) => (
+          <NoduleModelEvidenceRow key={row.nodule.id} row={row} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NoduleModelEvidenceRow({ row }: { row: NoduleModelEvidence }) {
+  const segmentation = row.segmentationEvidence;
+  const measurement = row.measurementEvidence;
+  const metadata = objectValue(segmentation?.metadata);
+  const pixelMeasurements = objectValue(measurement?.pixel_measurements);
+  const maskUri = stringValue(segmentation?.mask_uri) ?? row.nodule.maskUri;
+  const longAxisMm = numberValue(measurement?.long_axis_mm) ?? row.measurement?.longAxisMm ?? null;
+  const shortAxisMm = numberValue(measurement?.short_axis_mm) ?? row.measurement?.shortAxisMm ?? null;
+  const apAxisMm = numberValue(measurement?.ap_axis_mm) ?? row.measurement?.apAxisMm ?? null;
+  const areaMm2 = numberValue(measurement?.area_mm2) ?? row.measurement?.areaMm2 ?? null;
+  const aspectRatio = numberValue(measurement?.aspect_ratio) ?? row.measurement?.aspectRatio ?? null;
+  const pixelSummary = formatPixelMeasurements(pixelMeasurements);
+
+  return (
+    <div className="border border-border rounded p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">Nodule {row.nodule.noduleIndex}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">
+          {segmentation || measurement ? "report evidence" : "pending evidence"}
+        </span>
+      </div>
+
+      <div className="mt-3">
+        <div className="font-semibold">Segmentation</div>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <Metric label="source" value={stringValue(segmentation?.segmentation_source) ?? "pending"} />
+          <Metric label="model" value={modelLabel(segmentation, row.segmentationJob)} />
+          <Metric label="version" value={versionLabel(segmentation, row.segmentationJob)} />
+          <Metric label="confidence" value={formatUnknownNumber(segmentation?.confidence)} />
+          <Metric label="crop" value={formatNumberList(metadata?.crop_box_xyxy)} />
+          <Metric label="roi" value={formatNumberList(metadata?.roi_size)} />
+        </div>
+        {maskUri && <ArtifactLine label="mask" value={maskUri} />}
+        {stringValue(segmentation?.artifact_uri) && (
+          <ArtifactLine label="segmentation" value={stringValue(segmentation?.artifact_uri)!} />
+        )}
+      </div>
+
+      <div className="mt-3 border-t border-border pt-3">
+        <div className="font-semibold">Measurement</div>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <Metric label="source" value={stringValue(measurement?.measurement_source) ?? row.measurement?.measurementSource ?? "pending"} />
+          <Metric label="model" value={modelLabel(measurement, row.measurementJob)} />
+          <Metric label="long" value={formatMm(longAxisMm)} />
+          <Metric label="short" value={formatMm(shortAxisMm)} />
+          <Metric label="ap" value={formatMm(apAxisMm)} />
+          <Metric label="area" value={formatArea(areaMm2)} />
+          <Metric label="ratio" value={formatNullableNumber(aspectRatio)} />
+          <Metric label="confidence" value={formatUnknownNumber(measurement?.confidence ?? row.measurement?.confidence)} />
+        </div>
+        {pixelSummary !== "pending" && (
+          <div className="mt-2 text-muted">
+            pixels {pixelSummary}
+          </div>
+        )}
+        {stringValue(measurement?.artifact_uri) && (
+          <ArtifactLine label="measurement" value={stringValue(measurement?.artifact_uri)!} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function buildNoduleModelEvidence(
+  nodules: MedicalNodule[],
+  measurements: MedicalMeasurement[],
+  reports: MedicalReport[],
+  modelJobs: MedicalModelJob[]
+): NoduleModelEvidence[] {
+  const segmentEvidence = latestReportEvidenceByNodule(reports, "segmentation_result");
+  const measurementEvidence = latestReportEvidenceByNodule(reports, "measurement_result");
+  const measurementByNodule = latestMeasurementByNodule(measurements);
+  const segmentJobs = latestModelJobByNodule(modelJobs, SEGMENT_MODEL_JOB_TYPE, "segmentations");
+  const measureJobs = latestModelJobByNodule(modelJobs, MEASURE_MODEL_JOB_TYPE, "measurements");
+  return nodules.map((nodule) => ({
+    nodule,
+    segmentationEvidence: evidenceForNodule(segmentEvidence, nodule),
+    measurementEvidence: evidenceForNodule(measurementEvidence, nodule),
+    measurement: measurementByNodule.get(nodule.id) ?? null,
+    segmentationJob: evidenceForNodule(segmentJobs, nodule),
+    measurementJob: evidenceForNodule(measureJobs, nodule),
+  }));
+}
+
+function latestReportEvidenceByNodule(reports: MedicalReport[], source: string): Map<string, Record<string, unknown>> {
+  const byNodule = new Map<string, Record<string, unknown>>();
+  for (const report of [...reports].sort((a, b) => a.updatedAt - b.updatedAt)) {
+    for (const rawEvidence of report.evidence) {
+      const evidence = objectValue(rawEvidence);
+      if (!evidence || evidence.source !== source) continue;
+      for (const key of noduleKeysFromRecord(evidence)) {
+        byNodule.set(key, evidence);
+      }
+    }
+  }
+  return byNodule;
+}
+
+function latestMeasurementByNodule(measurements: MedicalMeasurement[]): Map<string, MedicalMeasurement> {
+  const byNodule = new Map<string, MedicalMeasurement>();
+  for (const measurement of [...measurements].sort((a, b) => a.createdAt - b.createdAt)) {
+    byNodule.set(measurement.noduleId, measurement);
+  }
+  return byNodule;
+}
+
+function latestModelJobByNodule(
+  modelJobs: MedicalModelJob[],
+  jobType: string,
+  outputKey: string
+): Map<string, MedicalModelJob> {
+  const byNodule = new Map<string, MedicalModelJob>();
+  for (const job of [...modelJobs].sort((a, b) => a.updatedAt - b.updatedAt)) {
+    if (job.jobType !== jobType || job.status !== "succeeded") continue;
+    for (const output of recordList(job.output?.[outputKey])) {
+      for (const key of noduleKeysFromRecord(output)) {
+        byNodule.set(key, job);
+      }
+    }
+  }
+  return byNodule;
+}
+
+function evidenceForNodule<T>(items: Map<string, T>, nodule: MedicalNodule): T | null {
+  return items.get(nodule.id) ?? items.get(`index:${nodule.noduleIndex}`) ?? null;
+}
+
+function noduleKeysFromRecord(record: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  const noduleId = stringValue(record.nodule_id) ?? stringValue(record.noduleId);
+  const noduleIndex = numberValue(record.nodule_index) ?? numberValue(record.noduleIndex);
+  if (noduleId) keys.push(noduleId);
+  if (noduleIndex !== null) keys.push(`index:${noduleIndex}`);
+  return keys;
+}
+
+function modelLabel(evidence: Record<string, unknown> | null, job: MedicalModelJob | null): string {
+  return stringValue(evidence?.model_name) ?? job?.modelName ?? "pending";
+}
+
+function versionLabel(evidence: Record<string, unknown> | null, job: MedicalModelJob | null): string {
+  return stringValue(evidence?.model_version) ?? job?.modelVersion ?? "pending";
 }
 
 function NoduleResultRow({
@@ -1447,6 +1699,55 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function recordList(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.map(objectValue).filter((item): item is Record<string, unknown> => item !== undefined)
+    : [];
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function numberLabel(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "0";
+}
+
+function formatUnknownNumber(value: unknown): string {
+  const number = numberValue(value);
+  return number === null ? "pending" : number.toFixed(2);
+}
+
+function formatNullableNumber(value: number | null): string {
+  return value === null ? "pending" : value.toFixed(2);
+}
+
+function formatMm(value: number | null): string {
+  return value === null ? "pending" : `${value.toFixed(2)} mm`;
+}
+
+function formatArea(value: number | null): string {
+  return value === null ? "pending" : `${value.toFixed(2)} mm2`;
+}
+
+function formatNumberList(value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) return "pending";
+  const numbers = value.map(numberValue);
+  if (numbers.some((item) => item === null)) return "pending";
+  return numbers.map((item) => item!.toFixed(2).replace(/\.00$/, "")).join(", ");
+}
+
+function formatPixelMeasurements(value: Record<string, unknown> | undefined): string {
+  if (!value) return "pending";
+  const parts = Object.entries(value)
+    .map(([key, raw]) => {
+      const number = numberValue(raw);
+      return number === null ? null : `${key}=${number.toFixed(2).replace(/\.00$/, "")}`;
+    })
+    .filter((item): item is string => item !== null);
+  return parts.length === 0 ? "pending" : parts.join(", ");
 }
 
 function gpuLabel(result: Record<string, unknown> | null): string {

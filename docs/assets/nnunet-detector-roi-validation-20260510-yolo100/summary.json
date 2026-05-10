@@ -1,0 +1,14 @@
+{
+  "schema_version": "thyroid.nnunet_detector_roi_validation.v1",
+  "total_cases": 100,
+  "succeeded": 97,
+  "failed": 3,
+  "mean_dice": 0.875605,
+  "median_dice": 0.919343,
+  "min_dice": 0.085727,
+  "mean_iou": 0.797751,
+  "median_iou": 0.850725,
+  "min_iou": 0.044783,
+  "dice_ge_090": 54,
+  "dice_ge_095": 22
+}

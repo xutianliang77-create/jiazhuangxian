@@ -56,6 +56,7 @@ export function migrateIfNeeded(db: Database.Database, kind: "data" | "audit"): 
   const applied: number[] = [];
   const current = currentVersion(db);
   const files = listMigrations(kind);
+  applyDataMigrationSixCompatibility(db, kind, current, files);
 
   for (const f of files) {
     if (f.version <= current) continue;
@@ -75,4 +76,23 @@ export function migrateIfNeeded(db: Database.Database, kind: "data" | "audit"): 
   }
 
   return applied;
+}
+
+function applyDataMigrationSixCompatibility(
+  db: Database.Database,
+  kind: "data" | "audit",
+  current: number,
+  files: MigrationFile[]
+): void {
+  if (kind !== "data" || current < 6 || tableExists(db, "medical_documents")) return;
+  const medicalSchema = files.find((file) => file.version === 6 && file.name === "medical_validation_schema");
+  if (!medicalSchema) return;
+  db.exec(readFileSync(medicalSchema.path, "utf8"));
+}
+
+function tableExists(db: Database.Database, tableName: string): boolean {
+  const row = db
+    .prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1")
+    .get(tableName) as { ok: number } | undefined;
+  return row?.ok === 1;
 }

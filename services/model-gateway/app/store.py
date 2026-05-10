@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .schemas import DetectNodulesRequest
+from .schemas import DetectNodulesRequest, MeasureNoduleRequest, MeasureVideoNoduleRequest, SegmentNoduleRequest, SegmentVideoNoduleRequest
 
 
 MODEL_JOB_SCHEMA = """
@@ -43,8 +43,6 @@ class ModelJobStore:
         self._ensure_schema()
 
     def enqueue_detect_nodules(self, request: DetectNodulesRequest) -> dict[str, Any]:
-        now = current_ms()
-        job_id = f"mj_{uuid.uuid4().hex}"
         input_json = {
             "study_id": request.study_id,
             "image_id": request.image_id,
@@ -53,6 +51,139 @@ class ModelJobStore:
             "metadata": request.metadata,
             "trace_id": request.trace_id,
         }
+        return self._enqueue_job(
+            job_type="thyroid.detect_nodules",
+            study_id=request.study_id,
+            image_id=request.image_id,
+            agent_task_id=request.agent_task_id,
+            priority=request.priority,
+            max_attempts=request.max_attempts,
+            input_json=input_json,
+            model_name=request.model,
+            model_version=request.model_version,
+            weights_hash=request.weights_hash,
+        )
+
+    def enqueue_segment_nodule(self, request: SegmentNoduleRequest) -> dict[str, Any]:
+        input_json = {
+            "study_id": request.study_id,
+            "image_id": request.image_id,
+            "image_uri": request.image_uri,
+            "nodule_id": request.nodule_id,
+            "nodule_index": request.nodule_index,
+            "bbox": request.bbox,
+            "nodules": [target.model_dump(mode="json", exclude_none=True) for target in request.nodules],
+            "allow_bbox_fallback": request.allow_bbox_fallback,
+            "return_mask": request.return_mask,
+            "metadata": request.metadata,
+            "trace_id": request.trace_id,
+        }
+        return self._enqueue_job(
+            job_type="thyroid.segment_nodule",
+            study_id=request.study_id,
+            image_id=request.image_id,
+            agent_task_id=request.agent_task_id,
+            priority=request.priority,
+            max_attempts=request.max_attempts,
+            input_json=input_json,
+            model_name=request.model,
+            model_version=request.model_version,
+            weights_hash=request.weights_hash,
+        )
+
+    def enqueue_measure_nodule(self, request: MeasureNoduleRequest) -> dict[str, Any]:
+        input_json = {
+            "study_id": request.study_id,
+            "image_id": request.image_id,
+            "image_uri": request.image_uri,
+            "nodule_id": request.nodule_id,
+            "nodule_index": request.nodule_index,
+            "bbox": request.bbox,
+            "mask_uri": request.mask_uri,
+            "contour": request.contour,
+            "nodules": [target.model_dump(mode="json", exclude_none=True) for target in request.nodules],
+            "pixel_spacing": request.pixel_spacing,
+            "metadata": request.metadata,
+            "trace_id": request.trace_id,
+        }
+        return self._enqueue_job(
+            job_type="thyroid.measure_nodule",
+            study_id=request.study_id,
+            image_id=request.image_id,
+            agent_task_id=request.agent_task_id,
+            priority=request.priority,
+            max_attempts=request.max_attempts,
+            input_json=input_json,
+            model_name=request.model,
+            model_version=request.model_version,
+            weights_hash=request.weights_hash,
+        )
+
+    def enqueue_segment_video_nodule(self, request: SegmentVideoNoduleRequest) -> dict[str, Any]:
+        input_json = {
+            "study_id": request.study_id,
+            "video_id": request.video_id,
+            "video_uri": request.video_uri,
+            "frame_manifest_uri": request.frame_manifest_uri,
+            "targets": [target.model_dump(mode="json", exclude_none=True) for target in request.targets],
+            "frame_range": request.frame_range.model_dump(mode="json", exclude_none=True),
+            "allow_framewise_fallback": request.allow_framewise_fallback,
+            "return_masks": request.return_masks,
+            "metadata": request.metadata,
+            "trace_id": request.trace_id,
+        }
+        return self._enqueue_job(
+            job_type="thyroid.segment_video_nodule",
+            study_id=request.study_id,
+            image_id=request.video_id,
+            agent_task_id=request.agent_task_id,
+            priority=request.priority,
+            max_attempts=request.max_attempts,
+            input_json=input_json,
+            model_name=request.model,
+            model_version=request.model_version,
+            weights_hash=request.weights_hash,
+        )
+
+    def enqueue_measure_video_nodule(self, request: MeasureVideoNoduleRequest) -> dict[str, Any]:
+        input_json = {
+            "study_id": request.study_id,
+            "video_id": request.video_id,
+            "segmentation_uri": request.segmentation_uri,
+            "pixel_spacing": request.pixel_spacing,
+            "measurement_policy": request.measurement_policy,
+            "metadata": request.metadata,
+            "trace_id": request.trace_id,
+        }
+        return self._enqueue_job(
+            job_type="thyroid.measure_video_nodule",
+            study_id=request.study_id,
+            image_id=request.video_id,
+            agent_task_id=request.agent_task_id,
+            priority=request.priority,
+            max_attempts=request.max_attempts,
+            input_json=input_json,
+            model_name=request.model,
+            model_version=request.model_version,
+            weights_hash=request.weights_hash,
+        )
+
+    def _enqueue_job(
+        self,
+        *,
+        job_type: str,
+        study_id: str,
+        image_id: str,
+        agent_task_id: str | None,
+        priority: int,
+        max_attempts: int,
+        input_json: dict[str, Any],
+        model_name: str,
+        model_version: str,
+        weights_hash: str | None,
+    ) -> dict[str, Any]:
+        now = current_ms()
+        job_id = f"mj_{uuid.uuid4().hex}"
         with self._connect() as conn:
             conn.execute(
                 """
@@ -65,20 +196,20 @@ class ModelJobStore:
                 """,
                 (
                     job_id,
-                    request.study_id,
-                    request.image_id,
-                    request.agent_task_id,
-                    "thyroid.detect_nodules",
+                    study_id,
+                    image_id,
+                    agent_task_id,
+                    job_type,
                     "queued",
-                    request.priority,
+                    priority,
                     0,
-                    request.max_attempts,
+                    max_attempts,
                     json.dumps(input_json, ensure_ascii=False),
                     None,
                     None,
-                    request.model,
-                    request.model_version,
-                    request.weights_hash,
+                    model_name,
+                    model_version,
+                    weights_hash,
                     None,
                     now,
                     now,

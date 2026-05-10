@@ -9,7 +9,6 @@ TORCH_FIND_LINKS="${TORCH_FIND_LINKS:-}"
 TORCH_VERSION="${TORCH_VERSION:-}"
 TORCHVISION_VERSION="${TORCHVISION_VERSION:-}"
 TORCHAUDIO_VERSION="${TORCHAUDIO_VERSION:-}"
-INSTALL_RFDETR=0
 
 torchvision_version_for_torch() {
   case "$1" in
@@ -36,14 +35,19 @@ Options:
   --torch-find-links URL PyTorch wheel listing mirror, used with pip -f when
                          download.pytorch.org is slow
   --torch-version VER    Exact CUDA PyTorch version, for example 2.11.0+cu128
-  --install-rfdetr       Also install the optional RF-DETR runtime package
+  --install-rfdetr       Backward-compatible no-op; RF-DETR is installed by
+                         requirements-gpu.txt because it is the primary detector
   -h, --help             Show this help
 
 Environment after install:
   source "$VENV_DIR/bin/activate"
   export JZX_DATA_DB="$ROOT_DIR/data/artifacts/medical/data.db"
   export JZX_ARTIFACT_ROOT="$ROOT_DIR/data/artifacts"
+  export JZX_RFDETR_WEIGHTS="/absolute/path/to/rfdetr-medium-thyroid.pth"
   export JZX_YOLOV11_WEIGHTS="/absolute/path/to/yolov11-thyroid.pt"
+  export JZX_MEDSAM2_WEIGHTS="/absolute/path/to/medsam2-or-sam2.pt"
+  export JZX_MEDSAM2_CONFIG="/absolute/path/to/sam2.1_hiera_tiny.yaml"
+  export JZX_SAM2_IMAGE_CONFIG="\$JZX_MEDSAM2_CONFIG"
   npm run model-gateway:check -- --strict
 USAGE
 }
@@ -71,7 +75,6 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --install-rfdetr)
-      INSTALL_RFDETR=1
       shift
       ;;
     -h|--help)
@@ -126,9 +129,6 @@ fi
 
 echo "== Install model-gateway GPU requirements =="
 python -m pip install -r "$ROOT_DIR/services/model-gateway/requirements-gpu.txt"
-if [[ "$INSTALL_RFDETR" -eq 1 ]]; then
-  python -m pip install rfdetr
-fi
 
 echo "== Runtime verification =="
 python - <<'PY'
@@ -168,8 +168,12 @@ Next:
   source "$VENV_DIR/bin/activate"
   export JZX_DATA_DB="$ROOT_DIR/data/artifacts/medical/data.db"
   export JZX_ARTIFACT_ROOT="$ROOT_DIR/data/artifacts"
+  export JZX_RFDETR_WEIGHTS="/absolute/path/to/rfdetr-medium-thyroid.pth"
   export JZX_YOLOV11_WEIGHTS="/absolute/path/to/yolov11-thyroid.pt"
   export JZX_RTDETR_WEIGHTS="/absolute/path/to/rtdetr-thyroid.pt"
+  export JZX_MEDSAM2_WEIGHTS="/absolute/path/to/medsam2-or-sam2.pt"
+  export JZX_MEDSAM2_CONFIG="/absolute/path/to/sam2.1_hiera_tiny.yaml"
+  export JZX_SAM2_IMAGE_CONFIG="\$JZX_MEDSAM2_CONFIG"
   npm run model-gateway:check -- --strict
   npm run model-worker:once
 DONE

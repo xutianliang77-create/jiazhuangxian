@@ -8,7 +8,16 @@
 -r requirements.txt
 
 ultralytics>=8.3,<9.0
+rfdetr[train,loggers]
+segment-anything
+albumentations>=1.4
 
-# RF-DETR is intentionally optional for the first detector baseline. Enable it
-# from scripts/setup-remote-5090-gpu.sh with --install-rfdetr after confirming
-# the exact package version to use on the target 5090 host.
+# Optional segmentation training baselines for the 5090 host.
+nnunetv2>=2.5
+timm>=1.0
+segmentation-models-pytorch>=0.3
+monai>=1.4,<2.0
+
+# Optional for MED-312V-C real static/video SAM2 segmentation. PyPI is used first;
+# if unavailable, install from the official repository instead:
+sam2==1.1.0

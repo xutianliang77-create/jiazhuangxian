@@ -7,7 +7,16 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .schemas import DetectNodulesRequest, GatewayResponse, error, ok
+from .schemas import (
+    DetectNodulesRequest,
+    GatewayResponse,
+    MeasureNoduleRequest,
+    MeasureVideoNoduleRequest,
+    SegmentNoduleRequest,
+    SegmentVideoNoduleRequest,
+    error,
+    ok,
+)
 from .store import ModelJobStore, default_db_path
 
 
@@ -27,6 +36,10 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
                             "data_db": str(store.db_path),
                             "routes": [
                                 "/model/v1/infer/thyroid/detect-nodules",
+                                "/model/v1/infer/thyroid/segment-nodule",
+                                "/model/v1/infer/thyroid/measure-nodule",
+                                "/model/v1/infer/thyroid/segment-video-nodule",
+                                "/model/v1/infer/thyroid/measure-video-nodule",
                                 "/model/v1/jobs/{job_id}",
                                 "/model/v1/config/check",
                             ],
@@ -50,13 +63,18 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
             self._write_response(error("not_found", "route not found"), 404)
 
         def do_POST(self) -> None:
-            if self.path != "/model/v1/infer/thyroid/detect-nodules":
+            if self.path not in {
+                "/model/v1/infer/thyroid/detect-nodules",
+                "/model/v1/infer/thyroid/segment-nodule",
+                "/model/v1/infer/thyroid/measure-nodule",
+                "/model/v1/infer/thyroid/segment-video-nodule",
+                "/model/v1/infer/thyroid/measure-video-nodule",
+            }:
                 self._write_response(error("not_found", "route not found"), 404)
                 return
             try:
                 payload = self._read_json()
-                request = DetectNodulesRequest.model_validate(payload)
-                row = store.enqueue_detect_nodules(request)
+                request, row = enqueue_request(self.path, payload, store)
                 self._write_response(
                     ok(
                         {
@@ -71,7 +89,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
                             },
                         },
                         trace_id=request.trace_id,
-                        warnings=["detector worker is not configured yet; job is queued for validation flow only"],
+                        warnings=[queued_warning(row["job_type"])],
                     )
                 )
             except json.JSONDecodeError:
@@ -106,6 +124,42 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
             self.wfile.write(body)
 
     return ThreadingHTTPServer((host, port), ModelGatewayHandler)
+
+
+def enqueue_request(
+    path: str,
+    payload: dict[str, object],
+    store: ModelJobStore,
+) -> tuple[
+    DetectNodulesRequest | SegmentNoduleRequest | MeasureNoduleRequest | SegmentVideoNoduleRequest | MeasureVideoNoduleRequest,
+    dict[str, object],
+]:
+    if path == "/model/v1/infer/thyroid/detect-nodules":
+        request = DetectNodulesRequest.model_validate(payload)
+        return request, store.enqueue_detect_nodules(request)
+    if path == "/model/v1/infer/thyroid/segment-nodule":
+        request = SegmentNoduleRequest.model_validate(payload)
+        return request, store.enqueue_segment_nodule(request)
+    if path == "/model/v1/infer/thyroid/measure-nodule":
+        request = MeasureNoduleRequest.model_validate(payload)
+        return request, store.enqueue_measure_nodule(request)
+    if path == "/model/v1/infer/thyroid/segment-video-nodule":
+        request = SegmentVideoNoduleRequest.model_validate(payload)
+        return request, store.enqueue_segment_video_nodule(request)
+    request = MeasureVideoNoduleRequest.model_validate(payload)
+    return request, store.enqueue_measure_video_nodule(request)
+
+
+def queued_warning(job_type: object) -> str:
+    if job_type == "thyroid.segment_nodule":
+        return "segment worker is queued; validation fallback may use bbox-derived mask when no segmenter is configured"
+    if job_type == "thyroid.measure_nodule":
+        return "measurement worker is queued; mm values require pixel spacing or manual calibration"
+    if job_type == "thyroid.segment_video_nodule":
+        return "video segment worker is queued; validation fallback may only emit prompt-frame bbox masks when no video segmenter is configured"
+    if job_type == "thyroid.measure_video_nodule":
+        return "video measurement worker is queued; mm values require pixel spacing or manual calibration"
+    return "detector worker is not configured yet; job is queued for validation flow only"
 
 
 def format_job(row: dict[str, object]) -> dict[str, object]:

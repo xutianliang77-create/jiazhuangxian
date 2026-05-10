@@ -145,6 +145,52 @@
       ]
     },
     {
+      "id": "fangdai-thyroid-ultrasound-images",
+      "name": "FangDai Thyroid Ultrasound Images",
+      "source_url": "https://huggingface.co/datasets/FangDai/Thyroid_Ultrasound_Images",
+      "download_url_used": "https://hf-mirror.com/datasets/FangDai/Thyroid_Ultrasound_Images",
+      "access": "auto_gated_huggingface",
+      "license": "apache-2.0_with_non_commercial_gated_acknowledgement",
+      "download_status": "downloaded",
+      "downloaded_at": "2026-05-10T20:50:00+08:00",
+      "repo_snapshot": {
+        "sha": "ccd08799a57b8e5c045b71883900cf3e5872d1bc",
+        "last_modified": "2025-12-29T05:25:32.000Z",
+        "file_count_from_api": 303
+      },
+      "local_paths": {
+        "raw_root": "data/artifacts/datasets/fangdai-thyroid-ultrasound-images/raw",
+        "download_summary": "data/artifacts/datasets/fangdai-thyroid-ultrasound-images/metadata/download_summary.json",
+        "file_manifest": "data/artifacts/datasets/fangdai-thyroid-ultrasound-images/metadata/file_manifest.csv",
+        "final_validation_lock": "data/artifacts/datasets/fangdai-thyroid-ultrasound-images/metadata/final_validation_lock.json",
+        "usage_protocol": "docs/FANGDAI_FINAL_VALIDATION_PROTOCOL.md"
+      },
+      "checksums": {
+        "README.md_sha256": "7b8c09116f0a4b6758fc5a9582feebbba80879c9eebf28213a46a21e57d588bc",
+        "Tiger-Modelpredictions-and-Performancemetrics.rar_sha256": "cb8bf411089e66f6dcfdd11c8a07909387c0e7688449a767c97d2eb4c8c266ae"
+      },
+      "counts": {
+        "image_files": 298,
+        "FTC": 100,
+        "MTC": 99,
+        "PTC": 99,
+        "jpg_files": 99,
+        "png_files": 199
+      },
+      "tasks": [
+        "final_external_validation",
+        "thyroid_cancer_subtype_classification"
+      ],
+      "usage_policy": "final_validation_only_do_not_train_or_tune",
+      "notes": [
+        "The dataset card states 900 images, but the repository snapshot downloaded on 2026-05-10 contains 298 images under Thyroid/.",
+        "Use this dataset only after model selection is frozen.",
+        "No bbox or segmentation mask files were found in the downloaded image folders.",
+        "Official huggingface.co timed out from this Mac during CLI checks; hf-mirror.com was used for payload download.",
+        "Run scripts/lock_final_validation_dataset.py before final validation to verify file count, size, and sha256."
+      ]
+    },
+    {
       "id": "tn5000",
       "name": "TN5000: An Ultrasound Image Dataset for Thyroid Nodule Detection and Classification",
       "source_url": "https://springernature.figshare.com/articles/dataset/TN5000_An_Ultrasound_Image_Dataset_for_Thyroid_Nodule_Detection_and_Classification/28455641",

@@ -1,0 +1,73 @@
+{
+  "schema_version": "thyroid.measurement.output.v1",
+  "artifact_kind": "thyroid_nodule_measurement",
+  "created_at": 1778390107422,
+  "created_by_worker": "static-chain-v2",
+  "study_id": "STATIC_CHAIN_V2",
+  "image_id": "0000",
+  "agent_task_id": null,
+  "model_job_id": "mj_33a3356b516844c792106efbfc026f28",
+  "job_type": "thyroid.measure_nodule",
+  "coordinate_system": {
+    "type": "pixel",
+    "origin": "top_left",
+    "unit": "pixel"
+  },
+  "artifacts": {
+    "measurements_json": "artifact://model-output/thyroid-measure-nodule/STATIC_CHAIN_V2/0000/mj_33a3356b516844c792106efbfc026f28/measurements.json"
+  },
+  "measurements": [
+    {
+      "nodule_id": "N1",
+      "nodule_index": 1,
+      "long_axis_mm": 13.5,
+      "short_axis_mm": 12.9,
+      "ap_axis_mm": null,
+      "area_mm2": 78.76,
+      "aspect_ratio": 1.0465,
+      "pixel_measurements": {
+        "long_axis_px": 135.0,
+        "short_axis_px": 129.0,
+        "area_px2": 7876.0,
+        "width_px": 135.0,
+        "height_px": 129.0
+      },
+      "measurement_source": "mask",
+      "confidence": null,
+      "requires_doctor_review": false
+    }
+  ],
+  "pixel_spacing": {
+    "row_mm": 0.1,
+    "column_mm": 0.1
+  },
+  "warnings": [],
+  "raw_output": {
+    "measurements": [
+      {
+        "nodule_id": "N1",
+        "nodule_index": 1,
+        "long_axis_mm": 13.5,
+        "short_axis_mm": 12.9,
+        "ap_axis_mm": null,
+        "area_mm2": 78.76,
+        "aspect_ratio": 1.0465,
+        "pixel_measurements": {
+          "long_axis_px": 135.0,
+          "short_axis_px": 129.0,
+          "area_px2": 7876.0,
+          "width_px": 135.0,
+          "height_px": 129.0
+        },
+        "measurement_source": "mask",
+        "confidence": null,
+        "requires_doctor_review": false
+      }
+    ],
+    "pixel_spacing": {
+      "row_mm": 0.1,
+      "column_mm": 0.1
+    },
+    "warnings": []
+  }
+}

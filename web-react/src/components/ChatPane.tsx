@@ -13,6 +13,7 @@ import { useMessagesStore, type ChatMessage } from "@/store/messages";
 import { useApprovalsStore } from "@/store/approvals";
 import { useSubagentsStore } from "@/store/subagents";
 import { useAuthStore } from "@/store/auth";
+import { openEventSource } from "@/api/client";
 import { getSessionMessages, sendMessage } from "@/api/endpoints";
 import type { MessageAttachment } from "@/api/endpoints";
 import MessageBubble from "./MessageBubble";
@@ -141,10 +142,7 @@ export default function ChatPane({ onError }: Props) {
   useEffect(() => {
     if (!activeId || !token) return;
     sseRef.current?.close();
-    // EventSource 不支持自定义 header → 用 query token；后端阶段 B 后续接受 ?token
-    // 阶段 A 后端仍读 Authorization → 先尝试，401 时报错给前端
-    const url = `/v1/web/stream?sessionId=${encodeURIComponent(activeId)}&token=${encodeURIComponent(token)}`;
-    const es = new EventSource(url);
+    const es = openEventSource(`/v1/web/stream?sessionId=${encodeURIComponent(activeId)}`);
     sseRef.current = es;
     const store = useMessagesStore.getState();
 
@@ -224,10 +222,7 @@ export default function ChatPane({ onError }: Props) {
       }
     });
     es.addEventListener("error", () => {
-      // 401（最常见，token 走 query 时后端尚未支持）；阶段 B 后端补丁后消失
-      onError(
-        "SSE 连接出错（如 401，需后端接受 ?token query；当前 build 仍读 Authorization）"
-      );
+      onError("SSE 连接出错，请刷新页面或重新粘贴 Web token 后重试。");
     });
     return () => {
       es.close();

@@ -121,12 +121,26 @@ const studyBundle = {
       noduleIndex: 1,
       location: null,
       bbox: [10, 20, 30, 40],
-      maskUri: null,
+      maskUri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
       detectionConfidence: 0.91,
       source: "ai",
       status: "detected",
       createdAt: 1778245200000,
       updatedAt: 1778245200000,
+    },
+  ],
+  measurements: [
+    {
+      id: "M1",
+      noduleId: "N1",
+      longAxisMm: 11,
+      shortAxisMm: 6,
+      apAxisMm: null,
+      areaMm2: 42,
+      aspectRatio: 1.83,
+      measurementSource: "mask",
+      confidence: 0.88,
+      createdAt: 1778245300000,
     },
   ],
   tiradsFeatures: [],
@@ -154,8 +168,54 @@ const studyBundle = {
       templateId: "tpl-thyroid-ultrasound-draft-v1",
       draftText: "甲状腺超声AI辅助报告（草稿）\nTI-RADS TR4，需医生审核确认后生效。",
       finalText: null,
-      structured: { review_required: true },
-      evidence: [{ source: "tirads_result", rule_code: "ACR_2017_category_TR4" }],
+      structured: {
+        review_required: true,
+        model_evidence: {
+          segmentation_count: 1,
+          measurement_count: 1,
+        },
+      },
+      evidence: [
+        { source: "tirads_result", rule_code: "ACR_2017_category_TR4" },
+        {
+          source: "segmentation_result",
+          nodule_id: "N1",
+          nodule_index: 1,
+          model_job_id: "MJ-SEG",
+          artifact_uri: "artifact://model-output/S1/IMG1/MJ-SEG/segmentation.json",
+          model_name: "nnunet-tight-roi-segmenter",
+          model_version: "tn3k-tight-roi-5fold-best",
+          segmentation_source: "nnunet_tight_roi",
+          mask_uri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
+          confidence: 0.92,
+          requires_doctor_review: true,
+          metadata: {
+            crop_box_xyxy: [8, 18, 32, 52],
+            roi_size: [384, 384],
+          },
+        },
+        {
+          source: "measurement_result",
+          nodule_id: "N1",
+          nodule_index: 1,
+          model_job_id: "MJ-MEASURE",
+          artifact_uri: "artifact://model-output/S1/IMG1/MJ-MEASURE/measurement.json",
+          model_name: "mask-measurement-worker",
+          model_version: "validation-measurement-v1",
+          measurement_source: "mask",
+          long_axis_mm: 11,
+          short_axis_mm: 6,
+          ap_axis_mm: null,
+          area_mm2: 42,
+          aspect_ratio: 1.83,
+          pixel_measurements: {
+            long_axis_px: 22,
+            short_axis_px: 12,
+          },
+          confidence: 0.88,
+          requires_doctor_review: true,
+        },
+      ],
       createdByAgent: "worker-test",
       confirmedBy: null,
       confirmedAt: null,
@@ -197,10 +257,40 @@ const studyBundle = {
         artifacts: {
           detections_json: "artifact://model-output/S1/IMG1/MJ1/detections.json",
           overlay_image: "artifact://model-output/S1/IMG1/MJ1/overlay.png",
+          model_comparison_json: "artifact://model-output/S1/IMG1/MJ1/comparison.json",
+        },
+        comparison: {
+          consensus: {
+            status: "matched",
+            matched_count: 1,
+            primary_only_count: 0,
+            comparator_only_count: 0,
+            primary_count: 1,
+            comparator_count: 1,
+          },
+          matches: [
+            {
+              primary_detection_id: "primary-1",
+              comparator_detection_id: "yolo-1",
+              iou: 0.86,
+              status: "matched",
+            },
+          ],
+        },
+        llm_evaluation: {
+          status: "pending_llm",
+          intended_model: "qwen3.6",
+          overall_assessment: "consistent",
+          doctor_review_focus: [
+            "Matched detections can be reviewed at lower priority unless ImageQC flags risk.",
+          ],
+          constraints: [
+            "LLM must not create, delete, or move bbox coordinates.",
+          ],
         },
       },
       error: null,
-      modelName: "yolov11-thyroid-detector",
+      modelName: "rf-detr-medium-thyroid-detector",
       modelVersion: "validation",
       weightsHash: null,
       artifactUri: "artifact://model-output/S1/IMG1/MJ1/detections.json",
@@ -208,6 +298,81 @@ const studyBundle = {
       updatedAt: 1778245300000,
       startedAt: 1778245200000,
       completedAt: 1778245300000,
+    },
+    {
+      id: "MJ-SEG",
+      studyId: "S1",
+      imageId: "IMG1",
+      agentTaskId: "AT-SEG",
+      jobType: "thyroid.segment_nodule",
+      status: "succeeded",
+      priority: 100,
+      attempts: 1,
+      maxAttempts: 1,
+      input: { nodule_id: "N1" },
+      output: {
+        segmentations: [
+          {
+            nodule_id: "N1",
+            nodule_index: 1,
+            mask_uri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
+            segmentation_source: "nnunet_tight_roi",
+            confidence: 0.92,
+            metadata: {
+              crop_box_xyxy: [8, 18, 32, 52],
+              roi_size: [384, 384],
+            },
+          },
+        ],
+      },
+      error: null,
+      modelName: "nnunet-tight-roi-segmenter",
+      modelVersion: "tn3k-tight-roi-5fold-best",
+      weightsHash: null,
+      artifactUri: "artifact://model-output/S1/IMG1/MJ-SEG/segmentation.json",
+      createdAt: 1778245300000,
+      updatedAt: 1778245400000,
+      startedAt: 1778245300000,
+      completedAt: 1778245400000,
+    },
+    {
+      id: "MJ-MEASURE",
+      studyId: "S1",
+      imageId: "IMG1",
+      agentTaskId: "AT-MEASURE",
+      jobType: "thyroid.measure_nodule",
+      status: "succeeded",
+      priority: 100,
+      attempts: 1,
+      maxAttempts: 1,
+      input: { nodule_id: "N1" },
+      output: {
+        measurements: [
+          {
+            nodule_id: "N1",
+            nodule_index: 1,
+            measurement_source: "mask",
+            long_axis_mm: 11,
+            short_axis_mm: 6,
+            area_mm2: 42,
+            aspect_ratio: 1.83,
+            pixel_measurements: {
+              long_axis_px: 22,
+              short_axis_px: 12,
+            },
+            confidence: 0.88,
+          },
+        ],
+      },
+      error: null,
+      modelName: "mask-measurement-worker",
+      modelVersion: "validation-measurement-v1",
+      weightsHash: null,
+      artifactUri: "artifact://model-output/S1/IMG1/MJ-MEASURE/measurement.json",
+      createdAt: 1778245400000,
+      updatedAt: 1778245500000,
+      startedAt: 1778245400000,
+      completedAt: 1778245500000,
     },
   ],
   analysisSessions: [],
@@ -330,6 +495,67 @@ describe("MedicalPanel", () => {
         ],
       },
     });
+    const revisionAnalysisSession = {
+      id: "AS-REV",
+      studyId: "S1",
+      teamRunId: null,
+      status: "queued",
+      triggerSource: "doctor_bbox_revision",
+      summary: { source: "doctor_bbox_revision", nodule_id: "N1" },
+      error: null,
+      startedAt: null,
+      completedAt: null,
+      createdBy: "web-test",
+      createdAt: 1778245400001,
+      updatedAt: 1778245400001,
+    };
+    const revisionAgentTasks = [
+      {
+        id: "AT-REV-1",
+        analysisSessionId: "AS-REV",
+        parentTaskId: null,
+        agentName: "SegmentationAgent",
+        taskType: "segment_nodules",
+        status: "queued",
+        input: { target_nodule_ids: ["N1"], allow_bbox_fallback: false },
+        output: null,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        createdAt: 1778245400001,
+        updatedAt: 1778245400001,
+      },
+      {
+        id: "AT-REV-2",
+        analysisSessionId: "AS-REV",
+        parentTaskId: "AT-REV-1",
+        agentName: "MeasurementAgent",
+        taskType: "measure_nodules",
+        status: "queued",
+        input: { target_nodule_ids: ["N1"] },
+        output: null,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        createdAt: 1778245400002,
+        updatedAt: 1778245400002,
+      },
+      {
+        id: "AT-REV-3",
+        analysisSessionId: "AS-REV",
+        parentTaskId: "AT-REV-2",
+        agentName: "ReportDraftAgent",
+        taskType: "draft_report",
+        status: "queued",
+        input: { target_nodule_ids: ["N1"], refresh_report_basis: true },
+        output: null,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        createdAt: 1778245400003,
+        updatedAt: 1778245400003,
+      },
+    ];
     vi.mocked(reviseMedicalNodule).mockResolvedValue({
       nodule: {
         ...studyBundle.nodules[0],
@@ -338,6 +564,8 @@ describe("MedicalPanel", () => {
         status: "doctor_revised",
         updatedAt: 1778245400000,
       },
+      analysisSession: revisionAnalysisSession,
+      agentTasks: revisionAgentTasks,
       auditLog: {
         id: "A3",
         studyId: "S1",
@@ -364,6 +592,8 @@ describe("MedicalPanel", () => {
             updatedAt: 1778245400000,
           },
         ],
+        analysisSessions: [...studyBundle.analysisSessions, revisionAnalysisSession],
+        agentTasks: [...studyBundle.agentTasks, ...revisionAgentTasks],
         auditLogs: [
           ...studyBundle.auditLogs,
           {
@@ -545,14 +775,33 @@ describe("MedicalPanel", () => {
 
     expect(await screen.findByText("artifact://raw/S1/IMG1.png")).toBeInTheDocument();
     expect(screen.getByText(/640×480/)).toBeInTheDocument();
-    expect(screen.getByText("Nodule 1")).toBeInTheDocument();
+    expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0);
     expect(screen.getByText("TR4")).toBeInTheDocument();
     expect(screen.getByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
     expect(screen.getByText("Overlay Revision")).toBeInTheDocument();
+    expect(screen.getByText("Model Evidence")).toBeInTheDocument();
+    expect(screen.getByText("nnunet_tight_roi")).toBeInTheDocument();
+    expect(screen.getAllByText("nnunet-tight-roi-segmenter").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("tn3k-tight-roi-5fold-best").length).toBeGreaterThan(0);
+    expect(screen.getByText("8, 18, 32, 52")).toBeInTheDocument();
+    expect(screen.getByText("384, 384")).toBeInTheDocument();
+    expect(screen.getByText("artifact://model-output/S1/IMG1/MJ-SEG/mask.png")).toBeInTheDocument();
+    expect(screen.getAllByText("artifact://model-output/S1/IMG1/MJ-SEG/segmentation.json").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("mask-measurement-worker").length).toBeGreaterThan(0);
+    expect(screen.getByText("11.00 mm")).toBeInTheDocument();
+    expect(screen.getByText("6.00 mm")).toBeInTheDocument();
+    expect(screen.getByText("42.00 mm2")).toBeInTheDocument();
+    expect(screen.getByText("pixels long_axis_px=22, short_axis_px=12")).toBeInTheDocument();
+    expect(screen.getAllByText("artifact://model-output/S1/IMG1/MJ-MEASURE/measurement.json").length).toBeGreaterThan(0);
     expect(screen.getByText("needs_doctor_review")).toBeInTheDocument();
     expect(screen.getByText("thyroid.detect_nodules")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/detections.json")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/overlay.png")).toBeInTheDocument();
+    expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/comparison.json")).toBeInTheDocument();
+    expect(screen.getByText("Detector Consensus")).toBeInTheDocument();
+    expect(screen.getAllByText("matched").length).toBeGreaterThan(0);
+    expect(screen.getByText("qwen3.6 · pending_llm · consistent")).toBeInTheDocument();
+    expect(screen.getByText(/LLM must not create, delete, or move bbox coordinates/)).toBeInTheDocument();
     expect(screen.getByAltText("overlay revision preview")).toHaveAttribute(
       "src",
       "/v1/web/medical/artifacts?uri=artifact%3A%2F%2Fmodel-output%2FS1%2FIMG1%2FMJ1%2Foverlay.png&token=test-token"
@@ -642,7 +891,7 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("ACC-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
-    expect(await screen.findByText("Nodule 1")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0));
     fireEvent.change(screen.getByLabelText("bbox xyxy"), { target: { value: "12, 22, 32, 42" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
 

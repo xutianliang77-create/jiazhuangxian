@@ -899,13 +899,24 @@ CI 必须包含：
 | MED-310 | vLLM/LM Studio/Ollama endpoint 配置 | P0 | model endpoint config | Qwen3.6 endpoint 可切换 |
 | MED-311 | image MCP wrapper | P0 | `image.*` MCP 工具 | CodeClaw 可调用 image-worker |
 | MED-312 | `thyroid.SegmentNodule` | P1 | MCP 工具 | 可返回 mask/contour |
+| MED-312V | `thyroid.SegmentVideoNodule` | P1 | MCP 工具 + video artifact | 可返回逐帧 mask/track |
 | MED-313 | `thyroid.MeasureNodule` | P1 | MCP 工具 | 可返回长径、短径、面积、纵横比 |
-| MED-314 | YOLOv11 主检测适配 | P0 | detector adapter | 主模型输出 bbox、confidence |
-| MED-315 | RT-DETR/RF-DETR 对照适配 | P1 | comparison adapter | 可输出对照 bbox |
+| MED-313V | `thyroid.MeasureVideoNodule` | P1 | MCP 工具 + video measurement | 可返回最大径帧、关键帧测量、时间稳定性 |
+| MED-314 | RF-DETR-Medium 主检测适配 | P0 | detector adapter | 主模型输出 bbox、confidence |
+| MED-315 | YOLO11m 对照检测适配 | P1 | comparison adapter | 可输出对照 bbox |
 | MED-316 | 双模型一致性解释 | P1 | agreement service | 输出 IoU、一致性和复核标记 |
 | MED-317 | Qwen3.6 报告模型接入 | P0 | report model endpoint | 可生成结构化报告草稿 |
 | MED-318 | MedGemma 复核模型接入 | P1 | review model endpoint | 可输出医学复核意见 |
 | MED-319 | 模型许可证审查清单 | P0 | license matrix | YOLO/MedGemma 等风险可见 |
+| MED-320 | 主 LLM 检测结果评估 | P1 | detector result evaluator | 基于 RF-DETR/YOLO/IoU/ImageQC 输出医生复核重点 |
+
+当前实现备注：
+
+- `MED-312` 已完成验证版工具链：`thyroid.SegmentNodule` MCP -> model-gateway -> `thyroid.segment_nodule` job -> `segmentation.json`/`mask_nodule_<index>.png` -> `nodule.mask_uri`。当前默认是 `bbox_fallback` 矩形 mask，必须医生复核，后续替换真实分割模型。
+- `MED-313` 已完成验证版工具链：`thyroid.MeasureNodule` MCP -> model-gateway -> `thyroid.measure_nodule` job -> `measurements.json` -> `measurement` 表。无 `PixelSpacing` 时只保留像素测量证据，毫米字段保持空。
+- `MED-312V` 已完成验证版工具链骨架和可选 SAM2 adapter 壳：`thyroid.SegmentVideoNodule` MCP -> model-gateway -> `thyroid.segment_video_nodule` job -> `video_segmentation.json`/prompt-frame mask PNG。当前默认是 `video_bbox_prompt_fallback`，只用于链路验证和医生复核；配置 `JZX_MEDSAM2_WEIGHTS`/`JZX_MEDSAM2_CONFIG` 和 `sam2` 包后可尝试 MedSAM2/SAM2 真实视频传播。
+- `MED-313V` 已完成验证版工具链骨架：`thyroid.MeasureVideoNodule` MCP -> model-gateway -> `thyroid.measure_video_nodule` job -> `video_measurement.json`。当前可读取视频分割 artifact，选择关键帧并输出像素/毫米测量；无 `PixelSpacing` 时毫米字段保持空。
+- 真实 Swin U-Net / U-Net / MedSAM 分割权重和视频 MedSAM2/SAM2 分割测量接入方案见 `docs/SEGMENTATION_MODEL_INTEGRATION_PLAN.md`。优先级为：先接静态图像 MedSAM bbox prompt 真实分割，再接视频 MedSAM2/SAM2 逐帧传播，随后训练 U-Net/nnU-Net 监督基线和 Swin U-Net 对照模型。
 
 ### 17.6 P4 医学知识库与 RAG
 

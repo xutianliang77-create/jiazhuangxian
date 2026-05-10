@@ -338,6 +338,12 @@ async function main(): Promise<void> {
     const hostArg = restArgs.find((a) => a.startsWith("--host="))?.split("=")[1];
     const port = portArg ? Number(portArg) : 7180;
     const host = hostArg ?? "127.0.0.1";
+    const jzxDataDb = process.env.JZX_DATA_DB?.trim();
+    const dataDbPath = jzxDataDb
+      ? path.isAbsolute(jzxDataDb)
+        ? jzxDataDb
+        : path.resolve(workspace, jzxDataDb)
+      : undefined;
 
     // P1.4 防御：检测 dist/public-react 是否就绪；缺失给清晰提示
     {
@@ -403,6 +409,7 @@ async function main(): Promise<void> {
           workspace,
           approvalsDir: paths.approvalsDir,
           sessionsDir: paths.sessionsDir,
+          ...(dataDbPath ? { dataDbPath } : {}),
           disableGitSummary: true,
           ...(runtime.config?.memory.l1AutoCompactThreshold !== undefined
             ? { autoCompactThreshold: runtime.config.memory.l1AutoCompactThreshold }

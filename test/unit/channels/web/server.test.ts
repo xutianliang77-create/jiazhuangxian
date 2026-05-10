@@ -220,6 +220,20 @@ describe("Web server · 消息 + SSE", () => {
     reader.cancel();
   });
 
+  it("GET /stream accepts query token without Authorization header", async () => {
+    const created = await fetch(`${baseUrl}/v1/web/sessions`, {
+      method: "POST",
+      headers: authHeaders(),
+    }).then((r) => r.json()) as { sessionId: string };
+
+    const sseResponse = await fetch(
+      `${baseUrl}/v1/web/stream?sessionId=${encodeURIComponent(created.sessionId)}&token=${encodeURIComponent(TOKEN)}`
+    );
+    expect(sseResponse.status).toBe(200);
+    expect(sseResponse.headers.get("content-type")).toMatch(/text\/event-stream/);
+    await sseResponse.body?.cancel();
+  });
+
   it("POST /messages 缺 input → 400", async () => {
     const created = await fetch(`${baseUrl}/v1/web/sessions`, {
       method: "POST",
@@ -1029,6 +1043,8 @@ describe("Web server · medical API", () => {
       expect(analyzeBody.agentTasks.map((task) => task.taskType)).toEqual([
         "image_qc",
         "detect_nodules",
+        "segment_nodules",
+        "measure_nodules",
         "classify_tirads_features",
         "calculate_tirads",
         "draft_report",
@@ -1045,11 +1061,11 @@ describe("Web server · medical API", () => {
         bundle: { analysisSessions: unknown[]; agentTasks: unknown[] };
       };
       expect(detailAfterBody.bundle.analysisSessions).toHaveLength(1);
-      expect(detailAfterBody.bundle.agentTasks).toHaveLength(6);
+      expect(detailAfterBody.bundle.agentTasks).toHaveLength(8);
 
       const summary = await fetch(`${medicalBaseUrl}/v1/web/medical/summary`, { headers: authHeaders() });
       const summaryBody = (await summary.json()) as { queues: { agentTasks: Record<string, number> } };
-      expect(summaryBody.queues.agentTasks.queued).toBe(6);
+      expect(summaryBody.queues.agentTasks.queued).toBe(8);
     } finally {
       await medicalHandle?.close();
       closeDataDb();
@@ -1220,8 +1236,25 @@ describe("Web server · medical API", () => {
       expect(reviseResponse.status).toBe(200);
       const reviseBody = (await reviseResponse.json()) as {
         nodule: { bbox: number[]; source: string; status: string };
-        auditLog: { action: string; actorType: string; detail: { before: { bbox: number[] }; after: { bbox: number[] } } };
-        bundle: { nodules: Array<{ bbox: number[]; status: string }>; auditLogs: Array<{ action: string }> };
+        analysisSession: { id: string; status: string; triggerSource: string; summary: Record<string, unknown> };
+        agentTasks: Array<{ id: string; taskType: string; status: string; parentTaskId: string | null; input: Record<string, unknown> }>;
+        auditLog: {
+          action: string;
+          actorType: string;
+          detail: {
+            before: { bbox: number[] };
+            after: { bbox: number[] };
+            rerun_analysis_session_id: string;
+            rerun_agent_task_ids: string[];
+            rerun_task_types: string[];
+          };
+        };
+        bundle: {
+          nodules: Array<{ bbox: number[]; status: string }>;
+          auditLogs: Array<{ action: string }>;
+          analysisSessions: unknown[];
+          agentTasks: Array<{ taskType: string; parentTaskId: string | null }>;
+        };
       };
       expect(reviseBody.nodule).toMatchObject({
         bbox: [12, 22, 32, 42],
@@ -1234,8 +1267,48 @@ describe("Web server · medical API", () => {
       });
       expect(reviseBody.auditLog.detail.before.bbox).toEqual([10, 20, 30, 40]);
       expect(reviseBody.auditLog.detail.after.bbox).toEqual([12, 22, 32, 42]);
+      expect(reviseBody.analysisSession).toMatchObject({
+        status: "queued",
+        triggerSource: "doctor_bbox_revision",
+        summary: {
+          source: "doctor_bbox_revision",
+          image_id: imageBody.image.id,
+          nodule_id: "N-WEB-REVISE",
+          bbox_before: [10, 20, 30, 40],
+          bbox_after: [12, 22, 32, 42],
+        },
+      });
+      expect(reviseBody.agentTasks.map((task) => task.taskType)).toEqual([
+        "segment_nodules",
+        "measure_nodules",
+        "draft_report",
+      ]);
+      expect(reviseBody.agentTasks.every((task) => task.status === "queued")).toBe(true);
+      expect(reviseBody.agentTasks[0].parentTaskId).toBeNull();
+      expect(reviseBody.agentTasks[1].parentTaskId).toBe(reviseBody.agentTasks[0].id);
+      expect(reviseBody.agentTasks[2].parentTaskId).toBe(reviseBody.agentTasks[1].id);
+      expect(reviseBody.agentTasks[0].input).toMatchObject({
+        target_nodule_ids: ["N-WEB-REVISE"],
+        allow_bbox_fallback: false,
+        model: "nnunet-tight-roi-segmenter",
+        model_version: "tn3k-tight-roi-5fold-best",
+      });
+      expect(reviseBody.agentTasks[2].input).toMatchObject({ refresh_report_basis: true });
+      expect(reviseBody.auditLog.detail.rerun_analysis_session_id).toBe(reviseBody.analysisSession.id);
+      expect(reviseBody.auditLog.detail.rerun_agent_task_ids).toEqual(reviseBody.agentTasks.map((task) => task.id));
+      expect(reviseBody.auditLog.detail.rerun_task_types).toEqual([
+        "segment_nodules",
+        "measure_nodules",
+        "draft_report",
+      ]);
       expect(reviseBody.bundle.nodules[0]).toMatchObject({ bbox: [12, 22, 32, 42], status: "doctor_revised" });
       expect(reviseBody.bundle.auditLogs[0].action).toBe("medical.nodule.revise");
+      expect(reviseBody.bundle.analysisSessions).toHaveLength(1);
+      expect(reviseBody.bundle.agentTasks.map((task) => task.taskType)).toEqual([
+        "segment_nodules",
+        "measure_nodules",
+        "draft_report",
+      ]);
     } finally {
       localDb?.close();
       await medicalHandle?.close();

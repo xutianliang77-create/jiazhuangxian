@@ -1,6 +1,13 @@
 import type Database from "better-sqlite3";
 import { ulid } from "ulid";
 
+import {
+  searchMedicalKnowledge,
+  type MedicalKnowledgeSearchInput,
+  type MedicalKnowledgeSearchOptions,
+  type MedicalKnowledgeSearchResult,
+} from "../knowledge/search";
+
 type JsonObject = Record<string, unknown>;
 
 export interface PatientInput {
@@ -253,6 +260,32 @@ export interface NoduleRevisionResult {
   nodule: NoduleRecord;
 }
 
+export interface MeasurementInput {
+  id?: string;
+  noduleId: string;
+  longAxisMm?: number | null;
+  shortAxisMm?: number | null;
+  apAxisMm?: number | null;
+  areaMm2?: number | null;
+  aspectRatio?: number | null;
+  measurementSource: string;
+  confidence?: number | null;
+  now?: number;
+}
+
+export interface MeasurementRecord {
+  id: string;
+  noduleId: string;
+  longAxisMm: number | null;
+  shortAxisMm: number | null;
+  apAxisMm: number | null;
+  areaMm2: number | null;
+  aspectRatio: number | null;
+  measurementSource: string;
+  confidence: number | null;
+  createdAt: number;
+}
+
 export interface TiradsFeatureInput {
   id?: string;
   noduleId: string;
@@ -299,6 +332,25 @@ export interface TiradsResultRecord {
   evidenceRules: unknown[];
   warnings: string[];
   createdAt: number;
+}
+
+export interface TiradsRuleRecord {
+  id: string;
+  systemName: string;
+  systemVersion: string;
+  ruleCode: string;
+  featureGroup: string | null;
+  featureName: string | null;
+  points: number | null;
+  category: string | null;
+  minScore: number | null;
+  maxScore: number | null;
+  recommendation: string | null;
+  rule: JsonObject;
+  evidenceDocumentId: string | null;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ReportInput {
@@ -403,6 +455,7 @@ export interface StudyBundle {
   study: StudyRecord;
   images: ImageRecord[];
   nodules: NoduleRecord[];
+  measurements: MeasurementRecord[];
   tiradsFeatures: TiradsFeatureRecord[];
   tiradsResults: TiradsResultRecord[];
   reports: ReportRecord[];
@@ -531,6 +584,19 @@ interface NoduleRow {
   updated_at: number;
 }
 
+interface MeasurementRow {
+  id: string;
+  nodule_id: string;
+  long_axis_mm: number | null;
+  short_axis_mm: number | null;
+  ap_axis_mm: number | null;
+  area_mm2: number | null;
+  aspect_ratio: number | null;
+  measurement_source: string;
+  confidence: number | null;
+  created_at: number;
+}
+
 interface TiradsFeatureRow {
   id: string;
   nodule_id: string;
@@ -553,6 +619,25 @@ interface TiradsResultRow {
   evidence_rules: string;
   warnings: string;
   created_at: number;
+}
+
+interface TiradsRuleRow {
+  id: string;
+  system_name: string;
+  system_version: string;
+  rule_code: string;
+  feature_group: string | null;
+  feature_name: string | null;
+  points: number | null;
+  category: string | null;
+  min_score: number | null;
+  max_score: number | null;
+  recommendation: string | null;
+  rule_json: string;
+  evidence_document_id: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
 }
 
 interface ReportRow {
@@ -865,6 +950,53 @@ export class MedicalCaseRepo {
     };
   }
 
+  updateNoduleMask(noduleId: string, maskUri: string, now = Date.now()): NoduleRecord {
+    this.db
+      .prepare<[string, number, string]>(
+        `UPDATE nodule
+         SET mask_uri = ?,
+             status = CASE WHEN status = 'detected' THEN 'segmented' ELSE status END,
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(maskUri, now, noduleId);
+    const nodule = this.getNodule(noduleId);
+    if (!nodule) throw new Error(`nodule not found: ${noduleId}`);
+    return nodule;
+  }
+
+  createMeasurement(input: MeasurementInput): MeasurementRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO measurement(
+           id, nodule_id, long_axis_mm, short_axis_mm, ap_axis_mm, area_mm2,
+           aspect_ratio, measurement_source, confidence, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.noduleId,
+        input.longAxisMm ?? null,
+        input.shortAxisMm ?? null,
+        input.apAxisMm ?? null,
+        input.areaMm2 ?? null,
+        input.aspectRatio ?? null,
+        input.measurementSource,
+        input.confidence ?? null,
+        now
+      );
+    const measurement = this.getMeasurement(id);
+    if (!measurement) throw new Error(`measurement not found after insert: ${id}`);
+    return measurement;
+  }
+
+  getMeasurement(id: string): MeasurementRecord | null {
+    const row = this.db.prepare<[string], MeasurementRow>("SELECT * FROM measurement WHERE id = ?").get(id);
+    return row ? mapMeasurement(row) : null;
+  }
+
   createTiradsFeature(input: TiradsFeatureInput): TiradsFeatureRecord {
     const now = input.now ?? Date.now();
     const id = input.id ?? ulid();
@@ -941,6 +1073,20 @@ export class MedicalCaseRepo {
         now
       );
     return this.getReport(id)!;
+  }
+
+  updateReportStructured(reportId: string, structured: JsonObject, now: number = Date.now()): ReportRecord {
+    this.db
+      .prepare<[string, number, string]>(
+        `UPDATE report
+         SET structured_json = ?,
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(stringifyJson(structured), now, reportId);
+    const report = this.getReport(reportId);
+    if (!report) throw new Error(`report not found: ${reportId}`);
+    return report;
   }
 
   createAuditLog(input: AuditLogInput): AuditLogRecord {
@@ -1092,6 +1238,19 @@ export class MedicalCaseRepo {
       .map(mapNodule);
   }
 
+  listMeasurementsByStudy(studyId: string): MeasurementRecord[] {
+    return this.db
+      .prepare<[string], MeasurementRow>(
+        `SELECT m.*
+         FROM measurement m
+         JOIN nodule n ON n.id = m.nodule_id
+         WHERE n.study_id = ?
+         ORDER BY n.nodule_index ASC, m.created_at ASC, m.id ASC`
+      )
+      .all(studyId)
+      .map(mapMeasurement);
+  }
+
   getTiradsFeature(id: string): TiradsFeatureRecord | null {
     const row = this.db
       .prepare<[string], TiradsFeatureRow>("SELECT * FROM tirads_feature WHERE id = ?")
@@ -1153,6 +1312,38 @@ export class MedicalCaseRepo {
       )
       .get(templateId);
     return row?.template_text ?? null;
+  }
+
+  listActiveTiradsRulesByCodes(
+    ruleCodes: string[],
+    systemName = "ACR_TI_RADS",
+    systemVersion = "2017"
+  ): TiradsRuleRecord[] {
+    const codes = [...new Set(ruleCodes.filter((code) => code.trim().length > 0))].sort();
+    if (codes.length === 0) return [];
+    const placeholders = codes.map(() => "?").join(", ");
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM tirads_rules
+         WHERE system_name = ?
+           AND system_version = ?
+           AND status = 'active'
+           AND rule_code IN (${placeholders})
+         ORDER BY rule_code ASC`
+      )
+      .all(systemName, systemVersion, ...codes)
+      .map((row) => mapTiradsRule(row as TiradsRuleRow));
+  }
+
+  searchMedicalKnowledge(
+    input: MedicalKnowledgeSearchInput,
+    options: Omit<MedicalKnowledgeSearchOptions, "dataDb"> = {}
+  ): MedicalKnowledgeSearchResult {
+    return searchMedicalKnowledge(input, {
+      ...options,
+      dataDb: this.db,
+    });
   }
 
   listActiveSafetyRules(): SafetyRuleRecord[] {
@@ -1387,6 +1578,7 @@ export class MedicalCaseRepo {
       study,
       images,
       nodules: this.listNodulesByStudy(studyId),
+      measurements: this.listMeasurementsByStudy(studyId),
       tiradsFeatures: this.listTiradsFeaturesByStudy(studyId),
       tiradsResults: this.listTiradsResultsByStudy(studyId),
       reports: this.listReportsByStudy(studyId),
@@ -1593,6 +1785,21 @@ function mapNodule(row: NoduleRow): NoduleRecord {
   };
 }
 
+function mapMeasurement(row: MeasurementRow): MeasurementRecord {
+  return {
+    id: row.id,
+    noduleId: row.nodule_id,
+    longAxisMm: row.long_axis_mm,
+    shortAxisMm: row.short_axis_mm,
+    apAxisMm: row.ap_axis_mm,
+    areaMm2: row.area_mm2,
+    aspectRatio: row.aspect_ratio,
+    measurementSource: row.measurement_source,
+    confidence: row.confidence,
+    createdAt: row.created_at,
+  };
+}
+
 function mapTiradsFeature(row: TiradsFeatureRow): TiradsFeatureRecord {
   return {
     id: row.id,
@@ -1618,6 +1825,27 @@ function mapTiradsResult(row: TiradsResultRow): TiradsResultRecord {
     evidenceRules: parseJsonArray(row.evidence_rules),
     warnings: parseStringArray(row.warnings),
     createdAt: row.created_at,
+  };
+}
+
+function mapTiradsRule(row: TiradsRuleRow): TiradsRuleRecord {
+  return {
+    id: row.id,
+    systemName: row.system_name,
+    systemVersion: row.system_version,
+    ruleCode: row.rule_code,
+    featureGroup: row.feature_group,
+    featureName: row.feature_name,
+    points: row.points,
+    category: row.category,
+    minScore: row.min_score,
+    maxScore: row.max_score,
+    recommendation: row.recommendation,
+    rule: parseJson(row.rule_json, {}),
+    evidenceDocumentId: row.evidence_document_id,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

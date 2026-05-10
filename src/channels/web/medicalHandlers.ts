@@ -6,7 +6,10 @@ import type Database from "better-sqlite3";
 
 import {
   MedicalCaseRepo,
+  type AgentTaskRecord,
+  type AnalysisSessionRecord,
   type ImageInput,
+  type NoduleRevisionResult,
   type PatientInput,
   type ReportReviewAction,
   type StudyInput,
@@ -47,6 +50,8 @@ interface RecentStudyRow {
 const MEDICAL_ANALYSIS_TASKS = [
   { agentName: "ImageQcAgent", taskType: "image_qc", toolName: "thyroid.ImageQC" },
   { agentName: "NoduleDetectionAgent", taskType: "detect_nodules", toolName: "thyroid.DetectNodules" },
+  { agentName: "SegmentationAgent", taskType: "segment_nodules", toolName: "thyroid.SegmentNodule" },
+  { agentName: "MeasurementAgent", taskType: "measure_nodules", toolName: "thyroid.MeasureNodule" },
   {
     agentName: "TiradsFeatureAgent",
     taskType: "classify_tirads_features",
@@ -55,6 +60,24 @@ const MEDICAL_ANALYSIS_TASKS = [
   { agentName: "TiradsRuleAgent", taskType: "calculate_tirads", toolName: "thyroid.CalculateTirads" },
   { agentName: "ReportDraftAgent", taskType: "draft_report", toolName: "medical.GetReportTemplate" },
   { agentName: "SafetyReviewAgent", taskType: "safety_review", toolName: "medical.SearchGuideline" },
+] as const;
+
+const DOCTOR_BBOX_REVISION_TASKS = [
+  {
+    agentName: "SegmentationAgent",
+    taskType: "segment_nodules",
+    toolName: "thyroid.SegmentNodule",
+    model: "nnunet-tight-roi-segmenter",
+    modelVersion: "tn3k-tight-roi-5fold-best",
+  },
+  {
+    agentName: "MeasurementAgent",
+    taskType: "measure_nodules",
+    toolName: "thyroid.MeasureNodule",
+    model: "mask-measurement-worker",
+    modelVersion: "validation-measurement-v1",
+  },
+  { agentName: "ReportDraftAgent", taskType: "draft_report", toolName: "medical.GetReportTemplate" },
 ] as const;
 
 const MEDICAL_ARTIFACT_MAX_BYTES = 32 * 1024 * 1024;
@@ -459,41 +482,124 @@ export async function handleReviseMedicalNodule(
   try {
     const body = requireBodyObject(await readJsonBody(req));
     const repo = new MedicalCaseRepo(ctx.db);
-    if (!repo.getNodule(noduleId)) {
+    const existingNodule = repo.getNodule(noduleId);
+    if (!existingNodule) {
       throw new MedicalRequestError(404, "nodule-not-found", `nodule not found: ${noduleId}`);
     }
-    const now = Date.now();
-    const revised = repo.reviseNodule({
-      noduleId,
-      bbox: requiredBbox(body),
-      location: stringField(body, "location"),
-      status: stringField(body, "status") ?? "doctor_revised",
-      now,
-    });
+    const existingImage = existingNodule.imageId ? repo.getImage(existingNodule.imageId) : null;
+    if (!existingImage || existingImage.studyId !== existingNodule.studyId) {
+      throw new MedicalRequestError(400, "image-required", "nodule must be linked to an image before segmentation rerun");
+    }
+
+    const bbox = requiredBbox(body);
+    const location = stringField(body, "location");
+    const status = stringField(body, "status") ?? "doctor_revised";
     const comment = stringField(body, "comment");
-    const auditLog = repo.createAuditLog({
-      studyId: revised.nodule.studyId,
-      actorType: "doctor",
-      actorId: ctx.userId,
-      action: "medical.nodule.revise",
-      targetType: "nodule",
-      targetId: noduleId,
-      detail: {
-        before: noduleAuditSnapshot(revised.before),
-        after: noduleAuditSnapshot(revised.nodule),
-        comment: comment ?? null,
-      },
-      traceId: noduleId,
-      now,
-    });
+    const now = Date.now();
+    const { revised, analysisSession, agentTasks, auditLog } = ctx.db.transaction(() => {
+      const revised = repo.reviseNodule({
+        noduleId,
+        bbox,
+        location,
+        status,
+        now,
+      });
+      const { analysisSession, agentTasks } = createDoctorBboxRevisionRerun(repo, revised, ctx.userId, now + 1);
+      const auditLog = repo.createAuditLog({
+        studyId: revised.nodule.studyId,
+        actorType: "doctor",
+        actorId: ctx.userId,
+        action: "medical.nodule.revise",
+        targetType: "nodule",
+        targetId: noduleId,
+        detail: {
+          before: noduleAuditSnapshot(revised.before),
+          after: noduleAuditSnapshot(revised.nodule),
+          comment: comment ?? null,
+          rerun_analysis_session_id: analysisSession.id,
+          rerun_agent_task_ids: agentTasks.map((task) => task.id),
+          rerun_task_types: agentTasks.map((task) => task.taskType),
+        },
+        traceId: noduleId,
+        now: now + 4,
+      });
+      return { revised, analysisSession, agentTasks, auditLog };
+    })();
     jsonResponse(res, 200, {
       nodule: revised.nodule,
+      analysisSession,
+      agentTasks,
       auditLog,
       bundle: repo.getStudyBundle(revised.nodule.studyId),
     });
   } catch (err) {
     medicalWriteError(res, err);
   }
+}
+
+function createDoctorBboxRevisionRerun(
+  repo: MedicalCaseRepo,
+  revised: NoduleRevisionResult,
+  actorId: string,
+  now: number
+): { analysisSession: AnalysisSessionRecord; agentTasks: AgentTaskRecord[] } {
+  const imageId = revised.nodule.imageId;
+  if (!imageId) {
+    throw new MedicalRequestError(400, "image-required", "nodule must be linked to an image before segmentation rerun");
+  }
+
+  const analysisSession = repo.createAnalysisSession({
+    studyId: revised.nodule.studyId,
+    status: "queued",
+    triggerSource: "doctor_bbox_revision",
+    createdBy: actorId,
+    summary: {
+      source: "doctor_bbox_revision",
+      image_id: imageId,
+      nodule_id: revised.nodule.id,
+      nodule_index: revised.nodule.noduleIndex,
+      bbox_before: revised.before.bbox,
+      bbox_after: revised.nodule.bbox,
+      task_count: DOCTOR_BBOX_REVISION_TASKS.length,
+      task_types: DOCTOR_BBOX_REVISION_TASKS.map((task) => task.taskType),
+    },
+    now,
+  });
+
+  let parentTaskId: string | undefined;
+  const agentTasks = DOCTOR_BBOX_REVISION_TASKS.map((task, index) => {
+    const input: JsonObject = {
+      study_id: revised.nodule.studyId,
+      image_id: imageId,
+      nodule_id: revised.nodule.id,
+      nodule_index: revised.nodule.noduleIndex,
+      target_nodule_ids: [revised.nodule.id],
+      tool_name: task.toolName,
+      sequence: index + 1,
+      source: "doctor_bbox_revision",
+      revision_trace_id: revised.nodule.id,
+      bbox_before: revised.before.bbox,
+      bbox_after: revised.nodule.bbox,
+    };
+    if ("model" in task) input.model = task.model;
+    if ("modelVersion" in task) input.model_version = task.modelVersion;
+    if (task.taskType === "segment_nodules") input.allow_bbox_fallback = false;
+    if (task.taskType === "draft_report") input.refresh_report_basis = true;
+
+    const created = repo.createAgentTask({
+      analysisSessionId: analysisSession.id,
+      parentTaskId,
+      agentName: task.agentName,
+      taskType: task.taskType,
+      status: "queued",
+      input,
+      now: now + index,
+    });
+    parentTaskId = created.id;
+    return created;
+  });
+
+  return { analysisSession, agentTasks };
 }
 
 function readCounts(db: Database.Database): Record<string, number> {

@@ -1,0 +1,98 @@
+[
+  {
+    "case_id": "tn3k_roi_0005",
+    "dice": 0.3877071313402102,
+    "iou": 0.2404694202130223,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0005.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0005.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0005_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0335",
+    "dice": 0.45862706681559334,
+    "iou": 0.297544518229012,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0335.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0335.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0335_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0430",
+    "dice": 0.46352815190081964,
+    "iou": 0.3016834655800987,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0430.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0430.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0430_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0358",
+    "dice": 0.4735823685677741,
+    "iou": 0.3102574019165485,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0358.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0358.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0358_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0146",
+    "dice": 0.49050856120623565,
+    "iou": 0.3249495483049585,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0146.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0146.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0146_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0537",
+    "dice": 0.49756025066257153,
+    "iou": 0.33116818886214516,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0537.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0537.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0537_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0223",
+    "dice": 0.5048023229841412,
+    "iou": 0.33761577532118314,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0223.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0223.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0223_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0541",
+    "dice": 0.5059482692455292,
+    "iou": 0.3386417343059694,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0541.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0541.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0541_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0192",
+    "dice": 0.5067040764021906,
+    "iou": 0.33931926578985405,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0192.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0192.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0192_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0216",
+    "dice": 0.5179320293890697,
+    "iou": 0.34946577327055417,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0216.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0216.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0216_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0372",
+    "dice": 0.5420560747663551,
+    "iou": 0.3717948717948718,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0372.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0372.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0372_0000.png"
+  },
+  {
+    "case_id": "tn3k_roi_0512",
+    "dice": 0.5614315705288413,
+    "iou": 0.390271021542738,
+    "pred_path": "data/models/segmentation/nnunet-tn3k-roi-tight-2d-100epochs-ensemble-selected/imagesTs_pred/tn3k_roi_0512.png",
+    "label_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/labelsTs/tn3k_roi_0512.png",
+    "image_path": "data/nnunet/nnUNet_raw/Dataset503_TN3KThyroidROITight/imagesTs/tn3k_roi_0512_0000.png"
+  }
+]
