@@ -444,7 +444,7 @@ describe("MedicalPanel", () => {
       report: {
         ...studyBundle.reports[0],
         status: "confirmed",
-        finalText: studyBundle.reports[0].draftText,
+        finalText: "医生修订后的甲状腺超声报告",
         confirmedBy: "web-test",
         confirmedAt: 1778245300000,
       },
@@ -454,8 +454,12 @@ describe("MedicalPanel", () => {
         reviewerName: "web-test",
         action: "approve",
         comment: null,
-        before: { status: "draft" },
-        after: { status: "confirmed" },
+        before: { status: "draft", draft_text: studyBundle.reports[0].draftText },
+        after: {
+          status: "confirmed",
+          draft_text: studyBundle.reports[0].draftText,
+          final_text: "医生修订后的甲状腺超声报告",
+        },
         createdAt: 1778245300000,
       },
       auditLog: {
@@ -476,7 +480,7 @@ describe("MedicalPanel", () => {
           {
             ...studyBundle.reports[0],
             status: "confirmed",
-            finalText: studyBundle.reports[0].draftText,
+            finalText: "医生修订后的甲状腺超声报告",
             confirmedBy: "web-test",
             confirmedAt: 1778245300000,
           },
@@ -488,8 +492,12 @@ describe("MedicalPanel", () => {
             reviewerName: "web-test",
             action: "approve",
             comment: null,
-            before: { status: "draft" },
-            after: { status: "confirmed" },
+            before: { status: "draft", draft_text: studyBundle.reports[0].draftText },
+            after: {
+              status: "confirmed",
+              draft_text: studyBundle.reports[0].draftText,
+              final_text: "医生修订后的甲状腺超声报告",
+            },
             createdAt: 1778245300000,
           },
         ],
@@ -852,7 +860,9 @@ describe("MedicalPanel", () => {
     fireEvent.change(screen.getByLabelText("审核意见"), {
       target: { value: "医生已核对图像与证据" },
     });
-    expect(screen.getByText(/已修改草稿/)).toBeInTheDocument();
+    expect(screen.getByText("修改痕迹")).toBeInTheDocument();
+    expect(screen.getByText("原文片段")).toBeInTheDocument();
+    expect(screen.getByText("新文片段")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认报告" }));
 
     await waitFor(() =>
@@ -864,6 +874,8 @@ describe("MedicalPanel", () => {
     );
     expect(await screen.findByText("confirmed")).toBeInTheDocument();
     expect(screen.getByText("approve")).toBeInTheDocument();
+    expect(screen.getAllByText("修改痕迹").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("医生修订后的甲状腺超声报告").length).toBeGreaterThan(0);
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
   });
 

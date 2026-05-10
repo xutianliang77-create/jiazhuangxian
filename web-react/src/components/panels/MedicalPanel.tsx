@@ -1460,9 +1460,7 @@ function ReportRow({
             />
           </label>
           {text !== editedText && (
-            <div className="rounded border border-warning/40 px-2 py-1 text-warning">
-              已修改草稿：{text.length} → {editedText.length} 字符
-            </div>
+            <ReportTextDiff beforeText={text} afterText={editedText} tone="warning" />
           )}
         </div>
       ) : text ? (
@@ -1505,7 +1503,46 @@ function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
         {beforeStatus} → {afterStatus}
         {textChanged && <span className="ml-2 text-warning">文本 {beforeText.length} → {afterText.length}</span>}
       </div>
+      {textChanged && <ReportTextDiff beforeText={beforeText} afterText={afterText} />}
       {review.comment && <div className="mt-2 text-muted">{review.comment}</div>}
+    </div>
+  );
+}
+
+function ReportTextDiff({
+  beforeText,
+  afterText,
+  tone = "default",
+}: {
+  beforeText: string;
+  afterText: string;
+  tone?: "default" | "warning";
+}) {
+  const diff = textDiffSummary(beforeText, afterText);
+  const borderClass = tone === "warning" ? "border-warning/40 text-warning" : "border-border text-muted";
+  return (
+    <div className={`mt-2 rounded border px-2 py-1.5 text-xs ${borderClass}`}>
+      <div className="font-semibold text-fg">修改痕迹</div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+        <Metric label="原文字符" value={String(diff.beforeLength)} />
+        <Metric label="新文字符" value={String(diff.afterLength)} />
+        <Metric label="变化" value={diff.deltaLabel} />
+        <Metric label="修改字符" value={String(diff.changedChars)} />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+        <div>
+          <div className="text-muted">原文片段</div>
+          <div className="mt-1 rounded border border-border bg-bg px-2 py-1 font-mono text-[11px] whitespace-pre-wrap">
+            {diff.beforeSnippet}
+          </div>
+        </div>
+        <div>
+          <div className="text-muted">新文片段</div>
+          <div className="mt-1 rounded border border-border bg-bg px-2 py-1 font-mono text-[11px] whitespace-pre-wrap">
+            {diff.afterSnippet}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1744,6 +1781,48 @@ function Metric({ label, value }: { label: string; value: string }) {
 function formatTime(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "unknown";
   return new Date(value).toLocaleString();
+}
+
+function textDiffSummary(beforeText: string, afterText: string): {
+  beforeLength: number;
+  afterLength: number;
+  deltaLabel: string;
+  changedChars: number;
+  beforeSnippet: string;
+  afterSnippet: string;
+} {
+  const beforeLength = beforeText.length;
+  const afterLength = afterText.length;
+  let prefix = 0;
+  while (prefix < beforeLength && prefix < afterLength && beforeText[prefix] === afterText[prefix]) {
+    prefix += 1;
+  }
+  let suffix = 0;
+  while (
+    suffix < beforeLength - prefix
+    && suffix < afterLength - prefix
+    && beforeText[beforeLength - 1 - suffix] === afterText[afterLength - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+  const beforeChanged = beforeText.slice(prefix, beforeLength - suffix);
+  const afterChanged = afterText.slice(prefix, afterLength - suffix);
+  const delta = afterLength - beforeLength;
+  return {
+    beforeLength,
+    afterLength,
+    deltaLabel: delta === 0 ? "0" : `${delta > 0 ? "+" : ""}${delta}`,
+    changedChars: Math.max(beforeChanged.length, afterChanged.length),
+    beforeSnippet: compactTextSnippet(beforeChanged || beforeText),
+    afterSnippet: compactTextSnippet(afterChanged || afterText),
+  };
+}
+
+function compactTextSnippet(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) return "无";
+  if (normalized.length <= 120) return normalized;
+  return `${normalized.slice(0, 60)} ... ${normalized.slice(-40)}`;
 }
 
 function formatOptionalNumber(value: number | null | undefined): string {

@@ -2703,3 +2703,52 @@ cd .. && npm run typecheck && npm run build:web
 python3 -m unittest discover services/model-gateway/tests
 git push origin main
 ```
+
+## 2026-05-11 07:31 CST - Doctor Report Edit Trace UI
+
+- Continued the doctor workstation P0 follow-up by replacing the simple report edit length notice with a reusable `ReportTextDiff` panel.
+- The live report editor now shows:
+  - original/new character counts,
+  - signed length delta,
+  - changed-character span size,
+  - compact original and new text snippets.
+- Doctor review history now renders the same edit-trace panel when the persisted `before` and `after` report text differ, so confirmed reports expose the modification basis instead of only status/action.
+- Updated `MedicalPanel.test.tsx` mocks and assertions to cover the live draft edit trace and the persisted review edit trace after confirmation.
+
+### Validation
+
+- `cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx` -> 15 tests OK.
+- `cd web-react && npm run typecheck` -> OK.
+- `cd web-react && npm test` -> 11 files, 48 tests OK. Existing React `act(...)` warnings in `ApprovalCard.test.tsx` remain unrelated.
+- `npm run build:web` -> OK, with the existing Monaco large chunk warning.
+- `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: Doctor Report Edit Trace Implemented
+
+- P0 doctor bbox revision chain and server-side revision evidence summary are still committed locally.
+- Current report edit trace changes are validated and committed locally.
+- Push attempts during this session either failed with `Recv failure: Connection reset by peer` or hung without output and were terminated; retry when network/GitHub connectivity is stable.
+- Branch state after this local commit is expected to be `main...origin/main [ahead 3]`.
+- `tmp-phase1.txt` remains untracked and unrelated.
+
+### Background Tasks
+
+- No backend, Vite, training, model-worker, GPU, browser automation, or dev server process is running from this session.
+
+### Next Session Priorities
+
+1. Retry `git push origin main` when GitHub/network connectivity is available.
+2. Continue remaining doctor workstation work: richer report editor, batch case queue, knowledge evidence panel, or browser E2E dependency decision.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+git status --short
+cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
+cd .. && npm run build:web
+git diff --check
+git push origin main
+```
