@@ -1335,6 +1335,118 @@ function reportEvidenceSourceLabel(report: MedicalReport): string {
   return sources.size === 0 ? "pending" : Array.from(sources).join(", ");
 }
 
+function reportEvidenceRows(evidence: unknown[]): ReportEvidenceDisplayRow[] {
+  return recordList(evidence).map((item) => {
+    const source = stringValue(item.source) ?? "unknown";
+    if (source === "medical_guideline") return guidelineEvidenceRow(item, source);
+    if (source === "tirads_rule") return tiradsRuleEvidenceRow(item, source);
+    if (source === "tirads_result") return tiradsResultEvidenceRow(item, source);
+    if (source === "segmentation_result") return segmentationEvidenceRow(item, source);
+    if (source === "measurement_result") return measurementEvidenceRow(item, source);
+    return {
+      source,
+      title: "其他依据",
+      summary: compactTextSnippet(JSON.stringify(item)),
+      detail: null,
+      artifactUri: stringValue(item.artifact_uri) ?? null,
+    };
+  });
+}
+
+function guidelineEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
+  const document = objectValue(item.document);
+  const metadata = objectValue(item.metadata);
+  const title = stringValue(document?.title) ?? stringValue(item.document_title) ?? "医学知识库";
+  const section = stringValue(metadata?.sectionTitle) ?? stringValue(metadata?.section_title);
+  const relPath = stringValue(metadata?.relPath) ?? stringValue(metadata?.rel_path);
+  const lineStart = numberValue(metadata?.lineStart) ?? numberValue(metadata?.line_start);
+  const lineEnd = numberValue(metadata?.lineEnd) ?? numberValue(metadata?.line_end);
+  const location = relPath && lineStart !== null && lineEnd !== null ? `${relPath}:${lineStart}-${lineEnd}` : null;
+  return {
+    source,
+    title: "医学知识库",
+    summary: [title, section].filter(Boolean).join(" / "),
+    detail: location ?? compactOptionalText(stringValue(item.text)),
+    artifactUri: stringValue(document?.fileUri) ?? stringValue(document?.file_uri) ?? null,
+  };
+}
+
+function tiradsRuleEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
+  const ruleCode = stringValue(item.rule_code) ?? "unknown_rule";
+  const category = stringValue(item.category);
+  const points = numberValue(item.points);
+  return {
+    source,
+    title: "TI-RADS 规则库",
+    summary: [ruleCode, category, points !== null ? `${points} points` : null].filter(Boolean).join(" · "),
+    detail: compactOptionalText(stringValue(item.recommendation) ?? stringValue(item.rule)),
+    artifactUri: null,
+  };
+}
+
+function tiradsResultEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
+  const ruleCodes = evidenceRuleCodeList(item);
+  return {
+    source,
+    title: "TI-RADS 计算结果",
+    summary: ruleCodes.length > 0 ? ruleCodes.join("、") : stringValue(item.rule_code) ?? "规则结果待补充",
+    detail: stringValue(item.recommendation) ?? null,
+    artifactUri: null,
+  };
+}
+
+function segmentationEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
+  return {
+    source,
+    title: `分割依据${noduleIndexLabel(item)}`,
+    summary: [
+      stringValue(item.segmentation_source) ?? "segmentation",
+      stringValue(item.model_name),
+      stringValue(item.model_version),
+      confidenceLabel(item.confidence),
+    ].filter(Boolean).join(" · "),
+    detail: stringValue(item.mask_uri) ? `mask ${stringValue(item.mask_uri)}` : null,
+    artifactUri: stringValue(item.artifact_uri) ?? null,
+  };
+}
+
+function measurementEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
+  const longAxis = numberValue(item.long_axis_mm);
+  const shortAxis = numberValue(item.short_axis_mm);
+  const area = numberValue(item.area_mm2);
+  return {
+    source,
+    title: `测量依据${noduleIndexLabel(item)}`,
+    summary: [
+      stringValue(item.measurement_source) ?? "measurement",
+      longAxis !== null ? `long ${formatMm(longAxis)}` : null,
+      shortAxis !== null ? `short ${formatMm(shortAxis)}` : null,
+      area !== null ? `area ${formatArea(area)}` : null,
+      confidenceLabel(item.confidence),
+    ].filter(Boolean).join(" · "),
+    detail: null,
+    artifactUri: stringValue(item.artifact_uri) ?? null,
+  };
+}
+
+function evidenceRuleCodeList(item: Record<string, unknown>): string[] {
+  const direct = stringValue(item.rule_code);
+  const nested = recordList(item.evidence_rules)
+    .map((rule) => stringValue(rule.rule_code))
+    .filter((value): value is string => value !== undefined);
+  return direct ? [direct, ...nested] : nested;
+}
+
+function noduleIndexLabel(item: Record<string, unknown>): string {
+  const index = numberValue(item.nodule_index) ?? numberValue(item.noduleIndex);
+  return index === null ? "" : ` N${index}`;
+}
+
+function confidenceLabel(value: unknown): string | null {
+  const confidence = numberValue(value);
+  return confidence === null ? null : `confidence ${confidence.toFixed(2)}`;
+}
+
 function snapshotMaskUri(snapshot: Record<string, unknown> | undefined): string | null {
   return stringValue(snapshot?.mask_uri) ?? stringValue(snapshot?.maskUri) ?? null;
 }
@@ -1468,6 +1580,7 @@ function ReportRow({
           {text}
         </pre>
       ) : null}
+      <ReportEvidencePanel evidence={report.evidence} />
       {canReview && (
         <div className="mt-2 flex flex-wrap gap-2">
           <button type="button" className="btn-primary" disabled={busy} onClick={() => submit("approve")}>
@@ -1476,6 +1589,43 @@ function ReportRow({
           <button type="button" className="btn-secondary" disabled={busy} onClick={() => submit("reject")}>
             驳回
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ReportEvidenceDisplayRow {
+  source: string;
+  title: string;
+  summary: string;
+  detail: string | null;
+  artifactUri: string | null;
+}
+
+function ReportEvidencePanel({ evidence }: { evidence: unknown[] }) {
+  const rows = reportEvidenceRows(evidence);
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="font-semibold">报告依据</span>
+        <span className="text-muted">{rows.length} 项</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="mt-2 text-xs text-warning">未记录结构化报告依据，需医生人工复核。</div>
+      ) : (
+        <div className="mt-2 divide-y divide-border">
+          {rows.map((row, index) => (
+            <div key={`${row.source}-${index}`} className="py-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">{row.title}</span>
+                <span className="rounded border border-border px-1.5 py-0.5 text-muted">{row.source}</span>
+              </div>
+              <div className="mt-1 text-muted">{row.summary}</div>
+              {row.detail && <div className="mt-1 text-[11px] text-muted">{row.detail}</div>}
+              {row.artifactUri && <ArtifactLine label="artifact" value={row.artifactUri} />}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -1823,6 +1973,11 @@ function compactTextSnippet(value: string): string {
   if (!normalized) return "无";
   if (normalized.length <= 120) return normalized;
   return `${normalized.slice(0, 60)} ... ${normalized.slice(-40)}`;
+}
+
+function compactOptionalText(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  return compactTextSnippet(value);
 }
 
 function formatOptionalNumber(value: number | null | undefined): string {

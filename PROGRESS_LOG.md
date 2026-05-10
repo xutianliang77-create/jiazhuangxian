@@ -2752,3 +2752,54 @@ cd .. && npm run build:web
 git diff --check
 git push origin main
 ```
+
+## 2026-05-11 07:40 CST - Report Evidence Panel
+
+- Continued the doctor workstation evidence workflow by adding a per-report `报告依据` panel in `MedicalPanel`.
+- The panel renders the structured `report.evidence` already persisted by the medical agent worker:
+  - `tirads_result` as TI-RADS calculation evidence,
+  - `tirads_rule` as rule-library evidence,
+  - `medical_guideline` as medical knowledge-base evidence with document/section/path lines,
+  - `segmentation_result` as model segmentation evidence,
+  - `measurement_result` as measurement evidence.
+- The report row now shows the evidence basis directly beside the draft/final report text, so doctors can review report claims without running a separate manual knowledge search.
+- Updated `MedicalPanel.test.tsx` fixture and assertions to cover rule, guideline, segmentation, and measurement evidence displayed from a selected study report.
+
+### Validation
+
+- `cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx` -> 15 tests OK.
+- `cd web-react && npm run typecheck` -> OK.
+- `cd web-react && npm test` -> 11 files, 48 tests OK. Existing React `act(...)` warnings in `ApprovalCard.test.tsx` remain unrelated.
+- `npm run build:web` -> OK, with the existing Monaco large chunk warning.
+- `npm run typecheck` -> OK.
+- `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: Report Evidence Panel Implemented
+
+- P0 doctor bbox revision, server-side revision evidence summary, report edit trace UI, and report evidence panel are complete locally.
+- Current report evidence panel changes are validated and committed locally.
+- `git push origin main` failed again with `Recv failure: Connection reset by peer`.
+- Branch state after this local commit is expected to be `main...origin/main [ahead 4]`.
+- `tmp-phase1.txt` remains untracked and unrelated.
+
+### Background Tasks
+
+- No backend, Vite, training, model-worker, GPU, browser automation, or dev server process is running from this session.
+
+### Next Session Priorities
+
+1. Retry `git push origin main` when GitHub/network connectivity is available.
+2. Continue remaining doctor workstation work: richer report editor controls, batch case queue, or browser E2E dependency decision.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+git status --short --branch
+cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
+cd .. && npm run build:web
+git diff --check
+git push origin main
+```

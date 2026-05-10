@@ -178,6 +178,30 @@ const studyBundle = {
       evidence: [
         { source: "tirads_result", rule_code: "ACR_2017_category_TR4" },
         {
+          source: "tirads_rule",
+          rule_code: "ACR_2017_category_TR4",
+          system_name: "ACR_TI_RADS",
+          system_version: "2017",
+          category: "TR4",
+          points: 4,
+          recommendation: "TR4 nodule >=10 mm: ultrasound follow-up.",
+        },
+        {
+          source: "medical_guideline",
+          chunk_id: "medical/doc-acr-tirads-2017/tr4",
+          text: "TR4 nodules require size-based follow-up or FNA according to ACR TI-RADS.",
+          document: {
+            title: "ACR TI-RADS 2017",
+            fileUri: "artifact://knowledge/acr.pdf",
+          },
+          metadata: {
+            sectionTitle: "TR4",
+            relPath: "examples/medical-knowledge/acr.md",
+            lineStart: 10,
+            lineEnd: 20,
+          },
+        },
+        {
           source: "segmentation_result",
           nodule_id: "N1",
           nodule_index: 1,
@@ -806,6 +830,12 @@ describe("MedicalPanel", () => {
     expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0);
     expect(screen.getByText("TR4")).toBeInTheDocument();
     expect(screen.getByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
+    expect(screen.getByText("报告依据")).toBeInTheDocument();
+    expect(screen.getByText("TI-RADS 规则库")).toBeInTheDocument();
+    expect(screen.getByText("医学知识库")).toBeInTheDocument();
+    expect(screen.getByText("分割依据 N1")).toBeInTheDocument();
+    expect(screen.getByText("测量依据 N1")).toBeInTheDocument();
+    expect(screen.getByText("examples/medical-knowledge/acr.md:10-20")).toBeInTheDocument();
     expect(screen.getByText("Overlay Revision")).toBeInTheDocument();
     expect(screen.getByText("Model Evidence")).toBeInTheDocument();
     expect(screen.getByText("nnunet_tight_roi")).toBeInTheDocument();
