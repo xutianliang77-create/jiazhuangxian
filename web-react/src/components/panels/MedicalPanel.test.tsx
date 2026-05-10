@@ -575,8 +575,18 @@ describe("MedicalPanel", () => {
         targetType: "nodule",
         targetId: "N1",
         detail: {
-          before: { bbox: [10, 20, 30, 40] },
-          after: { bbox: [12, 22, 32, 42] },
+          before: {
+            id: "N1",
+            nodule_index: 1,
+            bbox: [10, 20, 30, 40],
+            mask_uri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
+          },
+          after: {
+            id: "N1",
+            nodule_index: 1,
+            bbox: [12, 22, 32, 42],
+            mask_uri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
+          },
         },
         traceId: "N1",
         createdAt: 1778245400000,
@@ -605,8 +615,18 @@ describe("MedicalPanel", () => {
             targetType: "nodule",
             targetId: "N1",
             detail: {
-              before: { bbox: [10, 20, 30, 40] },
-              after: { bbox: [12, 22, 32, 42] },
+              before: {
+                id: "N1",
+                nodule_index: 1,
+                bbox: [10, 20, 30, 40],
+                mask_uri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
+              },
+              after: {
+                id: "N1",
+                nodule_index: 1,
+                bbox: [12, 22, 32, 42],
+                mask_uri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
+              },
             },
             traceId: "N1",
             createdAt: 1778245400000,
@@ -885,6 +905,36 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("bbox 10, 20, 30, 40 -> 12, 22, 32, 42")).toBeInTheDocument();
   });
 
+  it("blocks zero-area overlay bbox revisions before calling the API", async () => {
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    const canvas = await screen.findByTestId("overlay-revision-canvas");
+    Object.defineProperty(canvas, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        left: 0,
+        top: 0,
+        width: 640,
+        height: 480,
+        right: 640,
+        bottom: 480,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    });
+    fireEvent.mouseDown(canvas, { clientX: 12, clientY: 22 });
+    fireEvent.mouseUp(canvas, { clientX: 12, clientY: 22 });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存 overlay 修订" }));
+
+    expect(await screen.findByText("bbox 宽度和高度至少需要 1 像素，请重新拖拽框选。")).toBeInTheDocument();
+    expect(reviseMedicalNodule).not.toHaveBeenCalled();
+  });
+
   it("saves a doctor bbox revision for a nodule", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 
@@ -904,7 +954,253 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("doctor_revised")).toBeInTheDocument();
     expect(screen.getAllByText("medical.nodule.revise").length).toBeGreaterThan(0);
     expect(screen.getByText("bbox 10, 20, 30, 40 -> 12, 22, 32, 42")).toBeInTheDocument();
+    expect(screen.getByText("Revision Evidence Diff")).toBeInTheDocument();
+    expect(screen.getAllByText("pending refresh").length).toBeGreaterThan(0);
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows refreshed model evidence for a completed bbox revision audit", async () => {
+    const revisionCreatedAt = 1778245400000;
+    const refreshedMaskUri = "artifact://model-output/web-smoke/mask_nodule_1.png";
+    vi.mocked(getMedicalStudy).mockResolvedValueOnce({
+      bundle: {
+        ...studyBundle,
+        nodules: [
+          {
+            ...studyBundle.nodules[0],
+            bbox: [12, 22, 32, 42],
+            maskUri: refreshedMaskUri,
+            source: "doctor",
+            status: "doctor_revised",
+            updatedAt: 1778245600000,
+          },
+        ],
+        measurements: [
+          {
+            ...studyBundle.measurements[0],
+            id: "M-REV",
+            longAxisMm: 5,
+            shortAxisMm: 5,
+            areaMm2: 25,
+            aspectRatio: 1,
+            createdAt: 1778245600000,
+          },
+        ],
+        reports: [
+          {
+            ...studyBundle.reports[0],
+            id: "R-REV",
+            updatedAt: 1778245700000,
+            evidence: [
+              { source: "tirads_result", rule_code: "ACR_2017_category_TR4" },
+              {
+                source: "segmentation_result",
+                nodule_id: "N1",
+                nodule_index: 1,
+                model_job_id: "MJ-SEG-REV",
+                artifact_uri: "artifact://model-output/web-smoke/segmentation.json",
+                model_name: "nnunet-tight-roi-segmenter",
+                model_version: "tn3k-tight-roi-5fold-best",
+                segmentation_source: "nnunet_tight_roi",
+                mask_uri: refreshedMaskUri,
+                confidence: 0.91,
+                requires_doctor_review: false,
+                metadata: {
+                  prompt_bbox: [12, 22, 32, 42],
+                  crop_box_xyxy: [10, 20, 34, 44],
+                  roi_size: [384, 384],
+                },
+              },
+              {
+                source: "measurement_result",
+                nodule_id: "N1",
+                nodule_index: 1,
+                model_job_id: "MJ-MEASURE-REV",
+                artifact_uri: "artifact://model-output/web-smoke/measurements.json",
+                model_name: "mask-measurement-worker",
+                model_version: "validation-measurement-v1",
+                measurement_source: "mask",
+                long_axis_mm: 5,
+                short_axis_mm: 5,
+                ap_axis_mm: null,
+                area_mm2: 25,
+                aspect_ratio: 1,
+                pixel_measurements: { long_axis_px: 20, short_axis_px: 20, area_px2: 400 },
+                confidence: 0.9,
+                requires_doctor_review: false,
+              },
+            ],
+          },
+        ],
+        modelJobs: [
+          ...studyBundle.modelJobs,
+          {
+            ...studyBundle.modelJobs[1],
+            id: "MJ-SEG-REV",
+            output: {
+              segmentations: [
+                {
+                  nodule_id: "N1",
+                  nodule_index: 1,
+                  mask_uri: refreshedMaskUri,
+                  segmentation_source: "nnunet_tight_roi",
+                  confidence: 0.91,
+                },
+              ],
+            },
+            updatedAt: 1778245600000,
+          },
+          {
+            ...studyBundle.modelJobs[2],
+            id: "MJ-MEASURE-REV",
+            output: {
+              measurements: [
+                {
+                  nodule_id: "N1",
+                  nodule_index: 1,
+                  measurement_source: "mask",
+                  long_axis_mm: 5,
+                  short_axis_mm: 5,
+                  area_mm2: 25,
+                  aspect_ratio: 1,
+                  confidence: 0.9,
+                },
+              ],
+            },
+            updatedAt: 1778245600000,
+          },
+        ],
+        auditLogs: [
+          {
+            id: "A-REV",
+            studyId: "S1",
+            actorType: "doctor",
+            actorId: "web-test",
+            action: "medical.nodule.revise",
+            targetType: "nodule",
+            targetId: "N1",
+            detail: {
+              before: {
+                id: "N1",
+                nodule_index: 1,
+                bbox: [10, 20, 30, 40],
+                mask_uri: "artifact://model-output/S1/IMG1/MJ-SEG/mask.png",
+              },
+              after: {
+                id: "N1",
+                nodule_index: 1,
+                bbox: [12, 22, 32, 42],
+                mask_uri: refreshedMaskUri,
+              },
+            },
+            traceId: "N1",
+            createdAt: revisionCreatedAt,
+          },
+        ],
+      },
+    });
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    expect(await screen.findByText("Revision Evidence Diff")).toBeInTheDocument();
+    expect(screen.getByText("refreshed")).toBeInTheDocument();
+    expect(screen.getByText("5.00 mm x 5.00 mm")).toBeInTheDocument();
+    expect(screen.getByText("tirads_result, segmentation_result, measurement_result")).toBeInTheDocument();
+    expect(screen.getAllByText(refreshedMaskUri).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("R-REV").length).toBeGreaterThan(0);
+  });
+
+  it("does not mark refreshed evidence when the audit bbox does not match the model basis", async () => {
+    vi.mocked(getMedicalStudy).mockResolvedValueOnce({
+      bundle: {
+        ...studyBundle,
+        nodules: [
+          {
+            ...studyBundle.nodules[0],
+            bbox: [112, 64, 214, 172],
+            source: "doctor",
+            status: "doctor_revised",
+            updatedAt: 1778245600000,
+          },
+        ],
+        measurements: [
+          {
+            ...studyBundle.measurements[0],
+            longAxisMm: 25.25,
+            shortAxisMm: 20,
+            areaMm2: 386.625,
+            createdAt: 1778245600000,
+          },
+        ],
+        reports: [
+          {
+            ...studyBundle.reports[0],
+            id: "R-MISMATCH",
+            updatedAt: 1778245700000,
+            evidence: [
+              {
+                source: "segmentation_result",
+                nodule_id: "N1",
+                nodule_index: 1,
+                mask_uri: "artifact://model-output/web-smoke/mismatch-mask.png",
+                metadata: {
+                  prompt_bbox: [112, 64, 214, 172],
+                  crop_box_xyxy: [93, 48, 233, 188],
+                },
+              },
+              {
+                source: "measurement_result",
+                nodule_id: "N1",
+                nodule_index: 1,
+                long_axis_mm: 25.25,
+                short_axis_mm: 20,
+              },
+            ],
+          },
+        ],
+        auditLogs: [
+          {
+            id: "A-MISMATCH",
+            studyId: "S1",
+            actorType: "doctor",
+            actorId: "web-test",
+            action: "medical.nodule.revise",
+            targetType: "nodule",
+            targetId: "N1",
+            detail: {
+              before: { id: "N1", nodule_index: 1, bbox: [95, 52, 201, 158] },
+              after: { id: "N1", nodule_index: 1, bbox: [112, 63.85, 112, 63.85] },
+            },
+            traceId: "N1",
+            createdAt: 1778245400000,
+          },
+        ],
+      },
+    });
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    expect(await screen.findByText("Revision Evidence Diff")).toBeInTheDocument();
+    expect(screen.getByText("invalid revision bbox")).toBeInTheDocument();
+    expect(screen.getAllByText("pending refresh").length).toBeGreaterThan(0);
+  });
+
+  it("blocks zero-area manual bbox revisions before calling the API", async () => {
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    await waitFor(() => expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0));
+    fireEvent.change(screen.getByLabelText("bbox xyxy"), { target: { value: "12, 22, 12, 42" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
+
+    expect(await screen.findByText("bbox 宽度和高度至少需要 1 像素，请重新拖拽框选。")).toBeInTheDocument();
+    expect(reviseMedicalNodule).not.toHaveBeenCalled();
   });
 
   it("registers a manual patient, study, and image then refreshes", async () => {

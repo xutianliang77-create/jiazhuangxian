@@ -17,7 +17,9 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { WebServerHandle } from "../../../../src/channels/web/server";
 import { startWebServer } from "../../../../src/channels/web/server";
+import { runMedicalAgentWorkerOnce } from "../../../../src/medical/agentWorker";
 import type { McpManager } from "../../../../src/mcp/manager";
+import { MedicalCaseRepo } from "../../../../src/medical/storage";
 import { closeDataDb } from "../../../../src/storage/db";
 import { ingestMedicalKnowledgeManifest, type MedicalKnowledgeManifest } from "../../../../src/medical/knowledge/ingestion";
 import { openRagDb } from "../../../../src/rag/store";
@@ -1228,6 +1230,18 @@ describe("Web server · medical API", () => {
       localDb.close();
       localDb = null;
 
+      const invalidReviseResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/nodules/N-WEB-REVISE/revise`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ bbox: [12, 22, 12, 42], comment: "zero width bbox" }),
+      });
+      expect(invalidReviseResponse.status).toBe(400);
+      const invalidReviseBody = (await invalidReviseResponse.json()) as { error: { code: string; message: string } };
+      expect(invalidReviseBody.error).toMatchObject({
+        code: "invalid-request",
+        message: "bbox width and height must be at least 1 pixel",
+      });
+
       const reviseResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/nodules/N-WEB-REVISE/revise`, {
         method: "POST",
         headers: authHeaders(),
@@ -1242,8 +1256,8 @@ describe("Web server · medical API", () => {
           action: string;
           actorType: string;
           detail: {
-            before: { bbox: number[] };
-            after: { bbox: number[] };
+            before: { bbox: number[]; nodule_index: number; mask_uri: string | null; detection_confidence: number | null };
+            after: { bbox: number[]; nodule_index: number; mask_uri: string | null; detection_confidence: number | null };
             rerun_analysis_session_id: string;
             rerun_agent_task_ids: string[];
             rerun_task_types: string[];
@@ -1267,6 +1281,16 @@ describe("Web server · medical API", () => {
       });
       expect(reviseBody.auditLog.detail.before.bbox).toEqual([10, 20, 30, 40]);
       expect(reviseBody.auditLog.detail.after.bbox).toEqual([12, 22, 32, 42]);
+      expect(reviseBody.auditLog.detail.before).toMatchObject({
+        nodule_index: 1,
+        mask_uri: null,
+        detection_confidence: 0.91,
+      });
+      expect(reviseBody.auditLog.detail.after).toMatchObject({
+        nodule_index: 1,
+        mask_uri: null,
+        detection_confidence: 0.91,
+      });
       expect(reviseBody.analysisSession).toMatchObject({
         status: "queued",
         triggerSource: "doctor_bbox_revision",
@@ -1309,6 +1333,161 @@ describe("Web server · medical API", () => {
         "measure_nodules",
         "draft_report",
       ]);
+
+      localDb = new Database(dbPath);
+      const repo = new MedicalCaseRepo(localDb);
+      repo.createTiradsResult({
+        id: "TR-WEB-REVISE",
+        noduleId: "N-WEB-REVISE",
+        score: 4,
+        category: "TR4",
+        recommendation: "TR4 nodule >=10 mm: ultrasound follow-up.",
+        evidenceRules: [{ rule_code: "ACR_2017_category_TR4" }],
+        now: now + 100,
+      });
+
+      const segmentStart = runMedicalAgentWorkerOnce(repo, { workerId: "worker-smoke", now: () => now + 200 });
+      expect(segmentStart).toMatchObject({ status: "waiting_model", taskType: "segment_nodules" });
+      const segmentJob = repo.getModelJob(segmentStart.modelJobId!);
+      expect(segmentJob).toMatchObject({
+        jobType: "thyroid.segment_nodule",
+        modelName: "nnunet-tight-roi-segmenter",
+        modelVersion: "tn3k-tight-roi-5fold-best",
+        input: {
+          allow_bbox_fallback: false,
+          nodules: [
+            {
+              nodule_id: "N-WEB-REVISE",
+              bbox: [12, 22, 32, 42],
+            },
+          ],
+        },
+      });
+
+      localDb.prepare(
+        `UPDATE model_job
+         SET status = 'succeeded', output_json = ?, artifact_uri = ?, completed_at = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(
+        JSON.stringify({
+          segmentations: [
+            {
+              nodule_id: "N-WEB-REVISE",
+              nodule_index: 1,
+              bbox: [12, 22, 32, 42],
+              contour: [[12, 22], [32, 22], [32, 42], [12, 42]],
+              mask_uri: "artifact://model-output/web-smoke/mask_nodule_1.png",
+              confidence: 0.91,
+              segmentation_source: "nnunet_tight_roi",
+              requires_doctor_review: false,
+              metadata: { crop_box_xyxy: [10, 20, 34, 44], roi_size: [384, 384] },
+            },
+          ],
+          warnings: [],
+        }),
+        "artifact://model-output/web-smoke/segmentation.json",
+        now + 300,
+        now + 300,
+        segmentStart.modelJobId
+      );
+
+      const segmentSync = runMedicalAgentWorkerOnce(repo, { workerId: "worker-smoke", now: () => now + 400 });
+      expect(segmentSync).toMatchObject({
+        status: "succeeded",
+        taskType: "segment_nodules",
+        output: {
+          persisted_segmentations: [
+            {
+              nodule_id: "N-WEB-REVISE",
+              mask_uri: "artifact://model-output/web-smoke/mask_nodule_1.png",
+            },
+          ],
+        },
+      });
+      expect(repo.getNodule("N-WEB-REVISE")?.maskUri).toBe("artifact://model-output/web-smoke/mask_nodule_1.png");
+
+      const measureStart = runMedicalAgentWorkerOnce(repo, { workerId: "worker-smoke", now: () => now + 500 });
+      expect(measureStart).toMatchObject({ status: "waiting_model", taskType: "measure_nodules" });
+      expect(repo.getModelJob(measureStart.modelJobId!)?.input).toMatchObject({
+        nodules: [
+          {
+            nodule_id: "N-WEB-REVISE",
+            bbox: [12, 22, 32, 42],
+            mask_uri: "artifact://model-output/web-smoke/mask_nodule_1.png",
+          },
+        ],
+      });
+
+      localDb.prepare(
+        `UPDATE model_job
+         SET status = 'succeeded', output_json = ?, artifact_uri = ?, completed_at = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(
+        JSON.stringify({
+          measurements: [
+            {
+              nodule_id: "N-WEB-REVISE",
+              nodule_index: 1,
+              long_axis_mm: 5,
+              short_axis_mm: 5,
+              ap_axis_mm: null,
+              area_mm2: 25,
+              aspect_ratio: 1,
+              pixel_measurements: { long_axis_px: 20, short_axis_px: 20, area_px2: 400 },
+              measurement_source: "mask",
+              confidence: 0.9,
+              requires_doctor_review: false,
+            },
+          ],
+          warnings: [],
+        }),
+        "artifact://model-output/web-smoke/measurements.json",
+        now + 600,
+        now + 600,
+        measureStart.modelJobId
+      );
+
+      const measureSync = runMedicalAgentWorkerOnce(repo, { workerId: "worker-smoke", now: () => now + 700 });
+      expect(measureSync).toMatchObject({
+        status: "succeeded",
+        taskType: "measure_nodules",
+        output: {
+          persisted_measurements: [
+            {
+              nodule_id: "N-WEB-REVISE",
+              long_axis_mm: 5,
+              short_axis_mm: 5,
+              measurement_source: "mask",
+            },
+          ],
+        },
+      });
+
+      const reportDraft = runMedicalAgentWorkerOnce(repo, { workerId: "worker-smoke", now: () => now + 800 });
+      expect(reportDraft).toMatchObject({ status: "succeeded", taskType: "draft_report" });
+      const finalSession = repo.getAnalysisSession(reviseBody.analysisSession.id);
+      expect(finalSession?.status).toBe("succeeded");
+      const finalBundle = repo.getStudyBundle(studyBody.study.id);
+      expect(finalBundle?.agentTasks.map((task) => `${task.taskType}:${task.status}`)).toEqual([
+        "segment_nodules:succeeded",
+        "measure_nodules:succeeded",
+        "draft_report:succeeded",
+      ]);
+      const latestReport = finalBundle?.reports.at(-1);
+      expect(latestReport).toBeTruthy();
+      const evidenceSources = latestReport?.evidence.map((item) => String((item as Record<string, unknown>).source));
+      expect(evidenceSources).toEqual(expect.arrayContaining([
+        "tirads_result",
+        "segmentation_result",
+        "measurement_result",
+        "tirads_rule",
+      ]));
+      expect(latestReport?.structured).toMatchObject({
+        model_evidence: {
+          segmentation_count: 1,
+          measurement_count: 1,
+        },
+      });
     } finally {
       localDb?.close();
       await medicalHandle?.close();

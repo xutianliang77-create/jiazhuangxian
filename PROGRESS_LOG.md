@@ -2388,3 +2388,262 @@ python3 -m unittest services/model-gateway/tests/test_gateway.py
 node -e "const Database=require('better-sqlite3'); const db=new Database('data/artifacts/medical/data.db'); console.log(db.prepare(\"select id,status from analysis_session where id='01KR9CHM7RK3YGK7SWTZSDW2V2'\").get()); db.close();"
 sed -n '1,220p' data/artifacts/medical/ui-smoke-bbox-revision-verification.json
 ```
+
+## 2026-05-11 01:29 CST - P0 BBox Revision Validation Guard
+
+- Implemented the first P0 follow-up from the UI smoke:
+  - Frontend overlay bbox save now rejects zero-area or sub-1-pixel bbox drafts before calling `reviseMedicalNodule`.
+  - Frontend manual bbox input now uses the same validation before saving a doctor revision.
+  - Backend `POST /v1/web/medical/nodules/:id/revise` now normalizes xyxy order and rejects bbox width/height below 1 pixel.
+- Added regression coverage:
+  - Web API rejects zero-width bbox with `400 invalid-request`.
+  - MedicalPanel overlay revision blocks zero-area drag submissions.
+  - MedicalPanel manual bbox editor blocks zero-area submissions.
+
+### Validation
+
+- `npm test -- test/unit/channels/web/server.test.ts` -> 47 tests OK.
+- `cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx` -> 12 tests OK.
+- `npm run typecheck` -> OK.
+- `cd web-react && npm run typecheck` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: P0 BBox Guard Implemented
+
+- The zero-area bbox issue found during real UI smoke is now guarded in both UI and API.
+- Changes are not yet committed or pushed.
+
+### Background Tasks
+
+- No long-running dev server, browser, training, or model-worker job was started for this task.
+
+### Next Session Priorities
+
+1. Commit and push the bbox validation guard if approved.
+2. Continue P0 by turning the doctor bbox revision smoke into automated E2E.
+3. Add doctor-facing old-vs-new evidence diff for bbox, mask, measurement, and report evidence.
+4. Re-run the nnU-Net smoke on GPU after large LLM/LM Studio processes release VRAM.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm test -- test/unit/channels/web/server.test.ts
+cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
+npm run typecheck
+```
+
+## 2026-05-11 01:47 CST - P0 Automated Doctor BBox Revision Smoke
+
+- Continued P0 by turning the doctor bbox revision smoke into a CI-runnable integration path inside `test/unit/channels/web/server.test.ts`.
+- The smoke now covers:
+  1. `POST /v1/web/medical/nodules/:id/revise` creating a `doctor_bbox_revision` session.
+  2. The queued `segment_nodules -> measure_nodules -> draft_report` task chain.
+  3. `medical-agent-worker` creating the `thyroid.segment_nodule` model job with `allow_bbox_fallback=false` and only the revised nodule.
+  4. Simulated successful model-worker segmentation output being consumed into `nodule.mask_uri`.
+  5. `medical-agent-worker` creating and consuming the `thyroid.measure_nodule` model job.
+  6. Measurement rows being persisted.
+  7. `draft_report` completing and refreshing report evidence with `tirads_result`, `segmentation_result`, `measurement_result`, and `tirads_rule`.
+- This does not replace the remote 5090 real-model smoke, but it now protects the orchestration and persistence chain in local automated tests.
+
+### Validation
+
+- `npm test -- test/unit/channels/web/server.test.ts` -> 47 tests OK.
+- `cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx` -> 12 tests OK.
+- `npm run typecheck` -> OK.
+- `cd web-react && npm run typecheck` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: P0 BBox Guard and Automated Smoke Implemented
+
+- UI/API zero-area bbox guards are implemented.
+- The doctor bbox revision rerun chain is now covered by an automated integration smoke.
+- Changes are not yet committed or pushed.
+
+### Background Tasks
+
+- No long-running dev server, browser, training, or model-worker job was started for this task.
+
+### Next Session Priorities
+
+1. Commit and push the current P0 changes if approved.
+2. Add doctor-facing old-vs-new evidence diff for bbox, mask, measurement, and report evidence.
+3. Re-run the nnU-Net smoke on GPU after large LLM/LM Studio processes release VRAM.
+4. Optionally add a browser-level Playwright suite later if the project adopts Playwright as a dependency.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm test -- test/unit/channels/web/server.test.ts
+cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
+npm run typecheck
+```
+
+## 2026-05-11 04:50 CST - P0 Doctor Revision Evidence Diff
+
+- Continued the doctor bbox revision path by adding doctor-facing refreshed evidence visibility in the Safety Audit panel.
+- Backend `medical.nodule.revise` audit snapshots now preserve nodule index, mask URI, and detection confidence, so later UI/report review has enough old-state context.
+- The audit UI now renders a `Revision Evidence Diff` block for bbox revision audit rows:
+  1. Old bbox and new bbox from the audit snapshot.
+  2. Old mask availability from the audit snapshot.
+  3. New mask availability from refreshed segmentation evidence or updated nodule state.
+  4. New measurement value after refreshed measurement persistence.
+  5. Latest refreshed report evidence sources and report artifact id.
+- The UI intentionally shows `pending refresh` when the revision has been saved but the rerun worker has not yet produced newer segmentation, measurement, and report evidence.
+- Added UI coverage for both pending refresh and completed refresh evidence states.
+
+### Validation
+
+- `npm test -- test/unit/channels/web/server.test.ts` -> 47 tests OK.
+- `cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx` -> 13 tests OK.
+- `npm run typecheck` -> OK.
+- `cd web-react && npm run typecheck` -> OK.
+- `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: P0 Doctor Revision Chain Strengthened
+
+- UI/API zero-area bbox guards are implemented.
+- Doctor bbox revision now queues `segment_nodules -> measure_nodules -> draft_report` and has automated worker smoke coverage.
+- Safety Audit now surfaces old/new bbox plus refreshed mask, measurement, and report-basis evidence for doctor bbox revision audits.
+- Changes are not yet committed or pushed.
+
+### Background Tasks
+
+- No long-running dev server, browser, training, model-worker, or GPU job was started for this task.
+
+### Next Session Priorities
+
+1. Commit and push the current P0 changes if approved.
+2. Run a real browser smoke against the workbench if the user wants visual confirmation.
+3. Re-run the nnU-Net real-model smoke on GPU after model availability is confirmed.
+4. Continue MED-313 by expanding report-edit change history and evidence display if needed.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm test -- test/unit/channels/web/server.test.ts
+cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
+cd .. && npm run typecheck
+git status --short
+```
+
+## 2026-05-11 06:28 CST - P0 Revision Evidence BBox Consistency Guard
+
+- Re-ran the real Medical workbench smoke with the local React UI and Web backend pointed at the project medical SQLite DB.
+- Confirmed the static chain data is still present for `SMOKE_STUDY_UI`:
+  - 1 patient, 1 study, 1 image, 1 nodule, 2 reports.
+  - 3 succeeded model jobs and 3 succeeded agent tasks.
+  - Latest report evidence includes `tirads_result`, `segmentation_result`, `measurement_result`, `tirads_rule`, and `medical_guideline`.
+- Found one important UI evidence-mapping issue from the historical smoke data:
+  - The stored audit row had an invalid zero-area `after.bbox` from the earlier pre-guard browser drag.
+  - The UI was able to pair that audit row with later model/report evidence by nodule id and timestamp only.
+- Implemented a consistency guard in the `Revision Evidence Diff` panel:
+  - Refreshed evidence is now marked `refreshed` only when audit `after.bbox`, current nodule bbox, and segmentation `metadata.prompt_bbox` agree within 1 pixel.
+  - Historical invalid bbox rows now show `invalid revision bbox`.
+  - `new mask`, `new measure`, and `report basis` remain `pending refresh` when the evidence does not belong to that exact revision bbox.
+- Added/updated development documentation:
+  - `docs/DOCTOR_BBOX_REVISION_UI_SMOKE_DEV_DOC_20260511.md`
+  - Documented the finished bbox guard, old-vs-new evidence diff, mismatch handling, and the need to start Web with absolute `JZX_DATA_DB/JZX_RAG_DB` paths.
+- In-app browser verification:
+  - `SMOKE_STUDY_UI` Safety Audit now shows `Revision Evidence Diff`.
+  - The historical invalid audit row shows `refresh status invalid revision bbox`.
+  - New mask, new measure, and report basis show `pending refresh`.
+  - `screencapture` could not write a local PNG in this desktop environment (`could not create image from display`), so no new screenshot artifact was produced.
+
+### Validation
+
+- `cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx` -> 14 tests OK.
+- `cd web-react && npm run typecheck` -> OK.
+- `npm test -- test/unit/channels/web/server.test.ts` -> 47 tests OK.
+- `npm run typecheck` -> OK.
+- `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: P0 Doctor Revision Evidence Guard Implemented
+
+- UI/API zero-area bbox guards are implemented.
+- The automated doctor bbox revision worker smoke is implemented.
+- Safety Audit now displays old/new bbox, mask, measurement, and report basis, with bbox consistency checks so stale or mismatched evidence is not shown as refreshed.
+- Changes are not yet committed or pushed.
+
+### Background Tasks
+
+- Local backend and Vite dev servers used for UI smoke were stopped.
+- No long-running training, model-worker, GPU, browser automation, or dev server task remains running from this session.
+
+### Next Session Priorities
+
+1. Commit and push the current P0 changes if approved.
+2. Convert the real UI smoke into a proper browser-level E2E suite if the project adopts Playwright or an equivalent dependency.
+3. Re-run the nnU-Net real-model smoke on GPU after model availability is confirmed.
+4. Continue MED-313 by expanding report edit change history and evidence filtering by revision batch.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm test -- test/unit/channels/web/server.test.ts
+cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
+cd .. && npm run typecheck
+git status --short
+```
+
+## 2026-05-11 06:41 CST - P0 Doctor BBox Revision Chain Completed
+
+- Completed the current P0 scope for doctor bbox revision:
+  - Overlay and manual bbox revision are guarded in the UI.
+  - Web API normalizes and rejects invalid bbox values.
+  - Revision creates a `doctor_bbox_revision` analysis session and queues `segment_nodules -> measure_nodules -> draft_report`.
+  - Automated Web/API + medical-agent-worker smoke verifies segmentation job creation, segmentation result sync, measurement job creation, measurement persistence, and report evidence refresh.
+  - Safety Audit displays old/new bbox, old/new mask state, refreshed measurement, and report-basis evidence.
+  - Revision evidence now checks bbox consistency before displaying refreshed model/report evidence.
+- Updated `docs/DOCTOR_BBOX_REVISION_UI_SMOKE_DEV_DOC_20260511.md` with the final P0 completion state and explicit out-of-scope items:
+  - No new Playwright dependency in this P0.
+  - No new remote GPU training/inference run in this P0.
+  - No backend revision-batch evidence query API in this P0.
+- Full P0 validation pass completed:
+  - `npm test -- test/unit/channels/web/server.test.ts test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts test/unit/medical/mcp-server.test.ts` -> 91 tests OK.
+  - `cd web-react && npm test` -> 11 files, 47 tests OK.
+  - `npm run typecheck` -> OK.
+  - `cd web-react && npm run typecheck` -> OK.
+  - `npm run build:web` -> OK, with the existing Monaco large chunk warning.
+  - `python3 -m unittest discover services/model-gateway/tests` -> 29 tests OK.
+  - `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: P0 Complete, Local Commit Created
+
+- The current P0 doctor bbox revision chain is complete and validated.
+- Local commit created with message `Complete doctor bbox revision P0`.
+- Push to `origin/main` was attempted three times but failed with `Recv failure: Connection reset by peer`; `git ls-remote` against the same remote also fails with the same network error.
+- Branch state after commit: `main...origin/main [ahead 1]`.
+- `tmp-phase1.txt` remains untracked and unrelated; do not stage it unless the user explicitly asks.
+
+### Background Tasks
+
+- No backend, Vite, training, model-worker, GPU, or browser automation process is running from this session.
+
+### Next Session Priorities
+
+1. Retry `git push origin main` when GitHub/network connectivity is available.
+2. Continue with P1/P2 follow-ups: browser E2E dependency decision, GPU rerun, report edit history, or backend revision-batch evidence query.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+git status --short
+git push origin main
+npm test -- test/unit/channels/web/server.test.ts test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts test/unit/medical/mcp-server.test.ts
+cd web-react && npm test && npm run typecheck
+cd .. && npm run typecheck && npm run build:web
+python3 -m unittest discover services/model-gateway/tests
+```

@@ -44,6 +44,7 @@ const COUNT_LABELS: Array<[keyof MedicalSummary["counts"], string]> = [
 
 const SEGMENT_MODEL_JOB_TYPE = "thyroid.segment_nodule";
 const MEASURE_MODEL_JOB_TYPE = "thyroid.measure_nodule";
+const MIN_REVISION_BBOX_EDGE_PX = 1;
 
 interface ManualCaseFormState {
   externalPatientId: string;
@@ -670,6 +671,7 @@ function StudyDetail({
     analysisSessions,
     agentTasks,
   } = bundle;
+  const noduleEvidenceRows = buildNoduleModelEvidence(nodules, measurements, reports, modelJobs);
   return (
     <div className="border border-border rounded p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -747,12 +749,7 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
-        <ModelEvidencePanel
-          nodules={nodules}
-          measurements={measurements}
-          reports={reports}
-          modelJobs={modelJobs}
-        />
+        <ModelEvidencePanel rows={noduleEvidenceRows} />
       </div>
 
       <div className="mt-4">
@@ -794,7 +791,7 @@ function StudyDetail({
         ) : (
           <div className="space-y-2">
             {auditLogs.map((audit) => (
-              <AuditRow key={audit.id} audit={audit} />
+              <AuditRow key={audit.id} audit={audit} evidenceRows={noduleEvidenceRows} reports={reports} />
             ))}
           </div>
         )}
@@ -912,6 +909,11 @@ function OverlayRevisionWorkspace({
     if (!selectedNodule) return;
     if (!isNumberTuple4(draftBbox)) {
       setEditError("请先在 overlay 上拖拽框选新 bbox。");
+      return;
+    }
+    const validationError = bboxValidationMessage(draftBbox);
+    if (validationError) {
+      setEditError(validationError);
       return;
     }
     setEditError(null);
@@ -1137,19 +1139,8 @@ interface NoduleModelEvidence {
   measurementJob: MedicalModelJob | null;
 }
 
-function ModelEvidencePanel({
-  nodules,
-  measurements,
-  reports,
-  modelJobs,
-}: {
-  nodules: MedicalNodule[];
-  measurements: MedicalMeasurement[];
-  reports: MedicalReport[];
-  modelJobs: MedicalModelJob[];
-}) {
-  if (nodules.length === 0) return null;
-  const rows = buildNoduleModelEvidence(nodules, measurements, reports, modelJobs);
+function ModelEvidencePanel({ rows }: { rows: NoduleModelEvidence[] }) {
+  if (rows.length === 0) return null;
   return (
     <div>
       <h4 className="text-xs uppercase text-muted mb-2">Model Evidence</h4>
@@ -1304,6 +1295,48 @@ function modelLabel(evidence: Record<string, unknown> | null, job: MedicalModelJ
 
 function versionLabel(evidence: Record<string, unknown> | null, job: MedicalModelJob | null): string {
   return stringValue(evidence?.model_version) ?? job?.modelVersion ?? "pending";
+}
+
+function evidenceRowForAudit(audit: MedicalAuditLog, rows: NoduleModelEvidence[]): NoduleModelEvidence | null {
+  if (audit.action !== "medical.nodule.revise") return null;
+  const before = objectValue(audit.detail.before);
+  const after = objectValue(audit.detail.after);
+  const ids = new Set<string>();
+  const indexes = new Set<number>();
+  if (audit.targetType === "nodule" && audit.targetId) ids.add(audit.targetId);
+  for (const snapshot of [before, after]) {
+    const id = stringValue(snapshot?.id);
+    const index = numberValue(snapshot?.nodule_index) ?? numberValue(snapshot?.noduleIndex);
+    if (id) ids.add(id);
+    if (index !== null) indexes.add(index);
+  }
+  return rows.find((row) => ids.has(row.nodule.id) || indexes.has(row.nodule.noduleIndex)) ?? null;
+}
+
+function latestReportForNodule(reports: MedicalReport[], nodule: MedicalNodule): MedicalReport | null {
+  const keys = new Set([nodule.id, `index:${nodule.noduleIndex}`]);
+  let latest: MedicalReport | null = null;
+  for (const report of [...reports].sort((a, b) => a.updatedAt - b.updatedAt)) {
+    const hasEvidence = report.evidence.some((rawEvidence) => {
+      const evidence = objectValue(rawEvidence);
+      return evidence ? noduleKeysFromRecord(evidence).some((key) => keys.has(key)) : false;
+    });
+    if (hasEvidence) latest = report;
+  }
+  return latest;
+}
+
+function reportEvidenceSourceLabel(report: MedicalReport): string {
+  const sources = new Set<string>();
+  for (const rawEvidence of report.evidence) {
+    const source = stringValue(objectValue(rawEvidence)?.source);
+    if (source) sources.add(source);
+  }
+  return sources.size === 0 ? "pending" : Array.from(sources).join(", ");
+}
+
+function snapshotMaskUri(snapshot: Record<string, unknown> | undefined): string | null {
+  return stringValue(snapshot?.mask_uri) ?? stringValue(snapshot?.maskUri) ?? null;
 }
 
 function NoduleResultRow({
@@ -1477,10 +1510,19 @@ function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
   );
 }
 
-function AuditRow({ audit }: { audit: MedicalAuditLog }) {
+function AuditRow({
+  audit,
+  evidenceRows,
+  reports,
+}: {
+  audit: MedicalAuditLog;
+  evidenceRows: NoduleModelEvidence[];
+  reports: MedicalReport[];
+}) {
   const safetyStatus = stringValue(audit.detail.safety_status) ?? audit.action;
   const issues = Array.isArray(audit.detail.issues) ? audit.detail.issues : [];
   const bboxChange = bboxChangeLabel(audit.detail);
+  const revisionEvidence = evidenceRowForAudit(audit, evidenceRows);
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1504,8 +1546,88 @@ function AuditRow({ audit }: { audit: MedicalAuditLog }) {
           ))}
         </div>
       )}
+      {revisionEvidence && (
+        <RevisionEvidenceDiff audit={audit} row={revisionEvidence} reports={reports} />
+      )}
     </div>
   );
+}
+
+function RevisionEvidenceDiff({
+  audit,
+  row,
+  reports,
+}: {
+  audit: MedicalAuditLog;
+  row: NoduleModelEvidence;
+  reports: MedicalReport[];
+}) {
+  const before = objectValue(audit.detail.before);
+  const after = objectValue(audit.detail.after);
+  const afterBbox = isNumberTuple4(after?.bbox) ? normalizedBbox(after.bbox) : null;
+  const afterBboxError = afterBbox ? bboxValidationMessage(afterBbox) : null;
+  const noduleMatchesRevision = !afterBbox || bboxNearlyEqual(row.nodule.bbox, afterBbox);
+  const segmentationBbox = segmentationPromptBbox(row.segmentationEvidence);
+  const segmentationMatchesRevision = !afterBbox || !segmentationBbox || bboxNearlyEqual(segmentationBbox, afterBbox);
+  const evidenceMatchesRevision = !afterBboxError && noduleMatchesRevision && segmentationMatchesRevision;
+  const latestReport = latestReportForNodule(reports, row.nodule);
+  const hasFreshReport = !!latestReport && latestReport.updatedAt > audit.createdAt;
+  const freshReport = hasFreshReport && evidenceMatchesRevision ? latestReport : null;
+  const freshSegmentationEvidence = freshReport ? row.segmentationEvidence : null;
+  const freshMeasurementEvidence = freshReport ? row.measurementEvidence : null;
+  const freshMeasurement = evidenceMatchesRevision && row.measurement && row.measurement.createdAt > audit.createdAt ? row.measurement : null;
+  const freshNodule = evidenceMatchesRevision && row.nodule.updatedAt > audit.createdAt ? row.nodule : null;
+  const newMaskUri = stringValue(freshSegmentationEvidence?.mask_uri) ?? freshNodule?.maskUri ?? null;
+  const longAxisMm = numberValue(freshMeasurementEvidence?.long_axis_mm) ?? freshMeasurement?.longAxisMm ?? null;
+  const shortAxisMm = numberValue(freshMeasurementEvidence?.short_axis_mm) ?? freshMeasurement?.shortAxisMm ?? null;
+  const measurementLabel = longAxisMm === null && shortAxisMm === null
+    ? "pending refresh"
+    : `${formatMm(longAxisMm)} x ${formatMm(shortAxisMm)}`;
+  const oldMaskUri = snapshotMaskUri(before);
+  const sourceLabel = freshReport ? reportEvidenceSourceLabel(freshReport) : "pending refresh";
+  const refreshStatus = afterBboxError
+    ? "invalid revision bbox"
+    : hasFreshReport && !evidenceMatchesRevision
+      ? "bbox mismatch"
+      : freshReport
+        ? "refreshed"
+        : "pending refresh";
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <div className="font-semibold">Revision Evidence Diff</div>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <Metric label="nodule" value={`Nodule ${row.nodule.noduleIndex}`} />
+        <Metric label="refresh status" value={refreshStatus} />
+        <Metric label="old bbox" value={formatBbox(before?.bbox) || "unknown"} />
+        <Metric label="new bbox" value={formatBbox(after?.bbox) || "unknown"} />
+        <Metric label="old mask" value={oldMaskUri ? "available" : "not captured"} />
+        <Metric label="new mask" value={newMaskUri ? "available" : "pending refresh"} />
+        <Metric label="new measure" value={measurementLabel} />
+        <Metric label="report basis" value={sourceLabel} />
+      </div>
+      {oldMaskUri && <ArtifactLine label="old mask" value={oldMaskUri} />}
+      {newMaskUri && <ArtifactLine label="new mask" value={newMaskUri} />}
+      {freshReport && <ArtifactLine label="report" value={freshReport.id} />}
+    </div>
+  );
+}
+
+function segmentationPromptBbox(evidence: Record<string, unknown> | null): number[] | null {
+  const metadata = objectValue(evidence?.metadata);
+  const value = evidence?.prompt_bbox
+    ?? evidence?.prompt_bbox_xyxy
+    ?? metadata?.prompt_bbox
+    ?? metadata?.prompt_bbox_xyxy
+    ?? metadata?.bbox;
+  return isNumberTuple4(value) ? normalizedBbox(value) : null;
+}
+
+function bboxNearlyEqual(left: unknown, right: unknown): boolean {
+  if (!isNumberTuple4(left) || !isNumberTuple4(right)) return false;
+  const normalizedLeft = normalizedBbox(left);
+  const normalizedRight = normalizedBbox(right);
+  return normalizedLeft.every((value, index) => Math.abs(value - normalizedRight[index]) <= 1);
 }
 
 function ImageRow({
@@ -1615,6 +1737,8 @@ function parseBboxInput(value: string): number[] | string {
   if (parts.length !== 4) return "bbox 需要 4 个数字：x1, y1, x2, y2";
   const numbers = parts.map(Number);
   if (!numbers.every(Number.isFinite)) return "bbox 只能包含有限数字";
+  const validationError = bboxValidationMessage(numbers);
+  if (validationError) return validationError;
   return normalizedBbox(numbers);
 }
 
@@ -1669,6 +1793,14 @@ function mousePointToImagePoint(event: ReactMouseEvent<HTMLDivElement>, image: M
 
 function bboxFromPoints(start: ImagePoint, end: ImagePoint): number[] {
   return normalizedBbox([start.x, start.y, end.x, end.y]);
+}
+
+function bboxValidationMessage(value: number[]): string | null {
+  const [x1, y1, x2, y2] = normalizedBbox(value);
+  if (x2 - x1 < MIN_REVISION_BBOX_EDGE_PX || y2 - y1 < MIN_REVISION_BBOX_EDGE_PX) {
+    return "bbox 宽度和高度至少需要 1 像素，请重新拖拽框选。";
+  }
+  return null;
 }
 
 function normalizedBbox(value: number[]): number[] {

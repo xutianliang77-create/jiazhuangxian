@@ -899,26 +899,42 @@ function requiredBbox(body: JsonObject): number[] {
   if (!Array.isArray(value) || value.length !== 4) {
     throw new MedicalRequestError(400, "invalid-request", "bbox must be an array of four finite numbers");
   }
-  return value.map((item) => {
+  const bbox = value.map((item) => {
     if (typeof item !== "number" || !Number.isFinite(item)) {
       throw new MedicalRequestError(400, "invalid-request", "bbox must be an array of four finite numbers");
     }
     return item;
   });
+  const [x1, y1, x2, y2] = normalizedBbox(bbox);
+  if (x2 - x1 < 1 || y2 - y1 < 1) {
+    throw new MedicalRequestError(400, "invalid-request", "bbox width and height must be at least 1 pixel");
+  }
+  return [x1, y1, x2, y2];
+}
+
+function normalizedBbox(value: number[]): number[] {
+  const [x1, y1, x2, y2] = value;
+  return [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)];
 }
 
 function noduleAuditSnapshot(nodule: {
   id: string;
+  noduleIndex: number;
   bbox: unknown;
   location: string | null;
+  maskUri?: string | null;
+  detectionConfidence?: number | null;
   source: string;
   status: string;
   updatedAt: number;
 }): JsonObject {
   return {
     id: nodule.id,
+    nodule_index: nodule.noduleIndex,
     bbox: nodule.bbox,
     location: nodule.location,
+    mask_uri: nodule.maskUri ?? null,
+    detection_confidence: nodule.detectionConfidence ?? null,
     source: nodule.source,
     status: nodule.status,
     updated_at: nodule.updatedAt,

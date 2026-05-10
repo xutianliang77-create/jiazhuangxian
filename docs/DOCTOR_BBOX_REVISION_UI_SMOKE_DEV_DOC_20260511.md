@@ -254,13 +254,61 @@ node -e "const Database=require('better-sqlite3'); const db=new Database('data/a
 4. mask 测量可以生成毫米级结果并落库。
 5. 报告生成已能引用模型结果、规则库和医学知识库证据。
 
-## 9. 已知问题与后续任务
+## 9. 后续补充：bbox 校验与证据差异面板
 
-1. UI 需要增加零面积 bbox 校验，避免拖拽事件异常时提交无效 bbox。
-2. 医生工作台需要增加 old vs new evidence diff：
-   - 旧 bbox vs 新 bbox
-   - 旧 mask vs 新 mask
-   - 旧测量 vs 新测量
-   - 旧报告依据 vs 新报告依据
-3. GPU 快速链路需要在 LM Studio/大模型释放显存后重跑一次。
-4. 后续应把 smoke 变成自动化 E2E 测试，减少人工启动服务和跨机器同步步骤。
+真实 smoke 后已补充两类医生工作台保护：
+
+1. bbox 修订输入校验：
+   - overlay 拖拽产生的新 bbox 在前端保存前会校验宽度和高度。
+   - 手工输入 bbox 使用同一套校验。
+   - Web API 侧再次归一化 xyxy 顺序，并拒绝宽度或高度小于 1 像素的 bbox。
+2. old vs new evidence diff：
+   - 审计面板展示旧 bbox、新 bbox、旧 mask、新 mask、新测量和新报告依据。
+   - 新 evidence 只有在审计 after bbox、当前 nodule bbox、分割 metadata prompt bbox 一致时才标记为 `refreshed`。
+   - 如果遇到历史遗留的零面积审计 bbox，面板显示 `invalid revision bbox`，并保持 mask、measurement、report basis 为 `pending refresh`，避免把后续模型证据错误归因到无效修订。
+
+补充验证：
+
+- `web-react` `MedicalPanel.test.tsx` 增加 zero-area overlay/manual bbox 阻断测试。
+- `web-react` `MedicalPanel.test.tsx` 增加 refreshed evidence 匹配测试。
+- `web-react` `MedicalPanel.test.tsx` 增加 audit bbox 与模型依据不一致时不标记 refreshed 的测试。
+- 真实 UI 中 `SMOKE_STUDY_UI` 的历史无效审计记录已显示为 `invalid revision bbox`，new mask/new measure/report basis 均为 `pending refresh`。
+
+## 10. 本地运行注意事项
+
+本地启动 Web 服务验证 Medical 工作台时，建议使用绝对 DB 路径：
+
+```bash
+CODECLAW_WEB_TOKEN=<token> \
+JZX_DATA_DB=/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/data.db \
+JZX_RAG_DB=/Users/xutianliang/Downloads/jiazhuangxian/data/artifacts/medical/rag.db \
+npm run dev -- web --port=7180 --host=127.0.0.1
+```
+
+本次验证发现相对路径可能被 CodeClaw CLI 解析到旧的 `/Users/xutianliang/Downloads/CodeClaw` 工作区，导致 Medical summary 显示 0 个病例。
+
+## 11. 已知问题与后续任务
+
+1. GPU 快速链路需要在 LM Studio/大模型释放显存后重跑一次。
+2. 后续应把 smoke 变成自动化 E2E 测试，减少人工启动服务和跨机器同步步骤。
+3. 后续可以为医生审计面板增加按修订批次过滤 evidence 的后端查询接口，减少前端推断。
+
+## 12. P0 完成状态
+
+截至 2026-05-11，本轮 P0 已完成：
+
+1. 医生 overlay/manual bbox 修订入口完成。
+2. 前端和 Web API 均已阻断零面积 bbox。
+3. bbox 修订会自动创建 `doctor_bbox_revision` 会话，并排队 `segment_nodules -> measure_nodules -> draft_report`。
+4. 自动化测试覆盖 agent worker 对分割、测量和报告依据刷新的完整静态链路。
+5. 医生工作台可展示修订前后 bbox、mask、测量和报告依据差异。
+6. 证据差异面板已增加 bbox 一致性保护，避免历史/错配 evidence 被误标为 refreshed。
+7. 真实 UI smoke 已确认历史无效审计记录显示为 `invalid revision bbox`，关联 evidence 保持 `pending refresh`。
+
+本轮 P0 不包含：
+
+1. 引入 Playwright 作为新依赖。
+2. 重新跑远程 GPU 推理或训练。
+3. 后端按修订批次提供专门 evidence 查询接口。
+
+这些项已作为 P1/P2 或后续验证任务保留。
