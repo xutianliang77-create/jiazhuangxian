@@ -16,6 +16,8 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Mask measurement succeeded with `229 px x 130 px`, validation spacing `0.1 mm/px`, and `22.9 mm x 13.0 mm`.
 - Wrote the validation report to `docs/GPU_E2E_VALIDATION_20260511.md` and copied preview assets to `docs/assets/gpu-e2e-20260511/`.
 - Pulled raw model artifacts locally under `data/artifacts/gpu-e2e-20260511/`; these remain local runtime artifacts and are not intended for Git.
+- Added 5090 AI server mode: `medical-agent-worker` can now enqueue detect/segment/measure tasks through `JZX_REMOTE_MODEL_GATEWAY_URL`, persist a local shadow `model_job`, poll `/model/v1/jobs/{job_id}`, and sync remote output back into local SQLite for UI/report/audit flows.
+- Added `scripts/start-5090-ai-server.sh` and `docs/REMOTE_5090_AI_SERVER.md` for starting 5090 gateway/worker with the verified RF-DETR, YOLO11m, RT-DETR, nnU-Net, and SAM2 defaults.
 
 ### Completed
 

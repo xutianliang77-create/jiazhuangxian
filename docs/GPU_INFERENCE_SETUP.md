@@ -2,6 +2,8 @@
 
 本文档用于把远程 RTX 5090 节点配置成验证版 `model-gateway` / `model-worker` 推理环境。当前仓库所在 Mac 可以开发和调度，但不能运行 CUDA 版 PyTorch；真实检测推理应在远程 5090 主机上执行。
 
+远程常驻 AI 服务器模式见 [RTX 5090 AI 服务器模式](REMOTE_5090_AI_SERVER.md)。
+
 ## 目标
 
 - Python：推荐 3.12。

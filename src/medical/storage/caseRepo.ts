@@ -195,6 +195,19 @@ export interface ModelJobInput {
   now?: number;
 }
 
+export interface ModelJobUpdateInput {
+  id: string;
+  status?: string;
+  attempts?: number;
+  maxAttempts?: number;
+  output?: JsonObject | null;
+  error?: JsonObject | null;
+  artifactUri?: string | null;
+  startedAt?: number | null;
+  completedAt?: number | null;
+  now?: number;
+}
+
 export interface ModelJobRecord {
   id: string;
   studyId: string | null;
@@ -882,6 +895,41 @@ export class MedicalCaseRepo {
         input.completedAt ?? null
       );
     return this.getModelJob(id)!;
+  }
+
+  updateModelJob(input: ModelJobUpdateInput): ModelJobRecord | null {
+    const current = this.getModelJob(input.id);
+    if (!current) return null;
+    const now = input.now ?? Date.now();
+    const output = input.output === undefined ? current.output : input.output;
+    const error = input.error === undefined ? current.error : input.error;
+    this.db
+      .prepare(
+        `UPDATE model_job
+         SET status = ?,
+             attempts = ?,
+             max_attempts = ?,
+             output_json = ?,
+             error_json = ?,
+             artifact_uri = ?,
+             started_at = ?,
+             completed_at = ?,
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.status ?? current.status,
+        input.attempts ?? current.attempts,
+        input.maxAttempts ?? current.maxAttempts,
+        output === null ? null : stringifyJson(output),
+        error === null ? null : stringifyJson(error),
+        input.artifactUri === undefined ? current.artifactUri : input.artifactUri,
+        input.startedAt === undefined ? current.startedAt : input.startedAt,
+        input.completedAt === undefined ? current.completedAt : input.completedAt,
+        now,
+        input.id
+      );
+    return this.getModelJob(input.id);
   }
 
   upsertNodule(input: NoduleInput): NoduleRecord {

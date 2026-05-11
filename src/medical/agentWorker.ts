@@ -2,6 +2,7 @@ import {
   MedicalCaseRepo,
   type AgentTaskRecord,
   type ImageRecord,
+  type ModelJobInput,
   type ModelJobRecord,
   type NoduleRecord,
   type ReportRecord,
@@ -23,6 +24,8 @@ export interface MedicalAgentWorkerOptions {
   now?: () => number;
   imageWorkerUrl?: string;
   fetchImpl?: FetchLike;
+  remoteModelGatewayUrl?: string;
+  modelGatewayFetchImpl?: FetchLike;
   llmProvider?: ProviderStatus | null;
   llmFetchImpl?: FetchLike;
   medicalReviewProvider?: ProviderStatus | null;
@@ -56,6 +59,7 @@ const DEFAULT_SEGMENT_MODEL_VERSION = "tn3k-tight-roi-5fold-best";
 const DEFAULT_MEASURE_MODEL = "mask-measurement-worker";
 const DEFAULT_MEASURE_MODEL_VERSION = "validation-measurement-v1";
 const IMAGE_QC_PATH = "/image/v1/image-quality-check";
+const MODEL_GATEWAY_REMOTE_ENV = "JZX_REMOTE_MODEL_GATEWAY_URL";
 const THYROID_REPORT_TEMPLATE_ID = "tpl-thyroid-ultrasound-draft-v1";
 const THYROID_REPORT_TEMPLATE = `甲状腺超声AI辅助报告（草稿）
 
@@ -246,11 +250,12 @@ async function syncWaitingModelTaskAsync(
         error,
       };
     }
-    if (modelJob.status === "queued" || modelJob.status === "running") continue;
-    if (modelJob.status === "succeeded") {
+    const syncedModelJob = await syncRemoteModelJobIfNeeded(repo, modelJob, options, now());
+    if (syncedModelJob.status === "queued" || syncedModelJob.status === "running") continue;
+    if (syncedModelJob.status === "succeeded") {
       const completedAt = now();
-      const output = await modelJobSuccessOutputAsync(repo, modelJob, workerId, completedAt, options);
-      const downstreamTask = queueAutomaticDownstreamTask(repo, task, modelJob, output, completedAt);
+      const output = await modelJobSuccessOutputAsync(repo, syncedModelJob, workerId, completedAt, options);
+      const downstreamTask = queueAutomaticDownstreamTask(repo, task, syncedModelJob, output, completedAt);
       const completedOutput = downstreamTask ? { ...output, auto_queued_task: downstreamTask } : output;
       repo.completeAgentTask(task.id, completedOutput, completedAt);
       return {
@@ -259,7 +264,7 @@ async function syncWaitingModelTaskAsync(
         workerId,
         taskId: task.id,
         taskType: task.taskType,
-        modelJobId: modelJob.id,
+        modelJobId: syncedModelJob.id,
         output: completedOutput,
       };
     }
@@ -268,9 +273,9 @@ async function syncWaitingModelTaskAsync(
       message: "Model job did not complete successfully.",
       detail: {
         worker_id: workerId,
-        model_job_id: modelJob.id,
-        model_job_status: modelJob.status,
-        model_job_error: modelJob.error,
+        model_job_id: syncedModelJob.id,
+        model_job_status: syncedModelJob.status,
+        model_job_error: syncedModelJob.error,
       },
     };
     repo.failAgentTask(task.id, error, now());
@@ -280,7 +285,7 @@ async function syncWaitingModelTaskAsync(
       workerId,
       taskId: task.id,
       taskType: task.taskType,
-      modelJobId: modelJob.id,
+      modelJobId: syncedModelJob.id,
       error,
     };
   }
@@ -335,7 +340,11 @@ async function processClaimedTaskAsync(
   now: () => number,
   options: MedicalAgentWorkerOptions
 ): Promise<MedicalAgentWorkerResult> {
-  if (isModelTask(task.taskType)) return processClaimedTask(repo, task, workerId, now, options);
+  if (isModelTask(task.taskType)) {
+    const remoteUrl = remoteModelGatewayUrl(options);
+    if (remoteUrl) return processRemoteClaimedModelTask(repo, task, workerId, now, options, remoteUrl);
+    return processClaimedTask(repo, task, workerId, now, options);
+  }
 
   const output =
     task.taskType === "image_qc"
@@ -363,17 +372,27 @@ function ensureModelJobForTask(repo: MedicalCaseRepo, task: AgentTaskRecord, now
   throw new Error(`unsupported model task type: ${task.taskType}`);
 }
 
+function buildModelJobInputForTask(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobInput {
+  if (task.taskType === "detect_nodules") return buildDetectorModelJobInput(repo, task, now);
+  if (task.taskType === "segment_nodules") return buildSegmentModelJobInput(repo, task, now);
+  if (task.taskType === "measure_nodules") return buildMeasureModelJobInput(repo, task, now);
+  throw new Error(`unsupported model task type: ${task.taskType}`);
+}
+
 function ensureDetectorModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobRecord {
   const existing = repo.findModelJobByAgentTask(task.id, DETECT_JOB_TYPE);
   if (existing) return existing;
+  return repo.createModelJob(buildDetectorModelJobInput(repo, task, now));
+}
 
+function buildDetectorModelJobInput(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobInput {
   const studyId = requiredString(task.input.study_id, "study_id");
   const imageId = requiredString(task.input.image_id, "image_id");
   const image = repo.getImage(imageId);
   if (!image || image.studyId !== studyId) {
     throw new Error(`image not found for task ${task.id}: ${imageId}`);
   }
-  return repo.createModelJob({
+  return {
     studyId,
     imageId,
     agentTaskId: task.id,
@@ -398,16 +417,20 @@ function ensureDetectorModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, no
       trace_id: task.id,
     },
     now,
-  });
+  };
 }
 
 function ensureSegmentModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobRecord {
   const existing = repo.findModelJobByAgentTask(task.id, SEGMENT_JOB_TYPE);
   if (existing) return existing;
+  return repo.createModelJob(buildSegmentModelJobInput(repo, task, now));
+}
+
+function buildSegmentModelJobInput(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobInput {
   const { studyId, imageId, image } = taskImage(repo, task);
   const nodules = selectTaskNodules(repo.listNodulesByStudy(studyId), task);
   const allowBboxFallback = optionalBoolean(task.input.allow_bbox_fallback) ?? !realInferenceStrict();
-  return repo.createModelJob({
+  return {
     studyId,
     imageId,
     agentTaskId: task.id,
@@ -439,15 +462,19 @@ function ensureSegmentModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
       trace_id: task.id,
     },
     now,
-  });
+  };
 }
 
 function ensureMeasureModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobRecord {
   const existing = repo.findModelJobByAgentTask(task.id, MEASURE_JOB_TYPE);
   if (existing) return existing;
+  return repo.createModelJob(buildMeasureModelJobInput(repo, task, now));
+}
+
+function buildMeasureModelJobInput(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobInput {
   const { studyId, imageId, image } = taskImage(repo, task);
   const nodules = selectTaskNodules(repo.listNodulesByStudy(studyId), task);
-  return repo.createModelJob({
+  return {
     studyId,
     imageId,
     agentTaskId: task.id,
@@ -478,7 +505,205 @@ function ensureMeasureModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
       trace_id: task.id,
     },
     now,
+  };
+}
+
+async function processRemoteClaimedModelTask(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  workerId: string,
+  now: () => number,
+  options: MedicalAgentWorkerOptions,
+  remoteUrl: string
+): Promise<MedicalAgentWorkerResult> {
+  const existing = findTaskModelJob(repo, task);
+  const modelJob = existing ?? (await enqueueRemoteModelJob(repo, task, remoteUrl, options, now()));
+  const output = {
+    status: "waiting_model",
+    worker_id: workerId,
+    model_job_id: modelJob.id,
+    remote_job_id: modelJob.id,
+    remote_model_gateway_url: remoteUrl,
+    job_type: modelJob.jobType,
+    message: "Remote model job has been queued; run model-worker on the 5090 model-gateway host.",
+  };
+  repo.markAgentTaskWaitingModel(task.id, output, now());
+  return {
+    status: "waiting_model",
+    claimed: true,
+    workerId,
+    taskId: task.id,
+    taskType: task.taskType,
+    modelJobId: modelJob.id,
+    output,
+  };
+}
+
+async function enqueueRemoteModelJob(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  remoteUrl: string,
+  options: MedicalAgentWorkerOptions,
+  now: number
+): Promise<ModelJobRecord> {
+  const input = buildModelJobInputForTask(repo, task, now);
+  const path = modelGatewayPathForJobType(input.jobType);
+  const payload = modelGatewayPayload(input);
+  const response = await callRemoteModelGateway(remoteUrl, path, payload, options.modelGatewayFetchImpl ?? fetch);
+  if (response.status !== "ok") {
+    throw new Error(
+      `remote model-gateway enqueue failed: ${response.error?.code ?? "unknown"} ${response.error?.message ?? ""}`.trim()
+    );
+  }
+  const result = asJsonObject(response.result) ?? {};
+  const remoteJob = asJsonObject(result.job);
+  const remoteJobId = optionalString(remoteJob?.id) ?? optionalString(result.job_id);
+  if (!remoteJobId) throw new Error("remote model-gateway response did not include job.id");
+  return repo.createModelJob({
+    ...input,
+    id: remoteJobId,
+    status: optionalString(remoteJob?.status) ?? "queued",
+    attempts: optionalNumber(remoteJob?.attempts) ?? 0,
+    maxAttempts: optionalNumber(remoteJob?.max_attempts) ?? input.maxAttempts,
+    input: {
+      ...(asJsonObject(remoteJob?.input) ?? input.input ?? {}),
+      remote_model_gateway: {
+        url: remoteUrl,
+        job_id: remoteJobId,
+      },
+    },
+    output: asJsonObject(remoteJob?.output),
+    error: asJsonObject(remoteJob?.error),
+    artifactUri: optionalString(remoteJob?.artifact_uri),
+    startedAt: optionalNumber(remoteJob?.started_at),
+    completedAt: optionalNumber(remoteJob?.completed_at),
+    now,
   });
+}
+
+async function syncRemoteModelJobIfNeeded(
+  repo: MedicalCaseRepo,
+  modelJob: ModelJobRecord,
+  options: MedicalAgentWorkerOptions,
+  now: number
+): Promise<ModelJobRecord> {
+  const remote = asJsonObject(modelJob.input.remote_model_gateway);
+  const remoteUrl = optionalString(remote?.url);
+  if (!remoteUrl || (modelJob.status !== "queued" && modelJob.status !== "running")) return modelJob;
+
+  const response = await callRemoteModelGateway(
+    remoteUrl,
+    `/model/v1/jobs/${encodeURIComponent(modelJob.id)}`,
+    undefined,
+    options.modelGatewayFetchImpl ?? fetch
+  );
+  if (response.status !== "ok") return modelJob;
+  const remoteJob = asJsonObject(asJsonObject(response.result)?.job);
+  if (!remoteJob) return modelJob;
+
+  return (
+    repo.updateModelJob({
+      id: modelJob.id,
+      status: optionalString(remoteJob.status) ?? modelJob.status,
+      attempts: optionalNumber(remoteJob.attempts) ?? modelJob.attempts,
+      maxAttempts: optionalNumber(remoteJob.max_attempts) ?? modelJob.maxAttempts,
+      output: remoteJob.output === undefined ? undefined : (asJsonObject(remoteJob.output) ?? null),
+      error: remoteJob.error === undefined ? undefined : (asJsonObject(remoteJob.error) ?? null),
+      artifactUri: remoteJob.artifact_uri === undefined ? undefined : (optionalString(remoteJob.artifact_uri) ?? null),
+      startedAt: remoteJob.started_at === undefined ? undefined : (optionalNumber(remoteJob.started_at) ?? null),
+      completedAt: remoteJob.completed_at === undefined ? undefined : (optionalNumber(remoteJob.completed_at) ?? null),
+      now,
+    }) ?? modelJob
+  );
+}
+
+async function callRemoteModelGateway(
+  remoteUrl: string,
+  path: string,
+  payload: JsonObject | undefined,
+  fetchImpl: FetchLike
+): Promise<WorkerResponse> {
+  const url = `${remoteUrl.replace(/\/+$/, "")}${path}`;
+  try {
+    const response = await fetchImpl(url, payload === undefined ? undefined : {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    const parsed = parseWorkerResponse(text);
+    if (!parsed) {
+      return {
+        status: "error",
+        error: {
+          code: "invalid_model_gateway_response",
+          message: "remote model-gateway returned a non-standard response",
+          detail: { http_status: response.status, body: text.slice(0, 1000) },
+        },
+      };
+    }
+    if (!response.ok && parsed.status === "ok") {
+      return {
+        status: "error",
+        result: parsed.result,
+        warnings: parsed.warnings,
+        trace_id: parsed.trace_id,
+        error: {
+          code: "model_gateway_http_error",
+          message: `remote model-gateway returned HTTP ${response.status}`,
+        },
+      };
+    }
+    return parsed;
+  } catch (err) {
+    return {
+      status: "error",
+      error: {
+        code: "remote_model_gateway_unreachable",
+        message: err instanceof Error ? err.message : String(err),
+      },
+    };
+  }
+}
+
+function parseWorkerResponse(text: string): WorkerResponse | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const record = parsed as Record<string, unknown>;
+    return record.status === "ok" || record.status === "error" ? (record as unknown as WorkerResponse) : null;
+  } catch {
+    return null;
+  }
+}
+
+function modelGatewayPathForJobType(jobType: string): string {
+  if (jobType === DETECT_JOB_TYPE) return "/model/v1/infer/thyroid/detect-nodules";
+  if (jobType === SEGMENT_JOB_TYPE) return "/model/v1/infer/thyroid/segment-nodule";
+  if (jobType === MEASURE_JOB_TYPE) return "/model/v1/infer/thyroid/measure-nodule";
+  throw new Error(`unsupported remote model job type: ${jobType}`);
+}
+
+function modelGatewayPayload(input: ModelJobInput): JsonObject {
+  return stripUndefined({
+    ...(input.input ?? {}),
+    agent_task_id: input.agentTaskId,
+    model: input.modelName,
+    model_version: input.modelVersion,
+    weights_hash: input.weightsHash,
+    priority: input.priority,
+    max_attempts: input.maxAttempts,
+  });
+}
+
+function remoteModelGatewayUrl(options: MedicalAgentWorkerOptions): string | undefined {
+  const raw = options.remoteModelGatewayUrl ?? process.env[MODEL_GATEWAY_REMOTE_ENV];
+  const value = raw?.trim().replace(/\/+$/, "");
+  return value || undefined;
+}
+
+function stripUndefined(value: JsonObject): JsonObject {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 }
 
 function modelPipelineMetadata(

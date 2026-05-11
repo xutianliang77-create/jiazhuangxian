@@ -707,6 +707,135 @@ describe("medical agent worker", () => {
     expect(second).toMatchObject({ status: "waiting_model", claimed: true, taskType: "detect_nodules" });
   });
 
+  it("queues and syncs model tasks through a remote model-gateway", async () => {
+    const calls: Array<{ url: string; method: string; body?: Record<string, unknown> }> = [];
+    const { tasks } = seedAgentTaskChain(["detect_nodules", "classify_tirads_features"]);
+    const remoteUrl = "http://5090.test";
+    const fetchImpl: typeof fetch = async (url, init) => {
+      const method = init?.method ?? "GET";
+      const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined;
+      calls.push({ url: String(url), method, body });
+      if (method === "POST") {
+        return jsonResponse({
+          status: "ok",
+          result: {
+            job: {
+              id: "remote-detect-1",
+              status: "queued",
+              job_type: "thyroid.detect_nodules",
+              model_name: "rf-detr-medium-thyroid-detector",
+              model_version: "tn5000-rfdetr-medium-ema",
+              attempts: 0,
+              max_attempts: 1,
+              input: body,
+            },
+          },
+          warnings: ["queued_on_5090"],
+        });
+      }
+      return jsonResponse({
+        status: "ok",
+        result: {
+          job: {
+            id: "remote-detect-1",
+            status: "succeeded",
+            job_type: "thyroid.detect_nodules",
+            model_name: "rf-detr-medium-thyroid-detector",
+            model_version: "tn5000-rfdetr-medium-ema",
+            attempts: 1,
+            max_attempts: 1,
+            artifact_uri: "artifact://model-output/remote/detections.json",
+            input: {
+              study_id: tasks[0].input.study_id,
+              image_id: tasks[0].input.image_id,
+              image_uri: "artifact://raw/ACC-AGENT/IMG1.png",
+            },
+            output: {
+              nodules: [{ nodule_index: 1, bbox: [12, 18, 42, 58], confidence: 0.88 }],
+              comparison: { consensus: { status: "matched" } },
+            },
+            error: null,
+            started_at: 6100,
+            completed_at: 6200,
+          },
+        },
+      });
+    };
+
+    const first = await runMedicalAgentWorkerOnceAsync(repo, {
+      workerId: "worker-test",
+      now: () => 6000,
+      remoteModelGatewayUrl: remoteUrl,
+      modelGatewayFetchImpl: fetchImpl,
+    });
+
+    expect(first).toMatchObject({
+      status: "waiting_model",
+      claimed: true,
+      taskType: "detect_nodules",
+      modelJobId: "remote-detect-1",
+      output: {
+        remote_model_gateway_url: remoteUrl,
+        remote_job_id: "remote-detect-1",
+      },
+    });
+    expect(calls[0]).toMatchObject({
+      url: "http://5090.test/model/v1/infer/thyroid/detect-nodules",
+      method: "POST",
+      body: {
+        study_id: tasks[0].input.study_id,
+        image_id: tasks[0].input.image_id,
+        image_uri: "artifact://raw/ACC-AGENT/IMG1.png",
+        model: "rf-detr-medium-thyroid-detector",
+        model_version: "tn5000-rfdetr-medium-ema",
+      },
+    });
+    expect(repo.getModelJob("remote-detect-1")).toMatchObject({
+      status: "queued",
+      input: {
+        remote_model_gateway: {
+          url: remoteUrl,
+          job_id: "remote-detect-1",
+        },
+      },
+    });
+
+    const second = await runMedicalAgentWorkerOnceAsync(repo, {
+      workerId: "worker-test",
+      now: () => 6300,
+      remoteModelGatewayUrl: remoteUrl,
+      modelGatewayFetchImpl: fetchImpl,
+    });
+
+    expect(calls[1]).toMatchObject({
+      url: "http://5090.test/model/v1/jobs/remote-detect-1",
+      method: "GET",
+    });
+    expect(second).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "detect_nodules",
+      modelJobId: "remote-detect-1",
+      output: {
+        artifact_uri: "artifact://model-output/remote/detections.json",
+        persisted_nodules: [
+          {
+            nodule_index: 1,
+            bbox: [12, 18, 42, 58],
+            detection_confidence: 0.88,
+          },
+        ],
+      },
+    });
+    expect(repo.getModelJob("remote-detect-1")).toMatchObject({
+      status: "succeeded",
+      artifactUri: "artifact://model-output/remote/detections.json",
+      output: {
+        nodules: [{ nodule_index: 1, bbox: [12, 18, 42, 58], confidence: 0.88 }],
+      },
+    });
+  });
+
   it("calculates ACR TI-RADS from persisted structured features", () => {
     const { tasks } = seedAgentTaskChain(["calculate_tirads"]);
     const studyId = String(tasks[0].input.study_id);

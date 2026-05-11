@@ -13,6 +13,7 @@ export type {
   MeasurementRecord,
   ModelJobInput,
   ModelJobRecord,
+  ModelJobUpdateInput,
   NoduleInput,
   NoduleRecord,
   NoduleRevisionInput,

@@ -15,6 +15,7 @@ interface CliArgs {
   workspace?: string;
   knowledgeTopK?: number;
   imageWorkerUrl?: string;
+  remoteModelGatewayUrl?: string;
   enableLlmEvaluation: boolean;
   llmProviderId?: string;
   enableMedicalReview: boolean;
@@ -63,6 +64,7 @@ function parseArgs(argv: string[]): CliArgs {
     workspace: process.env.JZX_WORKSPACE,
     knowledgeTopK: positiveIntValue(process.env.JZX_MEDICAL_KNOWLEDGE_TOP_K, 3),
     imageWorkerUrl: process.env.JZX_IMAGE_WORKER_URL,
+    remoteModelGatewayUrl: process.env.JZX_REMOTE_MODEL_GATEWAY_URL,
     enableLlmEvaluation: process.env.JZX_MEDICAL_LLM_EVALUATION === "1",
     llmProviderId: process.env.JZX_MEDICAL_LLM_PROVIDER,
     enableMedicalReview: process.env.JZX_MEDICAL_REVIEW === "1",
@@ -94,6 +96,9 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (arg === "--image-worker-url") {
       parsed.imageWorkerUrl = requireValue(arg, next);
       i += 1;
+    } else if (arg === "--remote-model-gateway-url") {
+      parsed.remoteModelGatewayUrl = requireValue(arg, next);
+      i += 1;
     } else if (arg === "--enable-llm-evaluation") {
       parsed.enableLlmEvaluation = true;
     } else if (arg === "--llm-provider") {
@@ -119,6 +124,7 @@ function workerOptions(
 ): {
   workerId: string;
   imageWorkerUrl?: string;
+  remoteModelGatewayUrl?: string;
   dataDbPath?: string;
   ragDbPath?: string;
   workspace?: string;
@@ -129,6 +135,7 @@ function workerOptions(
   return {
     workerId: args.workerId,
     imageWorkerUrl: args.imageWorkerUrl,
+    remoteModelGatewayUrl: args.remoteModelGatewayUrl,
     dataDbPath,
     ragDbPath: args.ragDb ? path.resolve(args.ragDb) : undefined,
     workspace: args.workspace ? path.resolve(args.workspace) : process.cwd(),
