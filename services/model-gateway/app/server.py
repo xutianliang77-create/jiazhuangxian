@@ -4,6 +4,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from pydantic import ValidationError
 
@@ -19,6 +20,15 @@ from .schemas import (
 )
 from .store import ModelJobStore, default_db_path
 
+ARTIFACT_MAX_BYTES = 32 * 1024 * 1024
+ARTIFACT_MIME_BY_EXT = {
+    ".json": "application/json; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+
 
 def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | None = None) -> ThreadingHTTPServer:
     store = ModelJobStore(db_path or Path(os.environ.get("JZX_DATA_DB", default_db_path())))
@@ -27,7 +37,9 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
         server_version = "jzx-model-gateway/0.1"
 
         def do_GET(self) -> None:
-            if self.path == "/health":
+            parsed_url = urlparse(self.path)
+            route_path = parsed_url.path
+            if route_path == "/health":
                 self._write_response(
                     ok(
                         {
@@ -42,18 +54,38 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
                                 "/model/v1/infer/thyroid/measure-video-nodule",
                                 "/model/v1/jobs/{job_id}",
                                 "/model/v1/config/check",
+                                "/model/v1/artifacts?uri={artifact_uri}",
                             ],
                         }
                     )
                 )
                 return
-            if self.path == "/model/v1/config/check":
+            if route_path == "/model/v1/config/check":
                 from .config_check import build_config_report
 
                 self._write_response(ok(build_config_report(db_path=store.db_path)))
                 return
-            if self.path.startswith("/model/v1/jobs/"):
-                job_id = self.path.rsplit("/", 1)[-1]
+            if route_path == "/model/v1/artifacts":
+                artifact_uri = first_query_value(parsed_url.query, "uri")
+                if not artifact_uri:
+                    self._write_response(error("invalid_request", "uri is required"), 400)
+                    return
+                try:
+                    artifact_path = resolve_artifact_path(artifact_uri)
+                except ValueError as exc:
+                    self._write_response(error("invalid_request", str(exc)), 400)
+                    return
+                if not artifact_path.is_file():
+                    self._write_response(error("artifact_not_found", "artifact was not found", detail={"uri": artifact_uri}), 404)
+                    return
+                stat = artifact_path.stat()
+                if stat.st_size > ARTIFACT_MAX_BYTES:
+                    self._write_response(error("artifact_too_large", "artifact exceeds validation preview size limit"), 413)
+                    return
+                self._write_file_response(artifact_path, stat.st_size)
+                return
+            if route_path.startswith("/model/v1/jobs/"):
+                job_id = route_path.rsplit("/", 1)[-1]
                 row = store.get_job(job_id)
                 if not row:
                     self._write_response(error("job_not_found", "model job was not found", detail={"job_id": job_id}), 404)
@@ -123,6 +155,15 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
             self.end_headers()
             self.wfile.write(body)
 
+        def _write_file_response(self, artifact_path: Path, size_bytes: int) -> None:
+            body = artifact_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ARTIFACT_MIME_BY_EXT.get(artifact_path.suffix.lower(), "application/octet-stream"))
+            self.send_header("Content-Length", str(size_bytes))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
     return ThreadingHTTPServer((host, port), ModelGatewayHandler)
 
 
@@ -160,6 +201,27 @@ def queued_warning(job_type: object) -> str:
     if job_type == "thyroid.measure_video_nodule":
         return "video measurement worker is queued; mm values require pixel spacing or manual calibration"
     return "detector worker is not configured yet; job is queued for validation flow only"
+
+
+def first_query_value(query: str, key: str) -> str | None:
+    values = parse_qs(query).get(key)
+    if not values:
+        return None
+    value = values[0].strip()
+    return value or None
+
+
+def resolve_artifact_path(artifact_uri: str) -> Path:
+    if not artifact_uri.startswith("artifact://"):
+        raise ValueError("uri must start with artifact://")
+    relative = artifact_uri.removeprefix("artifact://").lstrip("/")
+    if not relative:
+        raise ValueError("artifact URI must include a path")
+    root = Path(os.environ.get("JZX_ARTIFACT_ROOT", "data/artifacts")).expanduser().resolve()
+    target = (root / relative).resolve()
+    if not target.is_relative_to(root):
+        raise ValueError("artifact URI cannot escape artifact root")
+    return target
 
 
 def format_job(row: dict[str, object]) -> dict[str, object]:

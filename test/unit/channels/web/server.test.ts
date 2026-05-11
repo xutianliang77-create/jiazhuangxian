@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -847,6 +847,62 @@ describe("Web server · medical API", () => {
     }
   });
 
+  it("GET /v1/web/medical/artifacts fetches and caches remote model-gateway artifacts", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-remote-artifact-"));
+    const artifactRoot = path.join(dir, "artifacts");
+    const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
+    const uri = "artifact://model-output/thyroid-detect-nodules/S1/IMG1/MJ1/overlay.png";
+    const remoteGateway = http.createServer((req, res) => {
+      const requestUrl = new URL(req.url ?? "/", "http://gateway.test");
+      if (requestUrl.pathname !== "/model/v1/artifacts" || requestUrl.searchParams.get("uri") !== uri) {
+        res.statusCode = 404;
+        res.end("not found");
+        return;
+      }
+      res.setHeader("content-type", "image/png");
+      res.end(pngBytes);
+    });
+    await new Promise<void>((resolve) => remoteGateway.listen(0, "127.0.0.1", resolve));
+    const address = remoteGateway.address();
+    const previousRemoteUrl = process.env.JZX_REMOTE_MODEL_GATEWAY_URL;
+    process.env.JZX_REMOTE_MODEL_GATEWAY_URL = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+    let medicalHandle: WebServerHandle | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        artifactsRoot: artifactRoot,
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const response = await fetch(
+        `${medicalBaseUrl}/v1/web/medical/artifacts?uri=${encodeURIComponent(uri)}`,
+        { headers: authHeaders() }
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("image/png");
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(pngBytes);
+
+      const cachedPath = path.join(artifactRoot, "model-output", "thyroid-detect-nodules", "S1", "IMG1", "MJ1", "overlay.png");
+      expect(existsSync(cachedPath)).toBe(true);
+      expect(readFileSync(cachedPath)).toEqual(pngBytes);
+    } finally {
+      if (previousRemoteUrl === undefined) {
+        delete process.env.JZX_REMOTE_MODEL_GATEWAY_URL;
+      } else {
+        process.env.JZX_REMOTE_MODEL_GATEWAY_URL = previousRemoteUrl;
+      }
+      await medicalHandle?.close();
+      await new Promise<void>((resolve, reject) => remoteGateway.close((err) => err ? reject(err) : resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("POST medical patients/studies/images registers a manual validation case", async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-write-"));
     const dbPath = path.join(dir, "data.db");
@@ -1187,6 +1243,205 @@ describe("Web server · medical API", () => {
       });
       expect(archiveBody.bundle.reports[0].status).toBe("archived");
       expect(archiveBody.bundle.doctorReviews.map((review) => review.action)).toEqual(["approve", "archive"]);
+    } finally {
+      localDb?.close();
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("POST medical nodule TI-RADS features queues rule/report/safety chain", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-tirads-feature-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    let localDb: Database.Database | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const patientResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/patients`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ externalPatientId: "EXT-TIRADS-P1" }),
+      });
+      const patientBody = (await patientResponse.json()) as { patient: { id: string } };
+      const studyResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/studies`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ patientId: patientBody.patient.id, accessionNo: "ACC-TIRADS-1" }),
+      });
+      const studyBody = (await studyResponse.json()) as { study: { id: string } };
+      const imageResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/images`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          studyId: studyBody.study.id,
+          fileUri: "artifact://raw/ACC-TIRADS-1/IMG1.png",
+          fileType: "png",
+        }),
+      });
+      const imageBody = (await imageResponse.json()) as { image: { id: string } };
+      const now = Date.now();
+      localDb = new Database(dbPath);
+      localDb
+        .prepare(
+          `INSERT INTO nodule(
+             id, study_id, image_id, nodule_index, bbox, detection_confidence,
+             source, status, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          "N-WEB-TIRADS",
+          studyBody.study.id,
+          imageBody.image.id,
+          1,
+          JSON.stringify([10, 20, 30, 40]),
+          0.91,
+          "ai",
+          "measured",
+          now,
+          now
+        );
+      localDb
+        .prepare(
+          `INSERT INTO measurement(
+             id, nodule_id, long_axis_mm, short_axis_mm, ap_axis_mm,
+             area_mm2, aspect_ratio, measurement_source, confidence, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run("M-WEB-TIRADS", "N-WEB-TIRADS", 12, 8, 9, 96, 1.5, "mask", 0.9, now + 1);
+      localDb.close();
+      localDb = null;
+
+      const invalidResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/nodules/N-WEB-TIRADS/tirads-features`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          features: {
+            composition: "solid",
+            echogenicity: "invalid",
+            shape: "wider_than_tall",
+            margin: "smooth",
+            echogenic_foci: ["none"],
+          },
+        }),
+      });
+      expect(invalidResponse.status).toBe(400);
+
+      const featureResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/nodules/N-WEB-TIRADS/tirads-features`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          features: {
+            composition: "solid",
+            echogenicity: "hypoechoic",
+            shape: "wider_than_tall",
+            margin: "smooth",
+            echogenic_foci: ["none"],
+          },
+          comment: "doctor structured TI-RADS input",
+        }),
+      });
+      expect(featureResponse.status).toBe(200);
+      const featureBody = (await featureResponse.json()) as {
+        tiradsFeature: { id: string; noduleId: string; features: Record<string, unknown>; sourceModel: string | null };
+        analysisSession: { id: string; triggerSource: string; summary: Record<string, unknown> };
+        agentTasks: Array<{ id: string; taskType: string; status: string; parentTaskId: string | null; input: Record<string, unknown> }>;
+        auditLog: { action: string; detail: Record<string, unknown> };
+        bundle: {
+          tiradsFeatures: Array<{ noduleId: string; features: Record<string, unknown> }>;
+          tiradsResults: unknown[];
+          agentTasks: Array<{ taskType: string; parentTaskId: string | null }>;
+        };
+      };
+      expect(featureBody.tiradsFeature).toMatchObject({
+        noduleId: "N-WEB-TIRADS",
+        sourceModel: "doctor_structured_input",
+        features: {
+          composition: "solid",
+          echogenicity: "hypoechoic",
+          shape: "wider_than_tall",
+          margin: "smooth",
+          echogenic_foci: ["none"],
+          size_mm: { long_axis: 12, short_axis: 8, ap_axis: 9 },
+        },
+      });
+      expect(featureBody.analysisSession).toMatchObject({
+        triggerSource: "doctor_tirads_feature_input",
+        summary: {
+          source: "doctor_tirads_feature_input",
+          nodule_id: "N-WEB-TIRADS",
+          tirads_feature_id: featureBody.tiradsFeature.id,
+        },
+      });
+      expect(featureBody.agentTasks.map((task) => task.taskType)).toEqual([
+        "calculate_tirads",
+        "draft_report",
+        "safety_review",
+      ]);
+      expect(featureBody.agentTasks[0].parentTaskId).toBeNull();
+      expect(featureBody.agentTasks[1].parentTaskId).toBe(featureBody.agentTasks[0].id);
+      expect(featureBody.agentTasks[2].parentTaskId).toBe(featureBody.agentTasks[1].id);
+      expect(featureBody.agentTasks[0].input).toMatchObject({
+        target_nodule_ids: ["N-WEB-TIRADS"],
+        tirads_feature_id: featureBody.tiradsFeature.id,
+        source: "doctor_tirads_feature_input",
+      });
+      expect(featureBody.auditLog).toMatchObject({
+        action: "medical.tirads_feature.submit",
+        detail: {
+          tirads_feature_id: featureBody.tiradsFeature.id,
+          rerun_task_types: ["calculate_tirads", "draft_report", "safety_review"],
+        },
+      });
+      expect(featureBody.bundle.tiradsFeatures).toHaveLength(1);
+      expect(featureBody.bundle.tiradsResults).toHaveLength(0);
+
+      localDb = new Database(dbPath);
+      const repo = new MedicalCaseRepo(localDb);
+      const calculate = runMedicalAgentWorkerOnce(repo, { workerId: "worker-tirads", now: () => now + 100 });
+      expect(calculate).toMatchObject({
+        status: "succeeded",
+        taskType: "calculate_tirads",
+        output: {
+          result: {
+            rule_status: "calculated",
+            tirads_results: [{ nodule_id: "N-WEB-TIRADS", category: "TR4", score: 4 }],
+          },
+        },
+      });
+      const reportDraft = runMedicalAgentWorkerOnce(repo, { workerId: "worker-tirads", now: () => now + 200 });
+      expect(reportDraft).toMatchObject({ status: "succeeded", taskType: "draft_report" });
+      const safety = runMedicalAgentWorkerOnce(repo, { workerId: "worker-tirads", now: () => now + 300 });
+      expect(safety).toMatchObject({ status: "succeeded", taskType: "safety_review" });
+
+      const finalBundle = repo.getStudyBundle(studyBody.study.id);
+      expect(finalBundle?.analysisSessions.find((session) => session.id === featureBody.analysisSession.id)?.status).toBe("succeeded");
+      expect(finalBundle?.tiradsResults).toMatchObject([{ noduleId: "N-WEB-TIRADS", category: "TR4", score: 4 }]);
+      const latestReport = finalBundle?.reports.at(-1);
+      const evidenceSources = latestReport?.evidence.map((item) => String((item as Record<string, unknown>).source));
+      expect(evidenceSources).toEqual(expect.arrayContaining(["tirads_result", "tirads_rule"]));
+      expect(latestReport?.structured).toMatchObject({
+        nodules: [
+          {
+            nodule_id: "N-WEB-TIRADS",
+            category: "TR4",
+          },
+        ],
+        knowledge_evidence: {
+          tirads_rule_count: expect.any(Number),
+        },
+      });
     } finally {
       localDb?.close();
       await medicalHandle?.close();

@@ -1289,12 +1289,11 @@ function draftReportMessages(task: AgentTaskRecord, context: DraftReportContext)
       role: "system",
       source: "local",
       text: [
-        "你是甲状腺超声 AI 辅助报告草稿生成模型。",
-        "只能根据输入的结构化结节、TI-RADS 规则结果、模板字段、规则库和医学知识库证据生成草稿。",
-        "不得给出最终诊断，不得新增未提供的结节、尺寸、分级、建议或证据。",
-        "涉及分级、随访、FNA 或安全边界的表达必须绑定 evidence 中的 tirads_rule 或 medical_guideline。",
-        "必须保留医生审核确认提示；最终报告必须由医生确认。",
-        "只输出 JSON，不要输出 Markdown。",
+        "/no_think",
+        "生成甲状腺超声AI辅助报告草稿。",
+        "只使用输入事实和证据；不得新增诊断、尺寸、分级、FNA/随访建议。",
+        "必须提示医生审核确认。",
+        "只输出最终JSON，字段为status,draft_text,sections,doctor_review_required,warnings,limitations。",
       ].join("\n"),
     },
     {
@@ -1303,33 +1302,10 @@ function draftReportMessages(task: AgentTaskRecord, context: DraftReportContext)
       source: "local",
       text: JSON.stringify({
         task: "draft_thyroid_ultrasound_report",
-        required_schema: {
-          status: "drafted",
-          draft_text: "string",
-          sections: {
-            thyroid_description: "string",
-            nodule_descriptions: "string",
-            tirads_summary: "string",
-            recommendation: "string",
-            evidence_summary: "string",
-          },
-          doctor_review_required: true,
-          warnings: ["string"],
-          limitations: ["string"],
-        },
-        constraints: [
-          "Use only the supplied structured findings, TI-RADS rules, and medical knowledge evidence.",
-          "Do not invent measurements, TI-RADS categories, FNA/follow-up recommendations, or diagnoses.",
-          "If guideline evidence is missing, state that evidence is insufficient and keep doctor review required.",
-          "Do not state malignancy as a final diagnosis.",
-          "The report is an AI-assisted draft and must require doctor review.",
-        ],
-        template_id: THYROID_REPORT_TEMPLATE_ID,
-        template: context.template,
-        fallback_sections: context.sections,
-        structured: context.structured,
+        schema: "status:string,draft_text:string,sections:{thyroid_description,nodule_descriptions,tirads_summary,recommendation,evidence_summary},doctor_review_required:true,warnings:string[],limitations:string[]",
+        facts: providerStructuredPack(context.structured),
         evidence: providerEvidencePack(context.evidence),
-      }, null, 2),
+      }),
     },
   ];
 }
@@ -2370,64 +2346,148 @@ function buildModelResultEvidence(
   };
 }
 
+function providerStructuredPack(structured: JsonObject): JsonObject {
+  const sections = asJsonObject(structured.sections);
+  const nodules = Array.isArray(structured.nodules) ? structured.nodules : [];
+  return {
+    study_id: structured.study_id,
+    analysis_session_id: structured.analysis_session_id,
+    generator: structured.generator,
+    sections: {
+      tirads_summary: sections?.tirads_summary,
+      recommendation: sections?.recommendation,
+    },
+    nodules: nodules.map((item) => {
+      const nodule = asJsonObject(item) ?? {};
+      const segmentation = asJsonObject(nodule.segmentation);
+      const measurement = asJsonObject(nodule.measurement);
+      return {
+        nodule_id: nodule.nodule_id,
+        nodule_index: nodule.nodule_index,
+        score: nodule.score,
+        category: nodule.category,
+        recommendation: nodule.recommendation,
+        evidence_rules: Array.isArray(nodule.evidence_rules)
+          ? nodule.evidence_rules.map((rule) => {
+              const r = asJsonObject(rule) ?? {};
+              return {
+                rule_code: r.rule_code,
+                feature_group: r.feature_group,
+                feature_value: r.feature_value,
+                points: r.points,
+              };
+            })
+          : [],
+        segmentation: segmentation
+          ? {
+              model_name: segmentation.model_name,
+              model_version: segmentation.model_version,
+              source: segmentation.segmentation_source,
+              confidence: segmentation.confidence,
+            }
+          : undefined,
+        measurement: measurement
+          ? {
+              source: measurement.measurement_source,
+              long_axis_mm: measurement.long_axis_mm,
+              short_axis_mm: measurement.short_axis_mm,
+              ap_axis_mm: measurement.ap_axis_mm,
+              area_mm2: measurement.area_mm2,
+              aspect_ratio: measurement.aspect_ratio,
+              confidence: measurement.confidence,
+            }
+          : undefined,
+      };
+    }),
+    knowledge_evidence: providerKnowledgeEvidenceSummary(asJsonObject(structured.knowledge_evidence)),
+    model_evidence: structured.model_evidence,
+    review_required: structured.review_required,
+  };
+}
+
+function providerKnowledgeEvidenceSummary(value: JsonObject | undefined): JsonObject | undefined {
+  if (!value) return undefined;
+  return {
+    tirads_rule_count: value.tirads_rule_count,
+    missing_rule_codes: value.missing_rule_codes,
+    guideline_chunk_count: value.guideline_chunk_count,
+    warnings: value.warnings,
+  };
+}
+
 function providerEvidencePack(evidence: JsonObject[]): JsonObject[] {
-  return evidence.map((item) => {
+  let guidelineCount = 0;
+  const packed: JsonObject[] = [];
+  for (const item of evidence) {
     const source = optionalString(item.source);
+    if (source === "tirads_result") {
+      packed.push({
+        source,
+        nodule_id: item.nodule_id,
+        evidence_rules: Array.isArray(item.evidence_rules)
+          ? item.evidence_rules.map((rule) => {
+              const r = asJsonObject(rule) ?? {};
+              return {
+                rule_code: r.rule_code,
+                feature_group: r.feature_group,
+                feature_value: r.feature_value,
+                points: r.points,
+              };
+            })
+          : [],
+      });
+      continue;
+    }
     if (source === "medical_guideline") {
+      if (guidelineCount >= 3) continue;
+      guidelineCount += 1;
       const document = asJsonObject(item.document);
       const metadata = asJsonObject(item.metadata);
-      return {
+      packed.push({
         source,
         chunk_id: item.chunk_id,
-        score: item.score,
         document: {
           id: document?.id,
           title: document?.title,
-          source_name: document?.sourceName,
-          version: document?.version,
-          review_status: document?.reviewStatus,
         },
         section_title: metadata?.sectionTitle,
-        chunk_type: metadata?.chunkType,
         evidence_level: metadata?.evidenceLevel,
         tirads_system: metadata?.tiradsSystem,
-        body_part: metadata?.bodyPart,
-        text: optionalString(item.text)?.slice(0, 700),
-      };
+        text: optionalString(item.text)?.slice(0, 180),
+      });
+      continue;
     }
     if (source === "tirads_rule") {
-      return {
+      packed.push({
         source,
         rule_code: item.rule_code,
-        system_name: item.system_name,
-        system_version: item.system_version,
         feature_group: item.feature_group,
+        feature_name: item.feature_name,
+        points: item.points,
         category: item.category,
         recommendation: item.recommendation,
-        rule: item.rule,
-        evidence_document_id: item.evidence_document_id,
-      };
+      });
+      continue;
     }
     if (source === "segmentation_result" || source === "measurement_result") {
-      return {
+      packed.push({
         source,
         nodule_id: item.nodule_id,
         nodule_index: item.nodule_index,
-        model_job_id: item.model_job_id,
-        artifact_uri: item.artifact_uri,
         model_name: item.model_name,
         model_version: item.model_version,
         segmentation_source: item.segmentation_source,
         measurement_source: item.measurement_source,
-        mask_uri: item.mask_uri,
+        confidence: item.confidence,
         long_axis_mm: item.long_axis_mm,
         short_axis_mm: item.short_axis_mm,
-        pixel_measurements: item.pixel_measurements,
-        metadata: item.metadata,
-      };
+        ap_axis_mm: item.ap_axis_mm,
+        area_mm2: item.area_mm2,
+        aspect_ratio: item.aspect_ratio,
+      });
     }
-    return item;
-  });
+  }
+  return packed;
 }
 
 function compactReportStructured(structured: JsonObject): JsonObject {

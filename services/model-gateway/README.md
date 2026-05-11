@@ -21,6 +21,7 @@ Python 模型服务入口，负责模型路由、SQLite `model_job` 队列和本
 | `POST` | `/model/v1/infer/thyroid/measure-video-nodule` | 创建甲状腺结节视频测量任务 |
 | `GET` | `/model/v1/jobs/{job_id}` | 查询模型任务 |
 | `GET` | `/model/v1/config/check` | 检查检测模型权重、运行时包和 GPU/CUDA 状态 |
+| `GET` | `/model/v1/artifacts?uri=artifact://...` | 只读下载 overlay、mask、JSON 等模型产物 |
 
 当前 worker：
 

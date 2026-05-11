@@ -41,7 +41,7 @@ Options:
 
 Environment after install:
   source "$VENV_DIR/bin/activate"
-  export JZX_DATA_DB="$ROOT_DIR/data/artifacts/medical/data.db"
+  export JZX_DATA_DB="$ROOT_DIR/data/artifacts/model-gateway/model-gateway.db"
   export JZX_ARTIFACT_ROOT="$ROOT_DIR/data/artifacts"
   export JZX_RFDETR_WEIGHTS="/absolute/path/to/rfdetr-medium-thyroid.pth"
   export JZX_YOLOV11_WEIGHTS="/absolute/path/to/yolov11-thyroid.pt"
@@ -156,7 +156,7 @@ raise SystemExit(0 if payload["cuda_available"] and payload["device_count"] > 0 
 PY
 
 echo "== model-gateway config check =="
-JZX_DATA_DB="${JZX_DATA_DB:-$ROOT_DIR/data/artifacts/medical/data.db}" \
+JZX_DATA_DB="${JZX_DATA_DB:-$ROOT_DIR/data/artifacts/model-gateway/model-gateway.db}" \
 JZX_ARTIFACT_ROOT="${JZX_ARTIFACT_ROOT:-$ROOT_DIR/data/artifacts}" \
 npm run model-gateway:check
 
@@ -166,7 +166,7 @@ GPU runtime setup finished.
 
 Next:
   source "$VENV_DIR/bin/activate"
-  export JZX_DATA_DB="$ROOT_DIR/data/artifacts/medical/data.db"
+  export JZX_DATA_DB="$ROOT_DIR/data/artifacts/model-gateway/model-gateway.db"
   export JZX_ARTIFACT_ROOT="$ROOT_DIR/data/artifacts"
   export JZX_RFDETR_WEIGHTS="/absolute/path/to/rfdetr-medium-thyroid.pth"
   export JZX_YOLOV11_WEIGHTS="/absolute/path/to/yolov11-thyroid.pt"

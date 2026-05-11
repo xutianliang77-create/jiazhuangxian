@@ -46,6 +46,6 @@ print(json.dumps(payload, ensure_ascii=False, indent=2))
 PY
 
 echo "== model-gateway =="
-JZX_DATA_DB="${JZX_DATA_DB:-$ROOT_DIR/data/artifacts/medical/data.db}" \
+JZX_DATA_DB="${JZX_DATA_DB:-$ROOT_DIR/data/artifacts/model-gateway/model-gateway.db}" \
 JZX_ARTIFACT_ROOT="${JZX_ARTIFACT_ROOT:-$ROOT_DIR/data/artifacts}" \
 npm run model-gateway:check

@@ -78,7 +78,7 @@ data/artifacts/model-weights/
 
 ```bash
 source .venv-model-gateway-gpu/bin/activate
-export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/medical/data.db
+export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/model-gateway/model-gateway.db
 export JZX_ARTIFACT_ROOT=/path/to/jiazhuangxian/data/artifacts
 export JZX_YOLOV11_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/yolo/yolov11-thyroid.pt
 export JZX_RTDETR_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/rtdetr/rtdetr-thyroid.pt
@@ -113,7 +113,7 @@ ready_detectors includes "yolov11" or "rt-detr"
 
 ```bash
 source .venv-model-gateway-gpu/bin/activate
-export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/medical/data.db
+export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/model-gateway/model-gateway.db
 export JZX_ARTIFACT_ROOT=/path/to/jiazhuangxian/data/artifacts
 export JZX_YOLOV11_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/yolo/yolov11-thyroid.pt
 export JZX_MODEL_DEVICE=0
@@ -124,7 +124,7 @@ npm run model-gateway
 
 ```bash
 source .venv-model-gateway-gpu/bin/activate
-export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/medical/data.db
+export JZX_DATA_DB=/path/to/jiazhuangxian/data/artifacts/model-gateway/model-gateway.db
 export JZX_ARTIFACT_ROOT=/path/to/jiazhuangxian/data/artifacts
 export JZX_YOLOV11_WEIGHTS=/path/to/jiazhuangxian/data/artifacts/model-weights/yolo/yolov11-thyroid.pt
 export JZX_MODEL_DEVICE=0

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
@@ -12,11 +12,13 @@ import {
   type ImageInput,
   type ModelJobRecord,
   type NoduleRevisionResult,
+  type NoduleRecord,
   type PatientInput,
   type ReportRecord,
   type ReportReviewAction,
   type StudyBundle,
   type StudyInput,
+  type TiradsFeatureInput,
 } from "../../medical/storage/caseRepo";
 import { searchMedicalKnowledge } from "../../medical/knowledge/search";
 import { authenticate, jsonResponse, readJsonBody, type HandlerDeps } from "./handlers";
@@ -84,7 +86,22 @@ const DOCTOR_BBOX_REVISION_TASKS = [
   { agentName: "ReportDraftAgent", taskType: "draft_report", toolName: "medical.GetReportTemplate" },
 ] as const;
 
+const DOCTOR_TIRADS_FEATURE_TASKS = [
+  { agentName: "TiradsRuleAgent", taskType: "calculate_tirads", toolName: "thyroid.CalculateTirads" },
+  { agentName: "ReportDraftAgent", taskType: "draft_report", toolName: "medical.GetReportTemplate" },
+  { agentName: "SafetyReviewAgent", taskType: "safety_review", toolName: "medical.SearchGuideline" },
+] as const;
+
+const TIRADS_FEATURE_ENUMS: Record<string, Set<string>> = {
+  composition: new Set(["cystic", "almost_completely_cystic", "spongiform", "mixed_cystic_solid", "solid", "almost_completely_solid"]),
+  echogenicity: new Set(["anechoic", "hyperechoic", "isoechoic", "hypoechoic", "very_hypoechoic"]),
+  shape: new Set(["wider_than_tall", "taller_than_wide"]),
+  margin: new Set(["smooth", "ill_defined", "lobulated", "irregular", "extrathyroidal_extension"]),
+  echogenic_foci: new Set(["none", "large_comet_tail", "macrocalcifications", "peripheral_rim_calcifications", "punctate_echogenic_foci"]),
+};
+
 const MEDICAL_ARTIFACT_MAX_BYTES = 32 * 1024 * 1024;
+const REMOTE_MEDICAL_ARTIFACT_TIMEOUT_MS = 5000;
 const MEDICAL_ARTIFACT_MIME: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
@@ -249,7 +266,11 @@ export async function handleReadMedicalArtifact(
     try {
       stat = statSync(artifactPath);
     } catch {
-      throw new MedicalRequestError(404, "artifact-not-found", "artifact was not found");
+      const cached = await cacheRemoteMedicalArtifact(artifactUri, artifactPath);
+      if (!cached) {
+        throw new MedicalRequestError(404, "artifact-not-found", "artifact was not found");
+      }
+      stat = statSync(artifactPath);
     }
     if (!stat.isFile()) {
       throw new MedicalRequestError(404, "artifact-not-found", "artifact was not found");
@@ -546,6 +567,62 @@ export async function handleReviseMedicalNodule(
   }
 }
 
+export async function handleSubmitMedicalTiradsFeatures(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  noduleId: string
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const repo = new MedicalCaseRepo(ctx.db);
+    const nodule = repo.getNodule(noduleId);
+    if (!nodule) {
+      throw new MedicalRequestError(404, "nodule-not-found", `nodule not found: ${noduleId}`);
+    }
+    const now = Date.now();
+    const { tiradsFeature, analysisSession, agentTasks, auditLog } = ctx.db.transaction(() => {
+      const featureInput = manualTiradsFeatureInput(repo, nodule, body, now);
+      const tiradsFeature = repo.createTiradsFeature(featureInput);
+      const { analysisSession, agentTasks } = createDoctorTiradsFeatureRerun(repo, nodule, tiradsFeature.id, ctx.userId, now + 1);
+      const auditLog = repo.createAuditLog({
+        studyId: nodule.studyId,
+        actorType: "doctor",
+        actorId: ctx.userId,
+        action: "medical.tirads_feature.submit",
+        targetType: "nodule",
+        targetId: noduleId,
+        detail: {
+          tirads_feature_id: tiradsFeature.id,
+          features: tiradsFeature.features,
+          confidence: tiradsFeature.confidence,
+          source_model: tiradsFeature.sourceModel,
+          requires_review: tiradsFeature.requiresReview,
+          rerun_analysis_session_id: analysisSession.id,
+          rerun_agent_task_ids: agentTasks.map((task) => task.id),
+          rerun_task_types: agentTasks.map((task) => task.taskType),
+          comment: stringField(body, "comment") ?? null,
+        },
+        traceId: tiradsFeature.id,
+        now: now + 4,
+      });
+      return { tiradsFeature, analysisSession, agentTasks, auditLog };
+    })();
+    jsonResponse(res, 200, {
+      tiradsFeature,
+      analysisSession,
+      agentTasks,
+      auditLog,
+      bundle: readMedicalStudyBundle(repo, nodule.studyId),
+    });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
 function createDoctorBboxRevisionRerun(
   repo: MedicalCaseRepo,
   revised: NoduleRevisionResult,
@@ -595,6 +672,60 @@ function createDoctorBboxRevisionRerun(
     if (task.taskType === "segment_nodules") input.allow_bbox_fallback = false;
     if (task.taskType === "draft_report") input.refresh_report_basis = true;
 
+    const created = repo.createAgentTask({
+      analysisSessionId: analysisSession.id,
+      parentTaskId,
+      agentName: task.agentName,
+      taskType: task.taskType,
+      status: "queued",
+      input,
+      now: now + index,
+    });
+    parentTaskId = created.id;
+    return created;
+  });
+
+  return { analysisSession, agentTasks };
+}
+
+function createDoctorTiradsFeatureRerun(
+  repo: MedicalCaseRepo,
+  nodule: NoduleRecord,
+  tiradsFeatureId: string,
+  actorId: string,
+  now: number
+): { analysisSession: AnalysisSessionRecord; agentTasks: AgentTaskRecord[] } {
+  const analysisSession = repo.createAnalysisSession({
+    studyId: nodule.studyId,
+    status: "queued",
+    triggerSource: "doctor_tirads_feature_input",
+    createdBy: actorId,
+    summary: {
+      source: "doctor_tirads_feature_input",
+      image_id: nodule.imageId,
+      nodule_id: nodule.id,
+      nodule_index: nodule.noduleIndex,
+      tirads_feature_id: tiradsFeatureId,
+      task_count: DOCTOR_TIRADS_FEATURE_TASKS.length,
+      task_types: DOCTOR_TIRADS_FEATURE_TASKS.map((task) => task.taskType),
+    },
+    now,
+  });
+
+  let parentTaskId: string | undefined;
+  const agentTasks = DOCTOR_TIRADS_FEATURE_TASKS.map((task, index) => {
+    const input: JsonObject = {
+      study_id: nodule.studyId,
+      image_id: nodule.imageId,
+      nodule_id: nodule.id,
+      nodule_index: nodule.noduleIndex,
+      target_nodule_ids: [nodule.id],
+      tirads_feature_id: tiradsFeatureId,
+      tool_name: task.toolName,
+      sequence: index + 1,
+      source: "doctor_tirads_feature_input",
+    };
+    if (task.taskType === "draft_report") input.refresh_report_basis = true;
     const created = repo.createAgentTask({
       analysisSessionId: analysisSession.id,
       parentTaskId,
@@ -939,6 +1070,49 @@ function modelGatewayBaseUrl(): string {
   return `http://127.0.0.1:${port}`;
 }
 
+function remoteArtifactGatewayBaseUrl(): string | null {
+  const configured = process.env.JZX_REMOTE_MODEL_GATEWAY_URL?.trim() || process.env.JZX_MODEL_GATEWAY_URL?.trim();
+  return configured ? configured.replace(/\/+$/, "") : null;
+}
+
+async function cacheRemoteMedicalArtifact(artifactUri: string, artifactPath: string): Promise<boolean> {
+  const gatewayUrl = remoteArtifactGatewayBaseUrl();
+  if (!gatewayUrl) return false;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REMOTE_MEDICAL_ARTIFACT_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${gatewayUrl}/model/v1/artifacts?uri=${encodeURIComponent(artifactUri)}`,
+      { method: "GET", signal: controller.signal, headers: { accept: "*/*" } }
+    );
+    if (response.status === 404) return false;
+    if (!response.ok) {
+      throw new MedicalRequestError(
+        502,
+        "remote-artifact-fetch-failed",
+        `remote model-gateway artifact fetch returned HTTP ${response.status}`
+      );
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > MEDICAL_ARTIFACT_MAX_BYTES) {
+      throw new MedicalRequestError(413, "artifact-too-large", "artifact exceeds validation preview size limit");
+    }
+    mkdirSync(path.dirname(artifactPath), { recursive: true });
+    writeFileSync(artifactPath, bytes);
+    return true;
+  } catch (err) {
+    if (err instanceof MedicalRequestError) throw err;
+    throw new MedicalRequestError(
+      502,
+      "remote-artifact-fetch-failed",
+      err instanceof Error ? err.message : String(err)
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function resolveMedicalArtifactPath(artifactUri: string, deps: HandlerDeps): string {
   if (!artifactUri.startsWith("artifact://")) {
     throw new MedicalRequestError(400, "invalid-request", "uri must start with artifact://");
@@ -1028,6 +1202,84 @@ function imageInput(body: JsonObject): ImageInput {
     qualityScore: numberField(body, "qualityScore", "quality_score"),
     processingStatus: stringField(body, "processingStatus", "processing_status"),
   };
+}
+
+function manualTiradsFeatureInput(
+  repo: MedicalCaseRepo,
+  nodule: NoduleRecord,
+  body: JsonObject,
+  now: number
+): TiradsFeatureInput {
+  const features = normalizeTiradsFeatures(body);
+  if (!features.size_mm) {
+    const latestMeasurement = [...repo.listMeasurementsByStudy(nodule.studyId)]
+      .filter((measurement) => measurement.noduleId === nodule.id)
+      .at(-1);
+    if (latestMeasurement?.longAxisMm || latestMeasurement?.shortAxisMm || latestMeasurement?.apAxisMm) {
+      features.size_mm = {
+        long_axis: latestMeasurement.longAxisMm ?? undefined,
+        short_axis: latestMeasurement.shortAxisMm ?? undefined,
+        ap_axis: latestMeasurement.apAxisMm ?? undefined,
+      };
+    }
+  }
+  return {
+    noduleId: nodule.id,
+    systemName: stringField(body, "systemName", "system_name") ?? "ACR_TI_RADS",
+    features,
+    confidence: objectField(body, "confidence", "feature_confidence") ?? {},
+    sourceModel: stringField(body, "sourceModel", "source_model") ?? "doctor_structured_input",
+    requiresReview: booleanField(body, "requiresReview", "requires_review") ?? false,
+    now,
+  };
+}
+
+function normalizeTiradsFeatures(body: JsonObject): JsonObject {
+  const raw = objectField(body, "features") ?? body;
+  const features: JsonObject = {};
+  features.composition = enumString(raw, "composition");
+  features.echogenicity = enumString(raw, "echogenicity");
+  features.shape = enumString(raw, "shape");
+  features.margin = enumString(raw, "margin");
+  features.echogenic_foci = echogenicFoci(raw);
+  const size = objectField(raw, "sizeMm", "size_mm");
+  if (size) {
+    const sizeMm = {
+      long_axis: numberField(size, "longAxis", "long_axis"),
+      short_axis: numberField(size, "shortAxis", "short_axis"),
+      ap_axis: numberField(size, "apAxis", "ap_axis"),
+    };
+    if (sizeMm.long_axis || sizeMm.short_axis || sizeMm.ap_axis) features.size_mm = sizeMm;
+  }
+  return features;
+}
+
+function enumString(body: JsonObject, key: string): string {
+  const value = requiredString(body, key);
+  const allowed = TIRADS_FEATURE_ENUMS[key];
+  if (!allowed?.has(value)) {
+    throw new MedicalRequestError(400, "invalid-request", `${key} has unsupported TI-RADS value: ${value}`);
+  }
+  return value;
+}
+
+function echogenicFoci(body: JsonObject): string[] {
+  const value = body.echogenic_foci ?? body.echogenicFoci;
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",").map((item) => item.trim()).filter(Boolean)
+      : [];
+  if (values.length === 0) {
+    throw new MedicalRequestError(400, "invalid-request", "echogenic_foci must include at least one value");
+  }
+  const allowed = TIRADS_FEATURE_ENUMS.echogenic_foci;
+  for (const item of values) {
+    if (typeof item !== "string" || !allowed.has(item)) {
+      throw new MedicalRequestError(400, "invalid-request", `echogenic_foci has unsupported TI-RADS value: ${String(item)}`);
+    }
+  }
+  return values;
 }
 
 function reviewAction(body: JsonObject): ReportReviewAction {

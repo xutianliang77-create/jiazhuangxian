@@ -46,6 +46,7 @@
     "datasets:tn3k:train-swin-unet": "python3 scripts/train_tn3k_swin_unet.py",
     "medical-agent-worker": "tsx scripts/medical-agent-worker.ts",
     "medical-agent-worker:once": "tsx scripts/medical-agent-worker.ts --once",
+    "medical-demo:run": "tsx scripts/medical-live-demo-runner.ts",
     "image-worker": "cd services/image-worker && python3 -m app",
     "model-gateway": "cd services/model-gateway && python3 -m app",
     "model-gateway:check": "cd services/model-gateway && python3 -m app.config_check",

@@ -94,6 +94,7 @@ import {
   handleReviewMedicalReport,
   handleReviseMedicalNodule,
   handleStartMedicalAnalysis,
+  handleSubmitMedicalTiradsFeatures,
 } from "./medicalHandlers";
 import { SessionStore } from "./sessionStore";
 import type { QueryEngineOptions } from "../../agent/types";
@@ -440,6 +441,10 @@ async function dispatch(
   const medicalNoduleReviseMatch = /^\/v1\/web\/medical\/nodules\/([^/]+)\/revise$/.exec(url.pathname);
   if (medicalNoduleReviseMatch && method === "POST") {
     return handleReviseMedicalNodule(req, res, deps, decodeURIComponent(medicalNoduleReviseMatch[1]));
+  }
+  const medicalNoduleTiradsFeaturesMatch = /^\/v1\/web\/medical\/nodules\/([^/]+)\/tirads-features$/.exec(url.pathname);
+  if (medicalNoduleTiradsFeaturesMatch && method === "POST") {
+    return handleSubmitMedicalTiradsFeatures(req, res, deps, decodeURIComponent(medicalNoduleTiradsFeaturesMatch[1]));
   }
   if (url.pathname === "/v1/web/medical/images" && method === "POST") {
     return handleCreateMedicalImage(req, res, deps);

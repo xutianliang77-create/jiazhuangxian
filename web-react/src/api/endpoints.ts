@@ -800,6 +800,35 @@ export const reviseMedicalNodule = (
     bundle: MedicalStudyBundle;
   }>("POST", `/v1/web/medical/nodules/${encodeURIComponent(noduleId)}/revise`, input);
 
+export const submitMedicalTiradsFeatures = (
+  noduleId: string,
+  input: {
+    features: {
+      composition: string;
+      echogenicity: string;
+      shape: string;
+      margin: string;
+      echogenic_foci: string[];
+      size_mm?: {
+        long_axis?: number;
+        short_axis?: number;
+        ap_axis?: number;
+      };
+    };
+    confidence?: Record<string, unknown>;
+    sourceModel?: string;
+    requiresReview?: boolean;
+    comment?: string;
+  }
+) =>
+  api<{
+    tiradsFeature: MedicalTiradsFeature;
+    analysisSession: MedicalAnalysisSession;
+    agentTasks: MedicalAgentTask[];
+    auditLog: MedicalAuditLog;
+    bundle: MedicalStudyBundle;
+  }>("POST", `/v1/web/medical/nodules/${encodeURIComponent(noduleId)}/tirads-features`, input);
+
 // ===== Cron #116 =====
 
 export type CronTaskKind = "slash" | "prompt" | "shell";

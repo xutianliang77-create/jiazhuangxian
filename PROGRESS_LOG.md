@@ -18,6 +18,16 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Pulled raw model artifacts locally under `data/artifacts/gpu-e2e-20260511/`; these remain local runtime artifacts and are not intended for Git.
 - Added 5090 AI server mode: `medical-agent-worker` can now enqueue detect/segment/measure tasks through `JZX_REMOTE_MODEL_GATEWAY_URL`, persist a local shadow `model_job`, poll `/model/v1/jobs/{job_id}`, and sync remote output back into local SQLite for UI/report/audit flows.
 - Added `scripts/start-5090-ai-server.sh` and `docs/REMOTE_5090_AI_SERVER.md` for starting 5090 gateway/worker with the verified RF-DETR, YOLO11m, RT-DETR, nnU-Net, and SAM2 defaults.
+- Added remote artifact proxy support: 5090 `model-gateway` serves `GET /model/v1/artifacts?uri=artifact://...`, and Mac Web `GET /v1/web/medical/artifacts` now fetches and caches missing remote overlay/mask/JSON artifacts through `JZX_REMOTE_MODEL_GATEWAY_URL`.
+- Changed the 5090 server default queue DB to `data/artifacts/model-gateway/model-gateway.db` so remote model jobs do not depend on Mac-local `study/image` foreign-key rows.
+- Completed one Mac doctor-workstation UI smoke against the 5090 AI server: Web-created case `UI-SMOKE-5090-ACC2`, remote RF-DETR detection, nnU-Net tight ROI segmentation, mask measurement, report draft, safety review, artifact proxy preview, overlay display, model evidence panel, and structured report editor all rendered successfully.
+- Wrote smoke documentation to `docs/UI_SMOKE_5090_REMOTE_ARTIFACT_20260511.md`; local runtime evidence is under `data/artifacts/ui-smoke-5090-20260511-174233/`.
+- Correction after re-checking `TECHNICAL_DESIGN.md`: the smoke validates detection, segmentation, measurement, artifact proxy, and doctor-workstation display, but not the full TI-RADS/Qwen report loop. The successful smoke DB has empty `tirads_feature` and `tirads_result` tables because `TiradsFeatureAgent` returned `model_status=not_configured`; Qwen3.6 main-report validation must wait until structured TI-RADS features and rule results exist.
+- Added the validation-version doctor structured TI-RADS feature entry path: `POST /v1/web/medical/nodules/:id/tirads-features` validates ACR feature enums, auto-fills size from the latest measurement when available, persists `tirads_feature`, audits `medical.tirads_feature.submit`, and queues `calculate_tirads -> draft_report -> safety_review`. The Medical Workstation now exposes selects for composition, echogenicity, shape, margin, and echogenic foci on each nodule row.
+- Real-demo report-generation policy adjusted after Qwen validation: current 5090 LM Studio had `qwen/qwen3.6-35b-a3b` loaded with `loaded_context_length=4096`; provider calls reached the endpoint but spent output budget in `reasoning_content`, leaving final JSON content empty. For live demos, run the image/model/measurement/TI-RADS/rule/template evidence chain first, then manually load Qwen before the main-report LLM stage.
+- Added a Medical Workstation real-demo notice in the Reports area and per template-generated report, explicitly telling the operator to manually load `qwen/qwen3.6-35b-a3b` on the 5090 before running `draft_report / safety_review`. The UI also makes clear that unloaded-Qwen mode still preserves rules, knowledge evidence, segmentation, measurement, and a structured template draft.
+- Compact provider prompt packaging was added for the future Qwen report stage: full evidence remains persisted in `report.evidence_json`, while the provider receives only the summarized facts and top guideline snippets needed to draft the report.
+- Current LM Studio check after operator unload: `qwen/qwen3.6-35b-a3b` state is `not-loaded`; keep it unloaded until the real-demo主报告阶段需要手动加载。
 
 ### Completed
 
@@ -2939,4 +2949,24 @@ cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm r
 cd .. && npm run build:web
 git diff --check
 git push origin main
+```
+
+## 2026-05-11 20:20 CST - Live Demo Auto Runner
+
+- 新增 `scripts/medical-live-demo-runner.ts` 和 `npm run medical-demo:run`。
+- Runner 负责自动循环调用现有 `medical-agent-worker`，不改变医学任务本身：
+  - 自动执行 image_qc、RF-DETR/YOLO 检测、nnU-Net 分割、mask 测量等已排队任务；
+  - 自动轮询 5090 远程 model-gateway job，并同步回 Mac 本地 SQLite；
+  - 若缺少医生结构化 TI-RADS 特征，停在 `waiting_doctor_tirads_features`；
+  - 到 `draft_report` 前检测 Qwen 是否 loaded，未加载时停在 `waiting_qwen_model`；
+  - Qwen 加载后自动继续执行 `draft_report / safety_review`，生成主报告并落库。
+- 更新 `docs/UI_SMOKE_5090_REMOTE_ARTIFACT_20260511.md`，补充自动演示命令和现场分阶段说明。
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+npm run medical-demo:run -- --help
+npm run typecheck
+git diff --check
 ```

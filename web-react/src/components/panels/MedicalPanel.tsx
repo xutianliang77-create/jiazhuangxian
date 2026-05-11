@@ -12,6 +12,7 @@ import {
   reviseMedicalNodule,
   searchMedicalKnowledge,
   startMedicalAnalysis,
+  submitMedicalTiradsFeatures,
   type MedicalAgentTask,
   type MedicalAuditLog,
   type MedicalDoctorReview,
@@ -25,6 +26,7 @@ import {
   type MedicalReport,
   type MedicalStudyBundle,
   type MedicalSummary,
+  type MedicalTiradsFeature,
   type MedicalTiradsResult,
 } from "@/api/endpoints";
 
@@ -46,6 +48,59 @@ const SEGMENT_MODEL_JOB_TYPE = "thyroid.segment_nodule";
 const MEASURE_MODEL_JOB_TYPE = "thyroid.measure_nodule";
 const MIN_REVISION_BBOX_EDGE_PX = 1;
 type MedicalReportReviewAction = "approve" | "revise" | "reject" | "archive";
+type TiradsFeatureFormKey = "composition" | "echogenicity" | "shape" | "margin" | "echogenicFoci";
+
+interface TiradsFeatureFormState {
+  composition: string;
+  echogenicity: string;
+  shape: string;
+  margin: string;
+  echogenicFoci: string;
+}
+
+const TIRADS_FEATURE_OPTIONS: Record<TiradsFeatureFormKey, Array<[string, string]>> = {
+  composition: [
+    ["cystic", "cystic"],
+    ["almost_completely_cystic", "almost cystic"],
+    ["spongiform", "spongiform"],
+    ["mixed_cystic_solid", "mixed"],
+    ["solid", "solid"],
+    ["almost_completely_solid", "almost solid"],
+  ],
+  echogenicity: [
+    ["anechoic", "anechoic"],
+    ["hyperechoic", "hyperechoic"],
+    ["isoechoic", "isoechoic"],
+    ["hypoechoic", "hypoechoic"],
+    ["very_hypoechoic", "very hypoechoic"],
+  ],
+  shape: [
+    ["wider_than_tall", "wider than tall"],
+    ["taller_than_wide", "taller than wide"],
+  ],
+  margin: [
+    ["smooth", "smooth"],
+    ["ill_defined", "ill-defined"],
+    ["lobulated", "lobulated"],
+    ["irregular", "irregular"],
+    ["extrathyroidal_extension", "extension"],
+  ],
+  echogenicFoci: [
+    ["none", "none"],
+    ["large_comet_tail", "comet-tail"],
+    ["macrocalcifications", "macrocalcifications"],
+    ["peripheral_rim_calcifications", "rim calcifications"],
+    ["punctate_echogenic_foci", "punctate foci"],
+  ],
+};
+
+const EMPTY_TIRADS_FEATURE_FORM: TiradsFeatureFormState = {
+  composition: "",
+  echogenicity: "",
+  shape: "",
+  margin: "",
+  echogenicFoci: "none",
+};
 
 interface ManualCaseFormState {
   externalPatientId: string;
@@ -87,6 +142,7 @@ export default function MedicalPanel({ onError }: Props) {
   const [analysisBusyImageId, setAnalysisBusyImageId] = useState<string | null>(null);
   const [reviewBusyReportId, setReviewBusyReportId] = useState<string | null>(null);
   const [noduleBusyId, setNoduleBusyId] = useState<string | null>(null);
+  const [tiradsFeatureBusyNoduleId, setTiradsFeatureBusyNoduleId] = useState<string | null>(null);
   const [knowledgeQuery, setKnowledgeQuery] = useState("TI-RADS TR4");
   const [knowledgeResult, setKnowledgeResult] = useState<MedicalKnowledgeSearchResult | null>(null);
   const [knowledgeBusy, setKnowledgeBusy] = useState(false);
@@ -198,6 +254,33 @@ export default function MedicalPanel({ onError }: Props) {
       throw err;
     } finally {
       setNoduleBusyId(null);
+    }
+  }
+
+  async function submitTiradsFeatureInput(nodule: MedicalNodule, features: TiradsFeatureFormState) {
+    setTiradsFeatureBusyNoduleId(nodule.id);
+    setDetailError(null);
+    try {
+      const result = await submitMedicalTiradsFeatures(nodule.id, {
+        features: {
+          composition: features.composition,
+          echogenicity: features.echogenicity,
+          shape: features.shape,
+          margin: features.margin,
+          echogenic_foci: [features.echogenicFoci],
+        },
+        sourceModel: "doctor_structured_input",
+        requiresReview: false,
+      });
+      setStudyBundle(result.bundle);
+      await refresh();
+    } catch (err) {
+      const message = `Medical TI-RADS 特征保存失败：${(err as Error).message}`;
+      setDetailError(message);
+      onError(message);
+      throw err;
+    } finally {
+      setTiradsFeatureBusyNoduleId(null);
     }
   }
 
@@ -351,9 +434,11 @@ export default function MedicalPanel({ onError }: Props) {
           analyzingImageId={analysisBusyImageId}
           reviewingReportId={reviewBusyReportId}
           revisingNoduleId={noduleBusyId}
+          tiradsFeatureBusyNoduleId={tiradsFeatureBusyNoduleId}
           onStartAnalysis={launchAnalysis}
           onReviewReport={reviewReport}
           onReviseNodule={reviseNodule}
+          onSubmitTiradsFeatures={submitTiradsFeatureInput}
         />
 
         <div className="flex items-center justify-between mb-3">
@@ -636,9 +721,11 @@ function StudyDetail({
   analyzingImageId,
   reviewingReportId,
   revisingNoduleId,
+  tiradsFeatureBusyNoduleId,
   onStartAnalysis,
   onReviewReport,
   onReviseNodule,
+  onSubmitTiradsFeatures,
 }: {
   bundle: MedicalStudyBundle | null;
   busy: boolean;
@@ -646,9 +733,11 @@ function StudyDetail({
   analyzingImageId: string | null;
   reviewingReportId: string | null;
   revisingNoduleId: string | null;
+  tiradsFeatureBusyNoduleId: string | null;
   onStartAnalysis(imageId: string): void;
   onReviewReport(report: MedicalReport, action: MedicalReportReviewAction, finalText?: string, comment?: string): void;
   onReviseNodule(nodule: MedicalNodule, bbox: number[]): Promise<void>;
+  onSubmitTiradsFeatures(nodule: MedicalNodule, features: TiradsFeatureFormState): Promise<void>;
 }) {
   if (!bundle) {
     return (
@@ -664,6 +753,7 @@ function StudyDetail({
     images,
     nodules,
     measurements,
+    tiradsFeatures,
     tiradsResults,
     reports,
     auditLogs,
@@ -673,6 +763,8 @@ function StudyDetail({
     agentTasks,
   } = bundle;
   const noduleEvidenceRows = buildNoduleModelEvidence(nodules, measurements, reports, modelJobs);
+  const featureByNodule = latestTiradsFeatureByNodule(tiradsFeatures);
+  const measurementByNodule = latestMeasurementByNodule(measurements);
   return (
     <div className="border border-border rounded p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -740,9 +832,13 @@ function StudyDetail({
                 key={nodule.id}
                 nodule={nodule}
                 result={tiradsResults.find((item) => item.noduleId === nodule.id) ?? null}
-                busy={busy || revisingNoduleId !== null}
+                feature={featureByNodule.get(nodule.id) ?? null}
+                measurement={measurementByNodule.get(nodule.id) ?? null}
+                busy={busy || revisingNoduleId !== null || tiradsFeatureBusyNoduleId !== null}
                 revising={revisingNoduleId === nodule.id}
+                savingFeatures={tiradsFeatureBusyNoduleId === nodule.id}
                 onRevise={(bbox) => onReviseNodule(nodule, bbox)}
+                onSubmitTiradsFeatures={(features) => onSubmitTiradsFeatures(nodule, features)}
               />
             ))}
           </div>
@@ -755,6 +851,7 @@ function StudyDetail({
 
       <div className="mt-4">
         <h4 className="text-xs uppercase text-muted mb-2">Reports</h4>
+        {hasReportStageSignal(reports, agentTasks) && <RealDemoModelNotice reports={reports} agentTasks={agentTasks} />}
         {reports.length === 0 ? (
           <div className="text-sm text-muted border border-border rounded p-2">none</div>
         ) : (
@@ -1260,6 +1357,25 @@ function latestMeasurementByNodule(measurements: MedicalMeasurement[]): Map<stri
   return byNodule;
 }
 
+function latestTiradsFeatureByNodule(features: MedicalTiradsFeature[]): Map<string, MedicalTiradsFeature> {
+  const byNodule = new Map<string, MedicalTiradsFeature>();
+  for (const feature of [...features].sort((a, b) => a.createdAt - b.createdAt)) {
+    byNodule.set(feature.noduleId, feature);
+  }
+  return byNodule;
+}
+
+function tiradsFeatureFormState(feature: MedicalTiradsFeature | null): TiradsFeatureFormState {
+  if (!feature) return EMPTY_TIRADS_FEATURE_FORM;
+  return {
+    composition: stringValue(feature.features.composition) ?? "",
+    echogenicity: stringValue(feature.features.echogenicity) ?? "",
+    shape: stringValue(feature.features.shape) ?? "",
+    margin: stringValue(feature.features.margin) ?? "",
+    echogenicFoci: stringList(feature.features.echogenic_foci)[0] ?? "none",
+  };
+}
+
 function latestModelJobByNodule(
   modelJobs: MedicalModelJob[],
   jobType: string,
@@ -1334,6 +1450,14 @@ function reportEvidenceSourceLabel(report: MedicalReport): string {
     if (source) sources.add(source);
   }
   return sources.size === 0 ? "pending" : Array.from(sources).join(", ");
+}
+
+function hasReportStageSignal(reports: MedicalReport[], agentTasks: MedicalAgentTask[]): boolean {
+  return reports.length > 0 || agentTasks.some((task) => task.taskType === "draft_report" || task.taskType === "safety_review");
+}
+
+function reportUsesTemplateDraft(report: MedicalReport): boolean {
+  return stringValue(report.structured.generator) !== "llm_provider_structured_report";
 }
 
 function reportEvidenceRows(evidence: unknown[]): ReportEvidenceDisplayRow[] {
@@ -1455,23 +1579,38 @@ function snapshotMaskUri(snapshot: Record<string, unknown> | undefined): string 
 function NoduleResultRow({
   nodule,
   result,
+  feature,
+  measurement,
   busy,
   revising,
+  savingFeatures,
   onRevise,
+  onSubmitTiradsFeatures,
 }: {
   nodule: MedicalNodule;
   result: MedicalTiradsResult | null;
+  feature: MedicalTiradsFeature | null;
+  measurement: MedicalMeasurement | null;
   busy: boolean;
   revising: boolean;
+  savingFeatures: boolean;
   onRevise(bbox: number[]): Promise<void>;
+  onSubmitTiradsFeatures(features: TiradsFeatureFormState): Promise<void>;
 }) {
   const [bboxText, setBboxText] = useState(formatBbox(nodule.bbox));
   const [editError, setEditError] = useState<string | null>(null);
+  const [featureForm, setFeatureForm] = useState<TiradsFeatureFormState>(() => tiradsFeatureFormState(feature));
+  const [featureError, setFeatureError] = useState<string | null>(null);
 
   useEffect(() => {
     setBboxText(formatBbox(nodule.bbox));
     setEditError(null);
   }, [nodule.id, nodule.updatedAt, nodule.bbox]);
+
+  useEffect(() => {
+    setFeatureForm(tiradsFeatureFormState(feature));
+    setFeatureError(null);
+  }, [feature?.id, feature?.createdAt]);
 
   async function submitRevision() {
     const parsed = parseBboxInput(bboxText);
@@ -1487,6 +1626,23 @@ function NoduleResultRow({
     }
   }
 
+  async function submitFeatures() {
+    if (!featureForm.composition || !featureForm.echogenicity || !featureForm.shape || !featureForm.margin || !featureForm.echogenicFoci) {
+      setFeatureError("请完整选择 TI-RADS 特征。");
+      return;
+    }
+    setFeatureError(null);
+    try {
+      await onSubmitTiradsFeatures(featureForm);
+    } catch {
+      // Parent surface already shows the API error.
+    }
+  }
+
+  function updateFeature(key: TiradsFeatureFormKey, value: string) {
+    setFeatureForm({ ...featureForm, [key]: value });
+  }
+
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
@@ -1498,8 +1654,23 @@ function NoduleResultRow({
         <Metric label="source" value={nodule.source} />
         <Metric label="TI-RADS" value={result?.category ?? "pending"} />
         <Metric label="score" value={result?.score === null || result?.score === undefined ? "pending" : String(result.score)} />
+        <Metric label="feature" value={feature?.sourceModel ?? "pending"} />
+        <Metric label="long" value={measurement?.longAxisMm === null || measurement?.longAxisMm === undefined ? "pending" : `${measurement.longAxisMm}mm`} />
       </div>
       {result?.recommendation && <div className="text-muted mt-2">{result.recommendation}</div>}
+      <div className="mt-3 border-t border-border pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <FeatureSelect label="composition" value={featureForm.composition} options={TIRADS_FEATURE_OPTIONS.composition} onChange={(value) => updateFeature("composition", value)} />
+          <FeatureSelect label="echogenicity" value={featureForm.echogenicity} options={TIRADS_FEATURE_OPTIONS.echogenicity} onChange={(value) => updateFeature("echogenicity", value)} />
+          <FeatureSelect label="shape" value={featureForm.shape} options={TIRADS_FEATURE_OPTIONS.shape} onChange={(value) => updateFeature("shape", value)} />
+          <FeatureSelect label="margin" value={featureForm.margin} options={TIRADS_FEATURE_OPTIONS.margin} onChange={(value) => updateFeature("margin", value)} />
+          <FeatureSelect label="foci" value={featureForm.echogenicFoci} options={TIRADS_FEATURE_OPTIONS.echogenicFoci} onChange={(value) => updateFeature("echogenicFoci", value)} />
+        </div>
+        <button type="button" className="btn-secondary mt-2" disabled={busy} onClick={submitFeatures}>
+          {savingFeatures ? "保存中..." : "保存 TI-RADS 特征"}
+        </button>
+        {featureError && <div className="text-danger mt-1">{featureError}</div>}
+      </div>
       <div className="mt-2 flex flex-col gap-2">
         <label className="text-muted">
           bbox xyxy
@@ -1516,6 +1687,30 @@ function NoduleResultRow({
         {editError && <div className="text-danger">{editError}</div>}
       </div>
     </div>
+  );
+}
+
+function FeatureSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<[string, string]>;
+  onChange(value: string): void;
+}) {
+  return (
+    <label className="text-muted">
+      {label}
+      <select className={`${inputClass} mt-1 text-xs`} value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">pending</option>
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -1555,6 +1750,7 @@ function ReportRow({
       <div className="text-muted mt-1">
         {report.reportType} · {report.templateId ?? "no template"} · {formatTime(report.updatedAt)}
       </div>
+      {reportUsesTemplateDraft(report) && <ReportModelStageNotice report={report} />}
       {canReview ? (
         <div className="mt-2 space-y-2">
           <StructuredReportEditor sections={sections} onChange={setSections} />
@@ -1613,6 +1809,44 @@ interface ReportSection {
   title: string;
   text: string;
   includeTitle: boolean;
+}
+
+function RealDemoModelNotice({
+  reports,
+  agentTasks,
+}: {
+  reports: MedicalReport[];
+  agentTasks: MedicalAgentTask[];
+}) {
+  const draftReportTasks = agentTasks.filter((task) => task.taskType === "draft_report");
+  const templateDrafts = reports.filter(reportUsesTemplateDraft).length;
+  const queuedDrafts = draftReportTasks.filter((task) => task.status === "queued" || task.status === "pending").length;
+  return (
+    <div className="mb-2 rounded border border-border px-2 py-1.5 text-xs">
+      <div className="font-semibold text-warning">真实演示提示：主报告大模型需手动加载</div>
+      <div className="mt-1 text-muted">
+        演示 Qwen 主报告生成前，请先在 5090 上加载 qwen/qwen3.6-35b-a3b。若使用自动演示 Runner，
+        系统会在此阶段等待模型 loaded 后继续运行 draft_report / safety_review。未加载时系统会保留规则、知识库、分割和测量依据。
+      </div>
+      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
+        <span>template drafts {templateDrafts}</span>
+        <span>draft_report tasks {draftReportTasks.length}</span>
+        {queuedDrafts > 0 && <span className="text-warning">queued {queuedDrafts}</span>}
+      </div>
+    </div>
+  );
+}
+
+function ReportModelStageNotice({ report }: { report: MedicalReport }) {
+  const generator = stringValue(report.structured.generator) ?? "structured_template_validation";
+  return (
+    <div className="mt-2 rounded border border-border px-2 py-1.5 text-xs">
+      <div className="font-medium text-warning">当前报告尚未由主报告大模型生成</div>
+      <div className="mt-1 text-muted">
+        生成器：{generator}。真实演示主报告阶段前，请手动加载 qwen/qwen3.6-35b-a3b；自动演示 Runner 会检测模型 loaded 后继续生成报告。
+      </div>
+    </div>
+  );
 }
 
 function StructuredReportEditor({

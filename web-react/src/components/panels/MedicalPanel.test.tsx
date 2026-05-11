@@ -868,6 +868,8 @@ describe("MedicalPanel", () => {
     expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0);
     expect(screen.getByText("TR4")).toBeInTheDocument();
     expect(screen.getAllByText(/甲状腺超声AI辅助报告/).length).toBeGreaterThan(0);
+    expect(screen.getByText("真实演示提示：主报告大模型需手动加载")).toBeInTheDocument();
+    expect(screen.getByText("当前报告尚未由主报告大模型生成")).toBeInTheDocument();
     expect(screen.getByText("报告依据")).toBeInTheDocument();
     expect(screen.getByText("证据引用固定 · 5 项")).toBeInTheDocument();
     expect(screen.getByText("TI-RADS 规则库")).toBeInTheDocument();

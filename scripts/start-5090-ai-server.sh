@@ -16,7 +16,7 @@ source "$VENV_DIR/bin/activate"
 
 export JZX_MODEL_GATEWAY_HOST="${JZX_MODEL_GATEWAY_HOST:-0.0.0.0}"
 export JZX_MODEL_GATEWAY_PORT="${JZX_MODEL_GATEWAY_PORT:-8766}"
-export JZX_DATA_DB="${JZX_DATA_DB:-$ROOT_DIR/data/artifacts/medical/data.db}"
+export JZX_DATA_DB="${JZX_DATA_DB:-$ROOT_DIR/data/artifacts/model-gateway/model-gateway.db}"
 export JZX_ARTIFACT_ROOT="${JZX_ARTIFACT_ROOT:-$ROOT_DIR/data/artifacts}"
 export JZX_MODEL_DEVICE="${JZX_MODEL_DEVICE:-0}"
 

@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+from urllib.parse import quote
 import urllib.request
 from pathlib import Path
 from unittest.mock import patch
@@ -70,6 +71,35 @@ class ModelGatewayTest(unittest.TestCase):
                     [detector["model_family"] for detector in result["detectors"]],
                     ["yolov11", "rt-detr", "rf-detr"],
                 )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+    def test_artifact_endpoint_serves_files_inside_artifact_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            artifact_path = root / "model-output" / "S1" / "overlay.png"
+            artifact_path.parent.mkdir(parents=True)
+            png_bytes = bytes.fromhex("89504e470d0a1a0a")
+            artifact_path.write_bytes(png_bytes)
+            server = create_server(port=0, db_path=Path(tmp) / "model.db")
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = server.server_address
+                with patch.dict(os.environ, {"JZX_ARTIFACT_ROOT": str(root)}, clear=False):
+                    url = f"http://{host}:{port}/model/v1/artifacts?uri={quote('artifact://model-output/S1/overlay.png')}"
+                    with urllib.request.urlopen(url, timeout=5) as response:
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.headers.get("content-type"), "image/png")
+                        self.assertEqual(response.read(), png_bytes)
+
+                    escape_url = f"http://{host}:{port}/model/v1/artifacts?uri={quote('artifact://../outside.png')}"
+                    with self.assertRaises(urllib.error.HTTPError) as raised:
+                        urllib.request.urlopen(escape_url, timeout=5)
+                    self.assertEqual(raised.exception.code, 400)
+                    raised.exception.close()
             finally:
                 server.shutdown()
                 server.server_close()
