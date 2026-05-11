@@ -478,11 +478,30 @@ describe("MedicalPanel", () => {
         reviewerName: "web-test",
         action: "approve",
         comment: null,
-        before: { status: "draft", draft_text: studyBundle.reports[0].draftText },
+        before: {
+          status: "draft",
+          draft_text: studyBundle.reports[0].draftText,
+          evidence_count: 5,
+          evidence_sources: [
+            "tirads_result",
+            "tirads_rule",
+            "medical_guideline",
+            "segmentation_result",
+            "measurement_result",
+          ],
+        },
         after: {
           status: "confirmed",
           draft_text: studyBundle.reports[0].draftText,
           final_text: "医生修订后的甲状腺超声报告",
+          evidence_count: 5,
+          evidence_sources: [
+            "tirads_result",
+            "tirads_rule",
+            "medical_guideline",
+            "segmentation_result",
+            "measurement_result",
+          ],
         },
         createdAt: 1778245300000,
       },
@@ -516,11 +535,30 @@ describe("MedicalPanel", () => {
             reviewerName: "web-test",
             action: "approve",
             comment: null,
-            before: { status: "draft", draft_text: studyBundle.reports[0].draftText },
+            before: {
+              status: "draft",
+              draft_text: studyBundle.reports[0].draftText,
+              evidence_count: 5,
+              evidence_sources: [
+                "tirads_result",
+                "tirads_rule",
+                "medical_guideline",
+                "segmentation_result",
+                "measurement_result",
+              ],
+            },
             after: {
               status: "confirmed",
               draft_text: studyBundle.reports[0].draftText,
               final_text: "医生修订后的甲状腺超声报告",
+              evidence_count: 5,
+              evidence_sources: [
+                "tirads_result",
+                "tirads_rule",
+                "medical_guideline",
+                "segmentation_result",
+                "measurement_result",
+              ],
             },
             createdAt: 1778245300000,
           },
@@ -829,8 +867,9 @@ describe("MedicalPanel", () => {
     expect(screen.getByText(/640×480/)).toBeInTheDocument();
     expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0);
     expect(screen.getByText("TR4")).toBeInTheDocument();
-    expect(screen.getByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
+    expect(screen.getAllByText(/甲状腺超声AI辅助报告/).length).toBeGreaterThan(0);
     expect(screen.getByText("报告依据")).toBeInTheDocument();
+    expect(screen.getByText("证据引用固定 · 5 项")).toBeInTheDocument();
     expect(screen.getByText("TI-RADS 规则库")).toBeInTheDocument();
     expect(screen.getByText("医学知识库")).toBeInTheDocument();
     expect(screen.getByText("分割依据 N1")).toBeInTheDocument();
@@ -883,9 +922,13 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("ACC-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
-    expect(await screen.findByText(/甲状腺超声AI辅助报告/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("报告正文"), {
+    await waitFor(() => expect(screen.getAllByText(/甲状腺超声AI辅助报告/).length).toBeGreaterThan(0));
+    expect(screen.getByText("结构化段落编辑")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("段落内容 1"), {
       target: { value: "医生修订后的甲状腺超声报告" },
+    });
+    fireEvent.change(screen.getByLabelText("段落内容 2"), {
+      target: { value: "" },
     });
     fireEvent.change(screen.getByLabelText("审核意见"), {
       target: { value: "医生已核对图像与证据" },
@@ -904,9 +947,81 @@ describe("MedicalPanel", () => {
     );
     expect(await screen.findByText("confirmed")).toBeInTheDocument();
     expect(screen.getByText("approve")).toBeInTheDocument();
+    expect(screen.getByText("证据快照")).toBeInTheDocument();
+    expect(screen.getByText("审核归档")).toBeInTheDocument();
     expect(screen.getAllByText("修改痕迹").length).toBeGreaterThan(0);
     expect(screen.getAllByText("医生修订后的甲状腺超声报告").length).toBeGreaterThan(0);
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
+
+    vi.mocked(reviewMedicalReport).mockResolvedValueOnce({
+      report: {
+        ...studyBundle.reports[0],
+        status: "archived",
+        finalText: "医生修订后的甲状腺超声报告",
+        confirmedBy: "web-test",
+        confirmedAt: 1778245300000,
+      },
+      doctorReview: {
+        id: "DR2",
+        reportId: "R1",
+        reviewerName: "web-test",
+        action: "archive",
+        comment: "归档",
+        before: { status: "confirmed", evidence_count: 5 },
+        after: { status: "archived", evidence_count: 5 },
+        createdAt: 1778245400000,
+      },
+      auditLog: {
+        id: "A4",
+        studyId: "S1",
+        actorType: "doctor",
+        actorId: "web-test",
+        action: "medical.report.archive",
+        targetType: "report",
+        targetId: "R1",
+        detail: { report_status: "archived", evidence_count: 5 },
+        traceId: "DR2",
+        createdAt: 1778245400000,
+      },
+      bundle: {
+        ...studyBundle,
+        reports: [
+          {
+            ...studyBundle.reports[0],
+            status: "archived",
+            finalText: "医生修订后的甲状腺超声报告",
+            confirmedBy: "web-test",
+            confirmedAt: 1778245300000,
+          },
+        ],
+        doctorReviews: [
+          {
+            id: "DR2",
+            reportId: "R1",
+            reviewerName: "web-test",
+            action: "archive",
+            comment: "归档",
+            before: { status: "confirmed", evidence_count: 5 },
+            after: { status: "archived", evidence_count: 5 },
+            createdAt: 1778245400000,
+          },
+        ],
+      },
+    });
+    fireEvent.change(screen.getByLabelText("审核意见"), {
+      target: { value: "归档" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "审核归档" }));
+
+    await waitFor(() =>
+      expect(reviewMedicalReport).toHaveBeenLastCalledWith("R1", {
+        action: "archive",
+        finalText: "医生修订后的甲状腺超声报告",
+        comment: "归档",
+      })
+    );
+    expect(await screen.findByText("archived")).toBeInTheDocument();
+    expect(screen.getByText("archive")).toBeInTheDocument();
   });
 
   it("draws a bbox on the overlay preview and saves the selected nodule revision", async () => {
@@ -1149,7 +1264,7 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("Revision Evidence Diff")).toBeInTheDocument();
     expect(screen.getByText("refreshed")).toBeInTheDocument();
     expect(screen.getByText("5.00 mm x 5.00 mm")).toBeInTheDocument();
-    expect(screen.getByText("tirads_result, segmentation_result, measurement_result")).toBeInTheDocument();
+    expect(screen.getAllByText("tirads_result, segmentation_result, measurement_result").length).toBeGreaterThan(0);
     expect(screen.getAllByText(refreshedMaskUri).length).toBeGreaterThan(0);
     expect(screen.getAllByText("R-REV").length).toBeGreaterThan(0);
   });

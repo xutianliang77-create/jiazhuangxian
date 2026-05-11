@@ -439,6 +439,9 @@ export async function handleReviewMedicalReport(
     const reviewerName = stringField(body, "reviewerName", "reviewer_name") ?? ctx.userId;
     const comment = stringField(body, "comment");
     const finalText = stringField(body, "finalText", "final_text");
+    if (action === "archive" && report.status !== "confirmed" && report.status !== "archived") {
+      throw new MedicalRequestError(400, "invalid-request", "only confirmed reports can be archived");
+    }
     const now = Date.now();
     const reviewed = repo.reviewReport({
       reportId,
@@ -458,6 +461,8 @@ export async function handleReviewMedicalReport(
       detail: {
         doctor_review_id: reviewed.doctorReview.id,
         report_status: reviewed.report.status,
+        evidence_count: reviewed.report.evidence.length,
+        evidence_sources: reportEvidenceSources(reviewed.report),
         comment: comment ?? null,
       },
       traceId: reviewed.doctorReview.id,
@@ -1027,8 +1032,8 @@ function imageInput(body: JsonObject): ImageInput {
 
 function reviewAction(body: JsonObject): ReportReviewAction {
   const action = requiredString(body, "action");
-  if (action === "approve" || action === "revise" || action === "reject") return action;
-  throw new MedicalRequestError(400, "invalid-request", "action must be approve, revise, or reject");
+  if (action === "approve" || action === "revise" || action === "reject" || action === "archive") return action;
+  throw new MedicalRequestError(400, "invalid-request", "action must be approve, revise, reject, or archive");
 }
 
 function requireBodyObject(body: unknown): JsonObject {

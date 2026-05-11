@@ -427,7 +427,7 @@ export interface AuditLogRecord {
   createdAt: number;
 }
 
-export type ReportReviewAction = "approve" | "revise" | "reject";
+export type ReportReviewAction = "approve" | "revise" | "reject" | "archive";
 
 export interface ReportReviewInput {
   id?: string;
@@ -1121,10 +1121,20 @@ export class MedicalCaseRepo {
     try {
       const before = this.getReport(input.reportId);
       if (!before) throw new Error(`Report not found: ${input.reportId}`);
-      const nextStatus = input.action === "reject" ? "rejected" : "confirmed";
-      const nextFinalText = input.action === "reject" ? before.finalText : input.finalText ?? before.finalText ?? before.draftText;
-      const confirmedBy = input.action === "reject" ? null : input.reviewerName;
-      const confirmedAt = input.action === "reject" ? null : now;
+      const nextStatus = reportStatusForReviewAction(input.action);
+      const nextFinalText = input.action === "reject"
+        ? before.finalText
+        : input.finalText ?? before.finalText ?? before.draftText;
+      const confirmedBy = input.action === "reject"
+        ? null
+        : input.action === "archive"
+          ? before.confirmedBy ?? input.reviewerName
+          : input.reviewerName;
+      const confirmedAt = input.action === "reject"
+        ? null
+        : input.action === "archive"
+          ? before.confirmedAt ?? now
+          : now;
       this.db
         .prepare<[string, string | null, string | null, number | null, number, string]>(
           `UPDATE report
@@ -1919,10 +1929,37 @@ function reportReviewSnapshot(report: ReportRecord): JsonObject {
     status: report.status,
     draft_text: report.draftText,
     final_text: report.finalText,
+    structured: report.structured,
+    structured_sections: reportStructuredSections(report),
+    evidence: report.evidence,
+    evidence_count: report.evidence.length,
+    evidence_sources: reportEvidenceSources(report),
     confirmed_by: report.confirmedBy,
     confirmed_at: report.confirmedAt,
     updated_at: report.updatedAt,
   };
+}
+
+function reportStatusForReviewAction(action: ReportReviewAction): string {
+  if (action === "reject") return "rejected";
+  if (action === "revise") return "pending_review";
+  if (action === "archive") return "archived";
+  return "confirmed";
+}
+
+function reportStructuredSections(report: ReportRecord): unknown[] {
+  const sections = report.structured.sections;
+  return Array.isArray(sections) ? sections : [];
+}
+
+function reportEvidenceSources(report: ReportRecord): string[] {
+  const sources = new Set<string>();
+  for (const item of report.evidence) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const source = (item as JsonObject).source;
+    if (typeof source === "string" && source.length > 0) sources.add(source);
+  }
+  return Array.from(sources);
 }
 
 function stringifyJson(value: JsonObject): string {

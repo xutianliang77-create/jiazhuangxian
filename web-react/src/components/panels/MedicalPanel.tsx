@@ -45,6 +45,7 @@ const COUNT_LABELS: Array<[keyof MedicalSummary["counts"], string]> = [
 const SEGMENT_MODEL_JOB_TYPE = "thyroid.segment_nodule";
 const MEASURE_MODEL_JOB_TYPE = "thyroid.measure_nodule";
 const MIN_REVISION_BBOX_EDGE_PX = 1;
+type MedicalReportReviewAction = "approve" | "revise" | "reject" | "archive";
 
 interface ManualCaseFormState {
   externalPatientId: string;
@@ -160,13 +161,13 @@ export default function MedicalPanel({ onError }: Props) {
     }
   }
 
-  async function reviewReport(report: MedicalReport, action: "approve" | "reject", finalText?: string, comment?: string) {
+  async function reviewReport(report: MedicalReport, action: MedicalReportReviewAction, finalText?: string, comment?: string) {
     setReviewBusyReportId(report.id);
     setDetailError(null);
     try {
       const result = await reviewMedicalReport(report.id, {
         action,
-        finalText: action === "approve" ? finalText ?? report.finalText ?? report.draftText ?? undefined : undefined,
+        finalText: action === "reject" ? undefined : finalText ?? report.finalText ?? report.draftText ?? undefined,
         comment,
       });
       setStudyBundle(result.bundle);
@@ -646,7 +647,7 @@ function StudyDetail({
   reviewingReportId: string | null;
   revisingNoduleId: string | null;
   onStartAnalysis(imageId: string): void;
-  onReviewReport(report: MedicalReport, action: "approve" | "reject", finalText?: string, comment?: string): void;
+  onReviewReport(report: MedicalReport, action: MedicalReportReviewAction, finalText?: string, comment?: string): void;
   onReviseNodule(nodule: MedicalNodule, bbox: number[]): Promise<void>;
 }) {
   if (!bundle) {
@@ -1527,20 +1528,22 @@ function ReportRow({
   report: MedicalReport;
   busy: boolean;
   reviewing: boolean;
-  onReview(action: "approve" | "reject", finalText?: string, comment?: string): void;
+  onReview(action: MedicalReportReviewAction, finalText?: string, comment?: string): void;
 }) {
   const text = report.finalText ?? report.draftText ?? "";
-  const [editedText, setEditedText] = useState(text);
+  const [sections, setSections] = useState<ReportSection[]>(() => reportSectionsFromText(text, report.structured));
   const [comment, setComment] = useState("");
   const canReview = report.status === "draft" || report.status === "pending_review";
+  const canArchive = report.status === "confirmed";
+  const editedText = composeReportText(sections);
 
   useEffect(() => {
-    setEditedText(text);
+    setSections(reportSectionsFromText(text, report.structured));
     setComment("");
-  }, [report.id, report.updatedAt, text]);
+  }, [report.id, report.status, report.updatedAt, text, report.structured]);
 
-  function submit(action: "approve" | "reject") {
-    onReview(action, action === "approve" ? editedText : undefined, optionalText(comment));
+  function submit(action: MedicalReportReviewAction) {
+    onReview(action, action === "reject" ? undefined : editedText, optionalText(comment));
   }
 
   return (
@@ -1554,14 +1557,7 @@ function ReportRow({
       </div>
       {canReview ? (
         <div className="mt-2 space-y-2">
-          <label className="block text-muted">
-            报告正文
-            <textarea
-              className={`${inputClass} mt-1 min-h-32 font-mono text-xs`}
-              value={editedText}
-              onChange={(event) => setEditedText(event.target.value)}
-            />
-          </label>
+          <StructuredReportEditor sections={sections} onChange={setSections} />
           <label className="block text-muted">
             审核意见
             <input
@@ -1576,9 +1572,7 @@ function ReportRow({
           )}
         </div>
       ) : text ? (
-        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg px-2 py-1.5 text-xs">
-          {text}
-        </pre>
+        <ReadonlyReportSections sections={reportSectionsFromText(text, report.structured)} />
       ) : null}
       <ReportEvidencePanel evidence={report.evidence} />
       {canReview && (
@@ -1591,6 +1585,119 @@ function ReportRow({
           </button>
         </div>
       )}
+      {canArchive && (
+        <div className="mt-2 space-y-2">
+          <label className="block text-muted">
+            审核意见
+            <input
+              className={`${inputClass} mt-1 text-xs`}
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="可选"
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className="btn-secondary" disabled={busy} onClick={() => submit("archive")}>
+              {reviewing ? "归档中..." : "审核归档"}
+            </button>
+            <span className="text-muted">confirmed by {report.confirmedBy ?? "doctor"}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ReportSection {
+  id: string;
+  title: string;
+  text: string;
+  includeTitle: boolean;
+}
+
+function StructuredReportEditor({
+  sections,
+  onChange,
+}: {
+  sections: ReportSection[];
+  onChange(next: ReportSection[]): void;
+}) {
+  function updateSection(index: number, patch: Partial<ReportSection>) {
+    onChange(sections.map((section, itemIndex) => itemIndex === index ? { ...section, ...patch } : section));
+  }
+
+  function addSection() {
+    onChange([
+      ...sections,
+      { id: `section-${sections.length + 1}`, title: `补充段落 ${sections.length + 1}`, text: "", includeTitle: true },
+    ]);
+  }
+
+  function removeSection(index: number) {
+    if (sections.length <= 1) return;
+    onChange(sections.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  return (
+    <div className="rounded border border-border p-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">结构化段落编辑</span>
+        <button type="button" className="btn-secondary" onClick={addSection}>新增段落</button>
+      </div>
+      <div className="mt-2 space-y-2">
+        {sections.map((section, index) => (
+          <div key={section.id} className="rounded border border-border p-2">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+              <label className="min-w-0 flex-1 text-muted">
+                段落标题
+                <input
+                  className={`${inputClass} mt-1 text-xs`}
+                  value={section.title}
+                  onChange={(event) => updateSection(index, { title: event.target.value, includeTitle: true })}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn-secondary md:mt-5"
+                disabled={sections.length <= 1}
+                onClick={() => removeSection(index)}
+              >
+                删除
+              </button>
+            </div>
+            <label className="mt-2 block text-muted">
+              段落内容
+              <textarea
+                aria-label={`段落内容 ${index + 1}`}
+                className={`${inputClass} mt-1 min-h-24 font-mono text-xs`}
+                value={section.text}
+                onChange={(event) => updateSection(index, { text: event.target.value })}
+              />
+            </label>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 rounded border border-border bg-bg px-2 py-1.5">
+        <div className="text-muted">报告正文预览</div>
+        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+          {composeReportText(sections)}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function ReadonlyReportSections({ sections }: { sections: ReportSection[] }) {
+  return (
+    <div className="mt-2 space-y-2">
+      {sections.map((section) => (
+        <div key={section.id} className="rounded border border-border px-2 py-1.5">
+          <div className="font-semibold">{section.title}</div>
+          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+            {section.text || "无"}
+          </pre>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1605,12 +1712,18 @@ interface ReportEvidenceDisplayRow {
 
 function ReportEvidencePanel({ evidence }: { evidence: unknown[] }) {
   const rows = reportEvidenceRows(evidence);
+  const sources = Array.from(new Set(rows.map((row) => row.source)));
   return (
     <div className="mt-3 border-t border-border pt-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="font-semibold">报告依据</span>
-        <span className="text-muted">{rows.length} 项</span>
+        <span className="text-muted">证据引用固定 · {rows.length} 项</span>
       </div>
+      {sources.length > 0 && (
+        <div className="mt-1 text-[11px] text-muted">
+          {sources.join(", ")}
+        </div>
+      )}
       {rows.length === 0 ? (
         <div className="mt-2 text-xs text-warning">未记录结构化报告依据，需医生人工复核。</div>
       ) : (
@@ -1653,8 +1766,37 @@ function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
         {beforeStatus} → {afterStatus}
         {textChanged && <span className="ml-2 text-warning">文本 {beforeText.length} → {afterText.length}</span>}
       </div>
+      <ReviewEvidenceSnapshot before={before} after={after} />
       {textChanged && <ReportTextDiff beforeText={beforeText} afterText={afterText} />}
       {review.comment && <div className="mt-2 text-muted">{review.comment}</div>}
+    </div>
+  );
+}
+
+function ReviewEvidenceSnapshot({
+  before,
+  after,
+}: {
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+}) {
+  const beforeCount = numberValue(before.evidence_count);
+  const afterCount = numberValue(after.evidence_count);
+  const beforeSources = stringList(before.evidence_sources);
+  const afterSources = stringList(after.evidence_sources);
+  if (beforeCount === null && afterCount === null && beforeSources.length === 0 && afterSources.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mt-2 rounded border border-border px-2 py-1.5 text-muted">
+      <div className="font-semibold text-fg">证据快照</div>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <Metric label="审核前证据" value={beforeCount === null ? "unknown" : `${beforeCount} 项`} />
+        <Metric label="审核后证据" value={afterCount === null ? "unknown" : `${afterCount} 项`} />
+      </div>
+      <div className="mt-1 text-[11px]">
+        {(afterSources.length > 0 ? afterSources : beforeSources).join(", ") || "no sources"}
+      </div>
     </div>
   );
 }
@@ -1931,6 +2073,53 @@ function Metric({ label, value }: { label: string; value: string }) {
 function formatTime(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return "unknown";
   return new Date(value).toLocaleString();
+}
+
+function reportSectionsFromText(text: string, structured: Record<string, unknown>): ReportSection[] {
+  const structuredSections = recordList(structured.sections)
+    .map((section, index) => {
+      const sectionText = stringValue(section.text) ?? stringValue(section.content) ?? "";
+      return {
+        id: stringValue(section.id) ?? `structured-${index + 1}`,
+        title: stringValue(section.title) ?? `段落 ${index + 1}`,
+        text: sectionText,
+        includeTitle: true,
+      };
+    })
+    .filter((section) => section.text.trim().length > 0 || section.title.trim().length > 0);
+  if (structuredSections.length > 0) return structuredSections;
+
+  const lines = text.split(/\r?\n/);
+  const sections = lines.map((line, index) => {
+    const trimmed = line.trim();
+    const heading = trimmed.match(/^([^：:]{1,24})[：:]\s*(.*)$/);
+    if (heading) {
+      return {
+        id: `line-${index + 1}`,
+        title: heading[1].trim(),
+        text: heading[2].trim(),
+        includeTitle: true,
+      };
+    }
+    return {
+      id: `line-${index + 1}`,
+      title: `段落 ${index + 1}`,
+      text: line,
+      includeTitle: false,
+    };
+  });
+  return sections.length > 0 ? sections : [{ id: "line-1", title: "段落 1", text: "", includeTitle: false }];
+}
+
+function composeReportText(sections: ReportSection[]): string {
+  const rendered = sections.map((section) => {
+      const title = section.title.trim();
+      const text = section.text.trimEnd();
+      if (!section.includeTitle || !title) return text;
+      return text ? `${title}：${text}` : `${title}：`;
+    });
+  while (rendered.length > 1 && rendered[rendered.length - 1] === "") rendered.pop();
+  return rendered.join("\n");
 }
 
 function textDiffSummary(beforeText: string, afterText: string): {

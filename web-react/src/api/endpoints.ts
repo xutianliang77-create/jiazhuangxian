@@ -770,7 +770,7 @@ export const startMedicalAnalysis = (studyId: string, input: { imageId?: string;
 export const reviewMedicalReport = (
   reportId: string,
   input: {
-    action: "approve" | "revise" | "reject";
+    action: "approve" | "revise" | "reject" | "archive";
     reviewerName?: string;
     comment?: string;
     finalText?: string;

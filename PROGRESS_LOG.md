@@ -2753,6 +2753,66 @@ git diff --check
 git push origin main
 ```
 
+## 2026-05-11 11:40 CST - Doctor Report Editor Hardening
+
+- Strengthened the doctor workstation report editor without adding RBAC or a new report subsystem.
+- Report cards now use structured paragraph editing:
+  - AI draft/final text is split into editable paragraph sections.
+  - Doctors can edit section titles/content, add sections, remove extra sections, and preview the composed final report text.
+  - Read-only confirmed/archived reports render as structured sections instead of one long free-text block.
+- Evidence references are now fixed and visible:
+  - The report evidence panel shows `证据引用固定` plus the evidence count and source list.
+  - Doctor review snapshots now preserve `structured`, `structured_sections`, full `evidence`, `evidence_count`, and `evidence_sources`.
+  - Doctor review history displays a `证据快照` block alongside text-diff history.
+- Added audit archive flow:
+  - `ReportReviewAction` now supports `archive`.
+  - Confirmed reports can be archived through the existing report review endpoint.
+  - Archive keeps the confirmed text and original confirmed doctor/time, writes a `doctor_review` row, and writes a `medical.report.archive` audit log.
+  - The UI shows an `审核归档` action after confirmation and moves the report to `archived` after success.
+- Existing approve/reject behavior is preserved; `revise` now maps to `pending_review` instead of being treated as confirmed.
+- `tmp-phase1.txt` remains untracked and unrelated.
+
+### Validation
+
+- `npm test -- test/unit/medical/caseRepo.test.ts` -> 13 tests OK.
+- `npm test -- test/unit/channels/web/server.test.ts` -> 47 tests OK.
+- `npm test -- test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts` -> 2 files, 60 tests OK.
+- `cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx` -> 15 tests OK.
+- `npm run typecheck` -> OK.
+- `cd web-react && npm run typecheck` -> OK.
+- `npm run build:web` -> OK, with the existing Monaco large chunk warning.
+- `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: Doctor Report Editor Hardening Implemented
+
+- Report editing now has structured paragraph editing, evidence locking visibility, review snapshot evidence history, and archive action support.
+- This change set is validated locally; confirm current commit/push state with `git status --short --branch`.
+- Existing branch was already ahead of `origin/main`; network push was not retried in this session.
+- Existing untracked `tmp-phase1.txt` remains unrelated and was not touched.
+
+### Background Tasks
+
+- No backend, Vite, model-worker, GPU, browser automation, or dev server process is running from this session.
+
+### Next Session Priorities
+
+1. Retry `git push origin main` when GitHub/network connectivity is available.
+2. Continue UI polish: batch case queue, richer evidence filtering, and surfacing model `evaluation.status` / detector `quality_gate.review_reasons` in the report review panel.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+git status --short --branch
+npm test -- test/unit/medical/caseRepo.test.ts test/unit/channels/web/server.test.ts
+cd web-react && npm test -- src/components/panels/MedicalPanel.test.tsx && npm run typecheck
+cd .. && npm run typecheck && npm run build:web
+git diff --check
+git push origin main
+```
+
 ## 2026-05-11 10:14 CST - GPU Inference Pipeline Evaluation Gates
 
 - Continued stabilizing the real GPU inference chain around the agreed policy `thyroid-gpu-pipeline-v1`.

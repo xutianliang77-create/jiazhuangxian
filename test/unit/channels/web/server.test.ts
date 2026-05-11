@@ -1158,6 +1158,35 @@ describe("Web server · medical API", () => {
       });
       expect(reviewBody.bundle.reports[0].status).toBe("confirmed");
       expect(reviewBody.bundle.doctorReviews[0].action).toBe("approve");
+
+      const archiveResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/reports/R-WEB-REVIEW/review`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action: "archive", comment: "archive after review" }),
+      });
+      expect(archiveResponse.status).toBe(200);
+      const archiveBody = (await archiveResponse.json()) as {
+        report: { status: string; finalText: string; confirmedBy: string };
+        doctorReview: { action: string; reviewerName: string; comment: string };
+        auditLog: { action: string; targetId: string };
+        bundle: { reports: Array<{ status: string }>; doctorReviews: Array<{ action: string }> };
+      };
+      expect(archiveBody.report).toMatchObject({
+        status: "archived",
+        finalText: "doctor final report",
+        confirmedBy: "web-test-tok",
+      });
+      expect(archiveBody.doctorReview).toMatchObject({
+        action: "archive",
+        reviewerName: "web-test-tok",
+        comment: "archive after review",
+      });
+      expect(archiveBody.auditLog).toMatchObject({
+        action: "medical.report.archive",
+        targetId: "R-WEB-REVIEW",
+      });
+      expect(archiveBody.bundle.reports[0].status).toBe("archived");
+      expect(archiveBody.bundle.doctorReviews.map((review) => review.action)).toEqual(["approve", "archive"]);
     } finally {
       localDb?.close();
       await medicalHandle?.close();

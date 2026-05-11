@@ -471,6 +471,8 @@ describe("MedicalCaseRepo", () => {
       studyId: study.id,
       draftText: "AI draft report",
       status: "draft",
+      structured: { sections: [{ id: "findings", title: "所见", text: "AI draft report" }] },
+      evidence: [{ source: "tirads_rule", rule_code: "ACR_2017_category_TR4" }],
       now: 1200,
     });
 
@@ -496,12 +498,49 @@ describe("MedicalCaseRepo", () => {
       reviewerName: "doctor-a",
       action: "approve",
       comment: "ok",
-      before: { status: "draft" },
-      after: { status: "confirmed", final_text: "doctor confirmed report" },
+      before: {
+        status: "draft",
+        evidence_count: 1,
+        evidence_sources: ["tirads_rule"],
+        structured_sections: [{ id: "findings", title: "所见", text: "AI draft report" }],
+      },
+      after: {
+        status: "confirmed",
+        final_text: "doctor confirmed report",
+        evidence_count: 1,
+        evidence_sources: ["tirads_rule"],
+      },
       createdAt: 1300,
     });
     expect(repo.listDoctorReviewsByStudy(study.id).map((item) => item.id)).toEqual([reviewed.doctorReview.id]);
     expect(repo.getStudyBundle(study.id)?.doctorReviews.map((item) => item.id)).toEqual([reviewed.doctorReview.id]);
+
+    const archived = repo.reviewReport({
+      reportId: report.id,
+      reviewerName: "doctor-a",
+      action: "archive",
+      comment: "归档",
+      now: 1400,
+    });
+
+    expect(archived.report).toMatchObject({
+      id: report.id,
+      status: "archived",
+      finalText: "doctor confirmed report",
+      confirmedBy: "doctor-a",
+      confirmedAt: 1300,
+      updatedAt: 1400,
+    });
+    expect(archived.doctorReview).toMatchObject({
+      reportId: report.id,
+      reviewerName: "doctor-a",
+      action: "archive",
+      comment: "归档",
+      before: { status: "confirmed", evidence_count: 1 },
+      after: { status: "archived", evidence_count: 1 },
+      createdAt: 1400,
+    });
+    expect(repo.listDoctorReviewsByStudy(study.id).map((item) => item.action)).toEqual(["approve", "archive"]);
   });
 
   it("reads safety rules and persists audit logs", () => {
