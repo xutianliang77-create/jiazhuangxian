@@ -6,6 +6,17 @@
 
 P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, remote RTX 5090 GPU runtime setup scripts, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, public thyroid ultrasound dataset bootstrap, TN3K mask-to-bbox detection annotation conversion, cleaned official TN5000 detection conversion, YOLO11m strict detector training, RF-DETR-Medium主检测模型决策, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
 
+### Latest Update - 2026-05-11 GPU E2E
+
+- Completed one real RTX 5090 GPU E2E smoke on TN5000 image `000016`.
+- Remote `model-gateway:check --strict` returned `ready` with RF-DETR, YOLOv11, RT-DETR, SAM2 static/video, and nnU-Net Tight ROI available.
+- RF-DETR-Medium primary detection succeeded with bbox `[312.55, 93.54, 539.81, 217.30]` and confidence `0.8938`.
+- YOLO11m comparator succeeded with bbox `[314.01, 92.88, 539.33, 222.87]`; comparison IoU was `0.9443` and status `matched`.
+- nnU-Net Tight ROI segmentation succeeded without bbox fallback and wrote mask artifact `mask_nodule_1.png`.
+- Mask measurement succeeded with `229 px x 130 px`, validation spacing `0.1 mm/px`, and `22.9 mm x 13.0 mm`.
+- Wrote the validation report to `docs/GPU_E2E_VALIDATION_20260511.md` and copied preview assets to `docs/assets/gpu-e2e-20260511/`.
+- Pulled raw model artifacts locally under `data/artifacts/gpu-e2e-20260511/`; these remain local runtime artifacts and are not intended for Git.
+
 ### Completed
 
 - Confirmed the GitHub repository: `https://github.com/xutianliang77-create/jiazhuangxian`.
