@@ -47,6 +47,14 @@ export interface MedicalAgentWorkerResult {
 const DETECT_JOB_TYPE = "thyroid.detect_nodules";
 const SEGMENT_JOB_TYPE = "thyroid.segment_nodule";
 const MEASURE_JOB_TYPE = "thyroid.measure_nodule";
+const GPU_PIPELINE_POLICY_VERSION = "thyroid-gpu-pipeline-v1";
+const DEFAULT_DETECTOR_MODEL = "rf-detr-medium-thyroid-detector";
+const DEFAULT_DETECTOR_MODEL_VERSION = "tn5000-rfdetr-medium-ema";
+const DEFAULT_DETECTOR_COMPARATOR_MODEL = "yolov11-thyroid-detector";
+const DEFAULT_SEGMENT_MODEL = "nnunet-tight-roi-segmenter";
+const DEFAULT_SEGMENT_MODEL_VERSION = "tn3k-tight-roi-5fold-best";
+const DEFAULT_MEASURE_MODEL = "mask-measurement-worker";
+const DEFAULT_MEASURE_MODEL_VERSION = "validation-measurement-v1";
 const IMAGE_QC_PATH = "/image/v1/image-quality-check";
 const THYROID_REPORT_TEMPLATE_ID = "tpl-thyroid-ultrasound-draft-v1";
 const THYROID_REPORT_TEMPLATE = `甲状腺超声AI辅助报告（草稿）
@@ -372,8 +380,8 @@ function ensureDetectorModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, no
     jobType: DETECT_JOB_TYPE,
     priority: optionalNumber(task.input.priority) ?? 100,
     maxAttempts: optionalNumber(task.input.max_attempts) ?? 1,
-    modelName: optionalString(task.input.model),
-    modelVersion: optionalString(task.input.model_version),
+    modelName: optionalString(task.input.model) ?? DEFAULT_DETECTOR_MODEL,
+    modelVersion: optionalString(task.input.model_version) ?? DEFAULT_DETECTOR_MODEL_VERSION,
     weightsHash: optionalString(task.input.weights_hash),
     input: {
       study_id: studyId,
@@ -385,6 +393,7 @@ function ensureDetectorModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, no
         width: image.width,
         height: image.height,
         pixel_spacing: image.pixelSpacing,
+        model_pipeline: modelPipelineMetadata("detect_nodules"),
       },
       trace_id: task.id,
     },
@@ -397,6 +406,7 @@ function ensureSegmentModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
   if (existing) return existing;
   const { studyId, imageId, image } = taskImage(repo, task);
   const nodules = selectTaskNodules(repo.listNodulesByStudy(studyId), task);
+  const allowBboxFallback = optionalBoolean(task.input.allow_bbox_fallback) ?? !realInferenceStrict();
   return repo.createModelJob({
     studyId,
     imageId,
@@ -404,8 +414,8 @@ function ensureSegmentModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
     jobType: SEGMENT_JOB_TYPE,
     priority: optionalNumber(task.input.priority) ?? 110,
     maxAttempts: optionalNumber(task.input.max_attempts) ?? 1,
-    modelName: optionalString(task.input.model) ?? "nnunet-tight-roi-segmenter",
-    modelVersion: optionalString(task.input.model_version) ?? "tn3k-tight-roi-5fold-best",
+    modelName: optionalString(task.input.model) ?? DEFAULT_SEGMENT_MODEL,
+    modelVersion: optionalString(task.input.model_version) ?? DEFAULT_SEGMENT_MODEL_VERSION,
     weightsHash: optionalString(task.input.weights_hash),
     input: {
       study_id: studyId,
@@ -417,13 +427,14 @@ function ensureSegmentModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
         bbox: nodule.bbox,
         confidence: nodule.detectionConfidence,
       })),
-      allow_bbox_fallback: optionalBoolean(task.input.allow_bbox_fallback) ?? true,
+      allow_bbox_fallback: allowBboxFallback,
       return_mask: true,
       metadata: {
         file_type: image.fileType,
         width: image.width,
         height: image.height,
         pixel_spacing: image.pixelSpacing,
+        model_pipeline: modelPipelineMetadata("segment_nodules", { allowBboxFallback }),
       },
       trace_id: task.id,
     },
@@ -443,8 +454,8 @@ function ensureMeasureModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
     jobType: MEASURE_JOB_TYPE,
     priority: optionalNumber(task.input.priority) ?? 120,
     maxAttempts: optionalNumber(task.input.max_attempts) ?? 1,
-    modelName: optionalString(task.input.model) ?? "mask-measurement-worker",
-    modelVersion: optionalString(task.input.model_version) ?? "validation-measurement-v1",
+    modelName: optionalString(task.input.model) ?? DEFAULT_MEASURE_MODEL,
+    modelVersion: optionalString(task.input.model_version) ?? DEFAULT_MEASURE_MODEL_VERSION,
     weightsHash: optionalString(task.input.weights_hash),
     input: {
       study_id: studyId,
@@ -462,11 +473,49 @@ function ensureMeasureModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
         file_type: image.fileType,
         width: image.width,
         height: image.height,
+        model_pipeline: modelPipelineMetadata("measure_nodules"),
       },
       trace_id: task.id,
     },
     now,
   });
+}
+
+function modelPipelineMetadata(
+  taskType: "detect_nodules" | "segment_nodules" | "measure_nodules",
+  options: { allowBboxFallback?: boolean } = {}
+): JsonObject {
+  return {
+    policy_version: GPU_PIPELINE_POLICY_VERSION,
+    task_type: taskType,
+    strict_real_inference: realInferenceStrict(),
+    detector: {
+      primary_model: DEFAULT_DETECTOR_MODEL,
+      primary_model_version: DEFAULT_DETECTOR_MODEL_VERSION,
+      comparator_model: DEFAULT_DETECTOR_COMPARATOR_MODEL,
+      consensus_iou_threshold: 0.5,
+      llm_evaluator: "qwen3.6",
+    },
+    segmentation: {
+      primary_model: DEFAULT_SEGMENT_MODEL,
+      primary_model_version: DEFAULT_SEGMENT_MODEL_VERSION,
+      review_models: ["sam2-thyroid-segmenter", "medsam-thyroid-segmenter"],
+      bbox_fallback_allowed: options.allowBboxFallback ?? !realInferenceStrict(),
+    },
+    measurement: {
+      primary_model: DEFAULT_MEASURE_MODEL,
+      primary_model_version: DEFAULT_MEASURE_MODEL_VERSION,
+      requires_pixel_spacing_for_mm: true,
+    },
+    safety: {
+      doctor_review_required: true,
+      llm_must_not_modify_bbox: true,
+    },
+  };
+}
+
+function realInferenceStrict(): boolean {
+  return process.env.JZX_MEDICAL_REAL_INFERENCE === "1";
 }
 
 function selectTaskNodules(nodules: NoduleRecord[], task: AgentTaskRecord): NoduleRecord[] {
@@ -1529,8 +1578,9 @@ function queueAutomaticDownstreamTask(
       input: {
         study_id: modelJob.studyId ?? task.input.study_id,
         image_id: modelJob.imageId ?? task.input.image_id,
-        model: "nnunet-tight-roi-segmenter",
-        model_version: "tn3k-tight-roi-5fold-best",
+        model: DEFAULT_SEGMENT_MODEL,
+        model_version: DEFAULT_SEGMENT_MODEL_VERSION,
+        allow_bbox_fallback: !realInferenceStrict(),
         auto_queued_from_task_id: task.id,
         auto_queued_from_job_type: modelJob.jobType,
       },
@@ -1546,8 +1596,8 @@ function queueAutomaticDownstreamTask(
       input: {
         study_id: modelJob.studyId ?? task.input.study_id,
         image_id: modelJob.imageId ?? task.input.image_id,
-        model: "mask-measurement-worker",
-        model_version: "validation-measurement-v1",
+        model: DEFAULT_MEASURE_MODEL,
+        model_version: DEFAULT_MEASURE_MODEL_VERSION,
         auto_queued_from_task_id: task.id,
         auto_queued_from_job_type: modelJob.jobType,
       },

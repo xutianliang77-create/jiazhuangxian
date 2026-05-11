@@ -98,6 +98,9 @@ def write_segmentation_artifact(
 
 def build_segmentation_artifact(job: Mapping[str, Any], output: Mapping[str, Any], *, worker_id: str) -> JsonDict:
     input_payload = parse_json_object(job.get("input_json"))
+    segmentations = normalize_segmentations(output.get("segmentations"))
+    warnings = output.get("warnings", []) if isinstance(output.get("warnings"), list) else []
+    model = output.get("model") if isinstance(output.get("model"), dict) else {}
     return {
         "schema_version": SEGMENTATION_SCHEMA_VERSION,
         "artifact_kind": SEGMENTATION_ARTIFACT_KIND,
@@ -114,13 +117,14 @@ def build_segmentation_artifact(job: Mapping[str, Any], output: Mapping[str, Any
             "origin": "top_left",
             "unit": "pixel",
         },
-        "model": output.get("model") if isinstance(output.get("model"), dict) else {},
+        "model": model,
+        "evaluation": segmentation_artifact_evaluation(segmentations, warnings, model),
         "artifacts": {
             "segmentation_json": None,
             "mask_images": [],
         },
-        "segmentations": normalize_segmentations(output.get("segmentations")),
-        "warnings": output.get("warnings", []) if isinstance(output.get("warnings"), list) else [],
+        "segmentations": segmentations,
+        "warnings": warnings,
         "raw_output": dict(output),
     }
 
@@ -162,6 +166,7 @@ def write_measurement_artifact(
         "artifacts": {"measurements_json": artifact_uri},
         "measurements": output.get("measurements", []) if isinstance(output.get("measurements"), list) else [],
         "pixel_spacing": output.get("pixel_spacing") if isinstance(output.get("pixel_spacing"), dict) else {},
+        "evaluation": measurement_artifact_evaluation(output),
         "warnings": output.get("warnings", []) if isinstance(output.get("warnings"), list) else [],
         "raw_output": dict(output),
     }
@@ -210,6 +215,9 @@ def write_video_segmentation_artifact(
 
 def build_video_segmentation_artifact(job: Mapping[str, Any], output: Mapping[str, Any], *, worker_id: str) -> JsonDict:
     input_payload = parse_json_object(job.get("input_json"))
+    tracks = normalize_video_tracks(output.get("tracks"))
+    warnings = output.get("warnings", []) if isinstance(output.get("warnings"), list) else []
+    model = output.get("model") if isinstance(output.get("model"), dict) else {}
     return {
         "schema_version": VIDEO_SEGMENTATION_SCHEMA_VERSION,
         "artifact_kind": VIDEO_SEGMENTATION_ARTIFACT_KIND,
@@ -227,14 +235,15 @@ def build_video_segmentation_artifact(job: Mapping[str, Any], output: Mapping[st
             "origin": "top_left",
             "unit": "pixel",
         },
-        "model": output.get("model") if isinstance(output.get("model"), dict) else {},
+        "model": model,
         "video": output.get("video") if isinstance(output.get("video"), dict) else {},
+        "evaluation": video_segmentation_artifact_evaluation(tracks, warnings, model),
         "artifacts": {
             "video_segmentation_json": None,
             "mask_images": [],
         },
-        "tracks": normalize_video_tracks(output.get("tracks")),
-        "warnings": output.get("warnings", []) if isinstance(output.get("warnings"), list) else [],
+        "tracks": tracks,
+        "warnings": warnings,
         "raw_output": dict(output),
     }
 
@@ -279,6 +288,7 @@ def write_video_measurement_artifact(
         "measurements": output.get("measurements", []) if isinstance(output.get("measurements"), list) else [],
         "pixel_spacing": output.get("pixel_spacing") if isinstance(output.get("pixel_spacing"), dict) else {},
         "measurement_policy": string_or_none(output.get("measurement_policy")),
+        "evaluation": measurement_artifact_evaluation(output, protocol="thyroid.video_measurement.evaluation.v1"),
         "warnings": output.get("warnings", []) if isinstance(output.get("warnings"), list) else [],
         "raw_output": dict(output),
     }
@@ -320,6 +330,7 @@ def build_detector_artifact(job: Mapping[str, Any], output: Mapping[str, Any], *
             "comparators": comparison.get("comparators", []),
             "consensus": comparison.get("consensus", {"status": "single_model_only"}),
         },
+        "evaluation": detector_artifact_evaluation(comparison, detections),
         "artifacts": {
             "detections_json": None,
             "overlay_image": overlay_uri,
@@ -344,6 +355,7 @@ def write_comparison_artifact(out_dir: Path, rel_dir: Path, artifact: Mapping[st
         "primary": detectors.get("primary"),
         "comparators": detectors.get("comparators", []),
         "comparison": comparison,
+        "quality_gate": comparison.get("quality_gate") if isinstance(comparison, dict) else None,
         "llm_evaluation": llm_evaluation,
     }
     comparison_path = out_dir / "comparison.json"
@@ -372,6 +384,19 @@ def normalize_detections(value: Any) -> list[JsonDict]:
     return detections
 
 
+def detector_artifact_evaluation(comparison: Mapping[str, Any], detections: list[JsonDict]) -> JsonDict:
+    quality_gate = comparison.get("quality_gate") if isinstance(comparison.get("quality_gate"), dict) else None
+    consensus = comparison.get("consensus") if isinstance(comparison.get("consensus"), dict) else {}
+    return {
+        "protocol": "thyroid.detector.evaluation.v1",
+        "status": string_or_none(quality_gate.get("status")) if quality_gate else "single_model_review",
+        "consensus_status": string_or_none(consensus.get("status")) or "single_model_only",
+        "detection_count": len(detections),
+        "requires_doctor_review": True,
+        "review_reasons": quality_gate.get("review_reasons", ["single_model_or_unavailable_comparator"]) if quality_gate else ["single_model_or_unavailable_comparator"],
+    }
+
+
 def normalize_segmentations(value: Any) -> list[JsonDict]:
     if not isinstance(value, list):
         return []
@@ -395,6 +420,131 @@ def normalize_segmentations(value: Any) -> list[JsonDict]:
             }
         )
     return segmentations
+
+
+def segmentation_artifact_evaluation(segmentations: list[JsonDict], warnings: list[Any], model: Mapping[str, Any]) -> JsonDict:
+    sources = {string_or_none(item.get("segmentation_source")) or "unknown" for item in segmentations}
+    fallback_used = "bbox_fallback" in sources
+    warning_text = [str(item) for item in warnings]
+    if not segmentations:
+        status = "blocked_real_model_unavailable" if any("fallback_disabled" in item for item in warning_text) else "no_segmentation"
+    elif fallback_used:
+        status = "validation_fallback_requires_review"
+    else:
+        status = "real_model_result_requires_review"
+    return {
+        "protocol": "thyroid.segmentation.evaluation.v1",
+        "status": status,
+        "primary_model": string_or_none(model.get("name")) or "unknown",
+        "segmentation_count": len(segmentations),
+        "fallback_used": fallback_used,
+        "requires_doctor_review": True,
+        "review_reasons": segmentation_review_reasons(segmentations, warning_text, fallback_used),
+    }
+
+
+def segmentation_review_reasons(segmentations: list[JsonDict], warnings: list[str], fallback_used: bool) -> list[str]:
+    reasons: list[str] = []
+    if not segmentations:
+        reasons.append("no_segmentation_output")
+    if fallback_used:
+        reasons.append("bbox_fallback_mask_not_real_segmentation")
+    if warnings:
+        reasons.append("segmentation_warnings_present")
+    if any(item.get("requires_doctor_review") for item in segmentations):
+        reasons.append("segmenter_marked_doctor_review")
+    return sorted(set(reasons or ["medical_result_requires_doctor_review"]))
+
+
+def video_segmentation_artifact_evaluation(tracks: list[JsonDict], warnings: list[Any], model: Mapping[str, Any]) -> JsonDict:
+    frame_count = sum(len(track.get("frames", [])) for track in tracks if isinstance(track.get("frames"), list))
+    sources = {
+        string_or_none(track.get("segmentation_source")) or "unknown"
+        for track in tracks
+    }
+    fallback_used = any("fallback" in source for source in sources)
+    warning_text = [str(item) for item in warnings]
+    if not tracks:
+        status = "blocked_video_model_unavailable" if any("fallback_disabled" in item for item in warning_text) else "no_video_segmentation"
+    elif fallback_used:
+        status = "validation_fallback_requires_review"
+    else:
+        status = "real_video_model_result_requires_review"
+    return {
+        "protocol": "thyroid.video_segmentation.evaluation.v1",
+        "status": status,
+        "primary_model": string_or_none(model.get("name")) or "unknown",
+        "track_count": len(tracks),
+        "frame_count": frame_count,
+        "fallback_used": fallback_used,
+        "requires_doctor_review": True,
+        "review_reasons": video_segmentation_review_reasons(tracks, warning_text, fallback_used),
+    }
+
+
+def video_segmentation_review_reasons(tracks: list[JsonDict], warnings: list[str], fallback_used: bool) -> list[str]:
+    reasons: list[str] = []
+    if not tracks:
+        reasons.append("no_video_segmentation_output")
+    if fallback_used:
+        reasons.append("framewise_or_bbox_fallback_not_real_video_propagation")
+    if warnings:
+        reasons.append("video_segmentation_warnings_present")
+    if any(track.get("requires_doctor_review") for track in tracks):
+        reasons.append("video_segmenter_marked_doctor_review")
+    return sorted(set(reasons or ["medical_video_result_requires_doctor_review"]))
+
+
+def measurement_artifact_evaluation(
+    output: Mapping[str, Any],
+    *,
+    protocol: str = "thyroid.measurement.evaluation.v1",
+) -> JsonDict:
+    measurements = output.get("measurements") if isinstance(output.get("measurements"), list) else []
+    warnings = [str(item) for item in output.get("warnings", [])] if isinstance(output.get("warnings"), list) else []
+    pixel_spacing = output.get("pixel_spacing") if isinstance(output.get("pixel_spacing"), dict) else {}
+    has_spacing = bool(pixel_spacing)
+    has_mm = any(measurement_has_mm(item) for item in measurements if isinstance(item, dict))
+    if not measurements:
+        status = "no_measurement"
+    elif has_mm:
+        status = "mm_measurement_available"
+    elif has_spacing:
+        status = "measurement_missing_mm_review"
+    else:
+        status = "pixel_only_requires_calibration"
+    return {
+        "protocol": protocol,
+        "status": status,
+        "measurement_count": len(measurements),
+        "pixel_spacing_available": has_spacing,
+        "mm_measurement_available": has_mm,
+        "requires_doctor_review": True,
+        "review_reasons": measurement_review_reasons(measurements, warnings, has_spacing, has_mm),
+    }
+
+
+def measurement_has_mm(item: Mapping[str, Any]) -> bool:
+    keys = ("long_axis_mm", "short_axis_mm", "ap_axis_mm", "area_mm2")
+    return any(number_or_none(item.get(key)) is not None for key in keys)
+
+
+def measurement_review_reasons(
+    measurements: list[Any],
+    warnings: list[str],
+    has_spacing: bool,
+    has_mm: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if not measurements:
+        reasons.append("no_measurement_output")
+    if not has_spacing:
+        reasons.append("pixel_spacing_missing")
+    if not has_mm:
+        reasons.append("mm_measurement_unavailable")
+    if warnings:
+        reasons.append("measurement_warnings_present")
+    return sorted(set(reasons or ["medical_measurement_requires_doctor_review"]))
 
 
 def normalize_video_tracks(value: Any) -> list[JsonDict]:

@@ -34,6 +34,7 @@ Python 模型服务入口，负责模型路由、SQLite `model_job` 队列和本
 - `thyroid.segment_video_nodule` 当前验证版支持 `video-bbox-fallback-segmenter`，只会在 prompt 帧生成明确标记的 bbox mask，供链路验证和医生复核，不等同于 MedSAM2/SAM2 真实视频传播。
 - `thyroid.segment_video_nodule` 已预留 MedSAM2/SAM2 video predictor adapter：当 `model` 包含 `medsam2`/`sam2` 且配置完整时，会尝试调用真实 SAM2 视频传播；未配置时会返回明确 warning，关闭 fallback 时不会生成伪结果。
 - `thyroid.measure_video_nodule` 会读取 `video_segmentation.json`，按 `max_long_axis_high_confidence` 等策略选择关键帧并生成视频测量；只有输入 `pixel_spacing` 时才输出毫米值。
+- 真实 GPU 链路统一策略为 `thyroid-gpu-pipeline-v1`：静态图像采用 RF-DETR 主检测、YOLO11m 对照、nnU-Net Tight ROI 主分割、SAM2/MedSAM 复核；视频采用 SAM2/MedSAM2 video prompt 主路线。`JZX_MEDICAL_REAL_INFERENCE=1` 时，CodeClaw 医疗 Agent 自动排队分割任务会关闭 bbox fallback。
 - 默认主模型 adapter：RF-DETR-Medium，权重路径通过 `JZX_RFDETR_WEIGHTS` 配置。
 - 对照模型 adapter：YOLO11m / Ultralytics YOLO，权重路径通过 `JZX_YOLOV11_WEIGHTS` 配置；主模型为 RF-DETR 时会同步运行对照模型并生成 `comparison.json`。
 - Transformer 对照 adapter：RT-DETR / Ultralytics RTDETR，权重路径通过 `JZX_RTDETR_WEIGHTS` 配置。
@@ -156,6 +157,7 @@ npm run model-gateway:check -- --db data/artifacts/medical/data.db
 - `ultralytics`、`torch`、`rfdetr` 等检测运行时包。
 - RF-DETR、YOLOv11、RT-DETR 权重环境变量、路径存在性、是否可读和文件大小。
 - Torch/CUDA 是否可用、GPU 数量、设备名称和显存。
+- `pipeline.policy_version = thyroid-gpu-pipeline-v1`，并分别报告静态图像链路和视频链路的主模型、对照模型、fallback 策略、ready/degraded 状态和 warning。
 
 配置 RT-DETR 对照 adapter：
 
@@ -186,7 +188,10 @@ JSON 中包含：
 - `detectors.primary`：RF-DETR-Medium 主模型摘要
 - `detectors.comparators`：YOLO11m 对照模型摘要
 - `detectors.consensus`：IoU 匹配后一致性状态，例如 `matched`、`primary_only`、`comparator_only`、`conflict`
+- `evaluation`：检测产物级评估，记录双模型一致性、是否进入复核、复核原因
 - `llm_evaluation`：待主 LLM/Qwen3.6 消费的结构化评估包，LLM 不直接生成或修改 bbox
+
+当存在对照模型输出时，同目录 `comparison.json` 会额外包含 `quality_gate`：`pass` 表示 RF-DETR 与 YOLO11m 在 IoU 阈值下匹配且无对照模型 warning；`review` 表示缺失对照、冲突、单模型检出或无检出等情况，需要医生和主 LLM 重点复核。
 
 分割任务成功后，worker 会写入：
 
@@ -210,6 +215,8 @@ artifact://model-output/thyroid-measure-video-nodule/<study_id>/<video_id>/<mode
 ```
 
 验证版分割如果使用 bbox fallback，产物会带 `segmentation_source = bbox_fallback` 和 `requires_doctor_review = true`。测量任务在缺少 DICOM `PixelSpacing` 或人工标尺时只输出像素测量，毫米字段保持 `null`。
+
+所有检测、分割、测量、视频分割和视频测量产物都包含 `evaluation` 字段。该字段用于把真实模型输出、fallback 输出、低置信或缺少标定等情况统一转换为 `pass` / `review` / `blocked` 类状态，供 Agent 调度、报告依据、医生工作台和审计日志使用。
 
 完整结构见项目文档：`docs/MODEL_ARTIFACT_CONVENTIONS.md`。
 

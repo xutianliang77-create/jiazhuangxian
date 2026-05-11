@@ -50,8 +50,19 @@ describe("medical agent worker", () => {
       agentTaskId: tasks[1].id,
       jobType: "thyroid.detect_nodules",
       status: "queued",
+      modelName: "rf-detr-medium-thyroid-detector",
+      modelVersion: "tn5000-rfdetr-medium-ema",
     });
     expect(modelJob?.input.image_uri).toBe("artifact://raw/ACC-AGENT/IMG1.png");
+    expect(modelJob?.input.metadata).toMatchObject({
+      model_pipeline: {
+        policy_version: "thyroid-gpu-pipeline-v1",
+        detector: {
+          primary_model: "rf-detr-medium-thyroid-detector",
+          comparator_model: "yolov11-thyroid-detector",
+        },
+      },
+    });
 
     db.prepare(
       `UPDATE model_job
@@ -417,6 +428,62 @@ describe("medical agent worker", () => {
       ],
     });
     expect(repo.getAnalysisSession(sessionId)?.status).toBe("running");
+  });
+
+  it("defaults automatic segmentation to strict real GPU mode when enabled", () => {
+    const previous = process.env.JZX_MEDICAL_REAL_INFERENCE;
+    process.env.JZX_MEDICAL_REAL_INFERENCE = "1";
+    try {
+      const { tasks } = seedAgentTaskChain(["detect_nodules"]);
+      const first = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 3100 });
+      expect(first).toMatchObject({ status: "waiting_model", taskType: "detect_nodules" });
+
+      db.prepare(
+        `UPDATE model_job
+         SET status = 'succeeded', output_json = ?, completed_at = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(
+        JSON.stringify({ nodules: [{ nodule_index: 1, bbox: [10, 20, 30, 50], confidence: 0.91 }] }),
+        3200,
+        3200,
+        first.modelJobId
+      );
+
+      const second = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 3300 });
+      expect(second).toMatchObject({
+        status: "succeeded",
+        taskType: "detect_nodules",
+        output: {
+          auto_queued_task: {
+            task_type: "segment_nodules",
+            parent_task_id: tasks[0].id,
+            input: {
+              allow_bbox_fallback: false,
+            },
+          },
+        },
+      });
+
+      const third = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 3400 });
+      expect(third).toMatchObject({ status: "waiting_model", taskType: "segment_nodules" });
+      expect(repo.getModelJob(third.modelJobId!)?.input).toMatchObject({
+        allow_bbox_fallback: false,
+        metadata: {
+          model_pipeline: {
+            strict_real_inference: true,
+            segmentation: {
+              bbox_fallback_allowed: false,
+            },
+          },
+        },
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.JZX_MEDICAL_REAL_INFERENCE;
+      } else {
+        process.env.JZX_MEDICAL_REAL_INFERENCE = previous;
+      }
+    }
   });
 
   it("fails the detector task and blocks downstream tasks when model_job fails", () => {

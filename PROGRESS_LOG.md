@@ -2753,6 +2753,70 @@ git diff --check
 git push origin main
 ```
 
+## 2026-05-11 10:14 CST - GPU Inference Pipeline Evaluation Gates
+
+- Continued stabilizing the real GPU inference chain around the agreed policy `thyroid-gpu-pipeline-v1`.
+- Added model-gateway config reporting for the unified chain:
+  - Static image chain: RF-DETR primary detection, YOLO11m comparator, nnU-Net Tight ROI primary segmentation, SAM2/MedSAM review options, mask measurement.
+  - Video chain: SAM2/MedSAM2 video prompt segmentation and video mask measurement.
+  - `JZX_MEDICAL_REAL_INFERENCE=1` is now reflected in config output and disables validation fallback defaults in the CodeClaw medical Agent auto-queued static segmentation path.
+- Added detector result gating:
+  - RF-DETR/YOLO comparison now includes `evaluation_protocol = thyroid.detector.dual_model_consensus.v1`.
+  - `comparison.json` now includes `quality_gate` with `pass` / `review`, IoU threshold, model roles, and machine-readable review reasons.
+  - `detections.json` now includes detector artifact `evaluation`.
+- Added artifact-level evaluation for all major model outputs:
+  - Static segmentation: `thyroid.segmentation.evaluation.v1`.
+  - Static measurement: `thyroid.measurement.evaluation.v1`.
+  - Video segmentation: `thyroid.video_segmentation.evaluation.v1`.
+  - Video measurement: `thyroid.video_measurement.evaluation.v1`.
+- Updated CodeClaw medical Agent model job defaults and metadata:
+  - Detector jobs default to `rf-detr-medium-thyroid-detector` / `tn5000-rfdetr-medium-ema`.
+  - Automatic downstream segmentation uses `nnunet-tight-roi-segmenter` / `tn3k-tight-roi-5fold-best`.
+  - Measurement uses `mask-measurement-worker` / `validation-measurement-v1`.
+  - Model jobs now carry `metadata.model_pipeline` so downstream report evidence and audits can identify the intended model split.
+- Updated documentation:
+  - `services/model-gateway/README.md` documents the unified GPU chain, strict real inference flag, config report pipeline block, `quality_gate`, and artifact `evaluation`.
+  - `docs/MODEL_ARTIFACT_CONVENTIONS.md` documents the unified evaluation field and per-artifact protocols.
+
+### Validation
+
+- `python3 -m unittest services/model-gateway/tests/test_gateway.py` -> 29 tests OK.
+- `npm test -- test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts test/unit/medical/mcp-server.test.ts` -> 3 files, 45 tests OK.
+- `npm run typecheck` -> OK.
+- `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: GPU Pipeline Evaluation Gates Implemented
+
+- Real GPU inference chain governance is now explicit in config, Agent model job metadata, detector comparison artifacts, and segmentation/measurement artifacts.
+- This change set is validated locally; confirm current commit/push state with `git status --short --branch`.
+- Local commit was created, but `git push origin main` failed with `Failed to connect to github.com port 443 after 75051 ms: Couldn't connect to server`; branch is expected to remain ahead of `origin/main`.
+- Existing untracked `tmp-phase1.txt` remains unrelated and was not touched.
+
+### Background Tasks
+
+- No backend, Vite, training, model-worker, GPU, browser automation, or dev server process is running from this session.
+
+### Next Session Priorities
+
+1. Run a real 5090 strict-mode smoke with `JZX_MEDICAL_REAL_INFERENCE=1`: RF-DETR primary + YOLO comparator -> nnU-Net Tight ROI -> measurement, then inspect `quality_gate` and artifact `evaluation`.
+2. Run or schedule the SAM2/MedSAM2 video prompt smoke once video weights/config are confirmed on the 5090.
+3. Retry `git push origin main` once GitHub/network connectivity is available.
+4. Surface `evaluation.status` and `quality_gate.review_reasons` more prominently in the doctor workstation and Qwen3.6 result-evaluation prompt.
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+git status --short --branch
+python3 -m unittest services/model-gateway/tests/test_gateway.py
+npm test -- test/unit/medical/agentWorker.test.ts test/unit/medical/caseRepo.test.ts test/unit/medical/mcp-server.test.ts
+npm run typecheck
+git diff --check
+git push origin main
+```
+
 ## 2026-05-11 07:40 CST - Report Evidence Panel
 
 - Continued the doctor workstation evidence workflow by adding a per-report `报告依据` panel in `MedicalPanel`.

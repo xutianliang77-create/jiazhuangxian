@@ -115,6 +115,7 @@ def build_config_report(
     ready_detectors = [item for item in detectors if item["ready"]]
     ready_segmenters = [item for item in segmenters if item["ready"]]
     ready_video_segmenters = [item for item in video_segmenters if item["ready"]]
+    pipeline = pipeline_status(detectors, segmenters, video_segmenters, source_env)
     missing_base = [item for item in base_packages if item["required"] and not item["installed"]]
     warnings: list[str] = []
     if not ready_detectors:
@@ -151,7 +152,75 @@ def build_config_report(
         "ready_detectors": [item["model_family"] for item in ready_detectors],
         "ready_segmenters": [item["model_family"] for item in ready_segmenters],
         "ready_video_segmenters": [item["model_family"] for item in ready_video_segmenters],
+        "pipeline": pipeline,
         "warnings": warnings,
+    }
+
+
+def pipeline_status(
+    detectors: list[JsonDict],
+    segmenters: list[JsonDict],
+    video_segmenters: list[JsonDict],
+    env: Mapping[str, str],
+) -> JsonDict:
+    detector_by_family = {str(item["model_family"]): item for item in detectors}
+    segmenter_by_family = {str(item["model_family"]): item for item in segmenters}
+    video_by_family = {str(item["model_family"]): item for item in video_segmenters}
+    strict_real_inference = (env.get("JZX_MEDICAL_REAL_INFERENCE") or "").strip() == "1"
+    rfdetr_ready = bool(detector_by_family.get("rf-detr", {}).get("ready"))
+    yolo_ready = bool(detector_by_family.get("yolov11", {}).get("ready"))
+    nnunet_ready = bool(segmenter_by_family.get("nnunet-tight-roi", {}).get("ready"))
+    sam2_static_ready = bool(segmenter_by_family.get("sam2-static", {}).get("ready"))
+    medsam_ready = bool(segmenter_by_family.get("medsam", {}).get("ready"))
+    sam2_video_ready = bool(video_by_family.get("sam2-video", {}).get("ready"))
+    static_warnings: list[str] = []
+    if not rfdetr_ready:
+        static_warnings.append("primary_detector_not_ready:rf-detr")
+    if not yolo_ready:
+        static_warnings.append("comparator_detector_not_ready:yolov11")
+    if not nnunet_ready:
+        static_warnings.append("primary_segmenter_not_ready:nnunet-tight-roi")
+    if not (sam2_static_ready or medsam_ready):
+        static_warnings.append("review_segmenter_not_ready:sam2-or-medsam")
+    video_warnings = [] if sam2_video_ready else ["video_segmenter_not_ready:sam2-video"]
+    return {
+        "policy_version": "thyroid-gpu-pipeline-v1",
+        "strict_real_inference": strict_real_inference,
+        "static_image_chain": {
+            "status": "ready" if rfdetr_ready and yolo_ready and nnunet_ready else "degraded",
+            "detector": {
+                "primary": "rf-detr",
+                "comparator": "yolov11",
+                "consensus_iou_threshold": 0.5,
+                "primary_ready": rfdetr_ready,
+                "comparator_ready": yolo_ready,
+            },
+            "segmenter": {
+                "primary": "nnunet-tight-roi",
+                "review_options": ["sam2-static", "medsam"],
+                "primary_ready": nnunet_ready,
+                "review_ready": sam2_static_ready or medsam_ready,
+                "bbox_fallback_default": not strict_real_inference,
+            },
+            "measurement": {
+                "primary": "mask-measurement-worker",
+                "requires_pixel_spacing_for_mm": True,
+            },
+            "warnings": static_warnings,
+        },
+        "video_chain": {
+            "status": "ready" if sam2_video_ready else "degraded",
+            "segmenter": {
+                "primary": "sam2-video",
+                "primary_ready": sam2_video_ready,
+                "framewise_fallback_default": not strict_real_inference,
+            },
+            "measurement": {
+                "primary": "video-mask-measurement-worker",
+                "requires_pixel_spacing_for_mm": True,
+            },
+            "warnings": video_warnings,
+        },
     }
 
 

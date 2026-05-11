@@ -62,6 +62,10 @@ class ModelGatewayTest(unittest.TestCase):
                 self.assertEqual(result["storage"]["data_db"], str(db_path))
                 self.assertIn("python", result["runtime"])
                 self.assertIn("gpu", result["runtime"])
+                self.assertEqual(result["pipeline"]["policy_version"], "thyroid-gpu-pipeline-v1")
+                self.assertEqual(result["pipeline"]["static_image_chain"]["detector"]["primary"], "rf-detr")
+                self.assertEqual(result["pipeline"]["static_image_chain"]["detector"]["comparator"], "yolov11")
+                self.assertEqual(result["pipeline"]["static_image_chain"]["segmenter"]["primary"], "nnunet-tight-roi")
                 self.assertEqual(
                     [detector["model_family"] for detector in result["detectors"]],
                     ["yolov11", "rt-detr", "rf-detr"],
@@ -434,6 +438,9 @@ class ModelGatewayTest(unittest.TestCase):
             segment_artifact_path = root / segment_result["artifact_uri"].removeprefix("artifact://")
             segment_artifact = json.loads(segment_artifact_path.read_text(encoding="utf-8"))
             self.assertEqual(segment_artifact["schema_version"], "thyroid.segmentation.output.v1")
+            self.assertEqual(segment_artifact["evaluation"]["protocol"], "thyroid.segmentation.evaluation.v1")
+            self.assertEqual(segment_artifact["evaluation"]["status"], "validation_fallback_requires_review")
+            self.assertTrue(segment_artifact["evaluation"]["fallback_used"])
             mask_uri = segment_artifact["segmentations"][0]["mask_uri"]
             self.assertTrue(mask_uri.endswith("/mask_nodule_1.png"))
             self.assertTrue((root / mask_uri.removeprefix("artifact://")).is_file())
@@ -461,6 +468,8 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertGreater(measurement["long_axis_mm"], 0)
             self.assertEqual(measurement["measurement_source"], "mask")
             self.assertEqual(measure_artifact["pixel_spacing"], {"row_mm": 0.1, "column_mm": 0.2})
+            self.assertEqual(measure_artifact["evaluation"]["protocol"], "thyroid.measurement.evaluation.v1")
+            self.assertEqual(measure_artifact["evaluation"]["status"], "mm_measurement_available")
 
     def test_worker_writes_video_segmentation_and_measurement_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -482,6 +491,8 @@ class ModelGatewayTest(unittest.TestCase):
             segment_artifact_path = root / segment_result["artifact_uri"].removeprefix("artifact://")
             segment_artifact = json.loads(segment_artifact_path.read_text(encoding="utf-8"))
             self.assertEqual(segment_artifact["schema_version"], "thyroid.video_segmentation.output.v1")
+            self.assertEqual(segment_artifact["evaluation"]["protocol"], "thyroid.video_segmentation.evaluation.v1")
+            self.assertEqual(segment_artifact["evaluation"]["status"], "validation_fallback_requires_review")
             self.assertEqual(segment_artifact["tracks"][0]["track_id"], "T1")
             mask_uri = segment_artifact["tracks"][0]["frames"][0]["mask_uri"]
             self.assertTrue(mask_uri.endswith("/track_T1/frame_000007.png"))
@@ -508,6 +519,8 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertEqual(measurement["track_id"], "T1")
             self.assertEqual(measurement["selected_frame_index"], 7)
             self.assertGreater(measurement["long_axis_mm"], 0)
+            self.assertEqual(measure_artifact["evaluation"]["protocol"], "thyroid.video_measurement.evaluation.v1")
+            self.assertEqual(measure_artifact["evaluation"]["status"], "mm_measurement_available")
 
     def test_static_model_does_not_fallback_when_disabled_and_unconfigured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -788,6 +801,8 @@ class ModelGatewayTest(unittest.TestCase):
         self.assertEqual(output["nodules"][0]["model_name"], "rf-detr-medium-thyroid-detector")
         self.assertEqual(output["comparison"]["consensus"]["status"], "matched")
         self.assertEqual(output["comparison"]["consensus"]["matched_count"], 1)
+        self.assertEqual(output["comparison"]["quality_gate"]["status"], "pass")
+        self.assertEqual(output["comparison"]["quality_gate"]["primary_role"], "main_detector_rf_detr_medium")
         self.assertEqual(output["comparison"]["comparators"][0]["family"], "yolov11")
         self.assertEqual(output["llm_evaluation"]["status"], "pending_llm")
         self.assertEqual(output["llm_evaluation"]["overall_assessment"], "consistent")
@@ -829,6 +844,11 @@ class ModelGatewayTest(unittest.TestCase):
                 "primary_only": [],
                 "comparator_only": [],
                 "consensus": {"status": "matched", "matched_count": 1, "primary_only_count": 0, "comparator_only_count": 0},
+                "quality_gate": {
+                    "status": "pass",
+                    "review_reasons": [],
+                    "requires_doctor_review": True,
+                },
             }
             detector_output_with_comparison = {
                 **primary_output,
@@ -850,6 +870,9 @@ class ModelGatewayTest(unittest.TestCase):
             comparison_payload = json.loads(comparison_path.read_text(encoding="utf-8"))
             self.assertEqual(comparison_payload["schema_version"], "thyroid.detector.comparison.v1")
             self.assertEqual(comparison_payload["comparison"]["consensus"]["status"], "matched")
+            self.assertEqual(comparison_payload["quality_gate"]["status"], "pass")
+            self.assertEqual(artifact["evaluation"]["protocol"], "thyroid.detector.evaluation.v1")
+            self.assertEqual(artifact["evaluation"]["status"], "pass")
             self.assertEqual(artifact["llm_evaluation"]["status"], "pending_llm")
             stored_output = result["output"]
             self.assertEqual(stored_output["artifacts"]["model_comparison_json"], comparison_uri)

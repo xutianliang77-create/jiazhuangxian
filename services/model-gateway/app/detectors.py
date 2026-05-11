@@ -421,19 +421,22 @@ def build_detection_comparison(
         if index not in matched_comparator
     ]
     status = consensus_status(primary, comparator, matches, primary_only, comparator_only, warning)
+    consensus = {
+        "status": status,
+        "matched_count": len(matches),
+        "primary_only_count": len(primary_only),
+        "comparator_only_count": len(comparator_only),
+        "primary_count": len(primary),
+        "comparator_count": len(comparator),
+    }
     return {
+        "evaluation_protocol": "thyroid.detector.dual_model_consensus.v1",
         "comparators": [comparator_output.get("model")] if comparator_output and isinstance(comparator_output.get("model"), dict) else [],
         "matches": matches,
         "primary_only": primary_only,
         "comparator_only": comparator_only,
-        "consensus": {
-            "status": status,
-            "matched_count": len(matches),
-            "primary_only_count": len(primary_only),
-            "comparator_only_count": len(comparator_only),
-            "primary_count": len(primary),
-            "comparator_count": len(comparator),
-        },
+        "consensus": consensus,
+        "quality_gate": detection_quality_gate(consensus, warning),
         "warning": warning,
     }
 
@@ -479,6 +482,29 @@ def doctor_review_focus(comparison: Mapping[str, Any]) -> list[str]:
     if not focus:
         focus.append("Review detector output against the original ultrasound image before report finalization.")
     return focus
+
+
+def detection_quality_gate(consensus: Mapping[str, Any], warning: JsonDict | None) -> JsonDict:
+    status = str(consensus.get("status") or "unknown")
+    review_reasons: list[str] = []
+    if warning is not None:
+        review_reasons.append("comparator_unavailable")
+    if status != "matched":
+        review_reasons.append(f"detector_consensus_{status}")
+    if consensus.get("primary_only_count"):
+        review_reasons.append("primary_only_detections")
+    if consensus.get("comparator_only_count"):
+        review_reasons.append("comparator_only_detections")
+    if status == "no_detections":
+        review_reasons.append("no_nodule_detected_verify_image")
+    return {
+        "status": "pass" if status == "matched" and warning is None else "review",
+        "iou_match_threshold": 0.5,
+        "primary_role": "main_detector_rf_detr_medium",
+        "comparator_role": "yolo11m_reference_detector",
+        "requires_doctor_review": True,
+        "review_reasons": sorted(set(review_reasons)),
+    }
 
 
 def consensus_status(
