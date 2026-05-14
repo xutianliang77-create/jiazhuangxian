@@ -66,7 +66,7 @@
 | 11 | 结节检测 | RF-DETR-Medium 主模型 + YOLO11m 对照验证 + RT-DETR 研究对照 |
 | 12 | 分割与测量 | 静态图像 MedSAM 主线 + 视频 MedSAM2/SAM2 主线 + nnU-Net 监督基线 + Swin U-Net 对照 |
 | 13 | 良恶性分类/TI-RADS 特征识别 | ResNet50 baseline + ViT/TC-ViT 主线 + ResNet-ViT 融合 + 多模态融合增强 |
-| 14 | 报告生成 | Qwen3.6 主报告模型 + MedGemma 医学复核 + RAG 证据约束 + 模板化输出 |
+| 14 | 报告生成 | qwen/qwen3.5-9b 主报告模型 + MedGemma 医学复核 + RAG 证据约束 + 模板化输出 |
 | 15 | Embedding/Reranker | Qwen3-Embedding-8B + Qwen3-Reranker-8B，BGE-M3 备选 |
 | 16 | 模型运行框架 | vLLM 主推理后端 + LM Studio/Ollama 开发调试备选 + Transformers 实验适配 |
 | 17 | DICOM/图像预处理 | Python pydicom/OpenCV image-worker，不使用 CodeClaw dicom-mcp 运行链路 |
@@ -80,7 +80,7 @@
 ```text
 GPU：RTX 5090 32GB
 CUDA：优先 CUDA 12.8
-大模型策略：Qwen3.6 量化运行，图像模型和 RAG 模型按任务调度，避免多个重量级模型同时常驻 GPU
+大模型策略：qwen/qwen3.5-9b 量化运行，图像模型和 RAG 模型按任务调度，避免多个重量级模型同时常驻 GPU
 ```
 
 ### 1.5 关键设计原则
@@ -704,14 +704,14 @@ Agent 只通过 MCP/HTTP 工具调用模型服务
 
 | 模型 | 定位 | 优点 | 风险 | 推荐用途 |
 |---|---|---|---|---|
-| Qwen3.6 | 主报告模型 | 中文表达、长上下文、工具调用和结构化输出能力强，适合私有化部署 | 非医学专用，必须受 RAG、模板、规则和安全审核约束 | 报告草稿、结构化摘要、医生修改建议 |
+| qwen/qwen3.5-9b | 主报告模型 | 中文表达、结构化输出和私有化部署成本较好，适合 5090 验证版按需加载 | 非医学专用，必须受 RAG、模板、规则和安全审核约束；复杂病例需医生严格复核 | 报告草稿、结构化摘要、医生修改建议 |
 | MedGemma | 医学复核辅助模型 | 医学语义和医学安全表达更强 | 中文报告适配和许可证需实测与审查 | 医学表达复核、风险提示、安全审核辅助 |
 | Qwen3-VL | 视觉语言辅助模型 | 能结合图像和文字解释模型结果 | 不作为结节检测、分割或最终分级依据 | 图像说明、报告辅助描述、医生解释材料 |
 
 验证版推荐组合：
 
 ```text
-主报告模型：Qwen3.6
+主报告模型：qwen/qwen3.5-9b
 医学复核模型：MedGemma
 报告约束：报告模板 + TI-RADS 规则结果 + CodeClaw RAG evidence pack + SafetyAuditAgent
 医生职责：最终确认、修改、签署和归档
@@ -719,16 +719,16 @@ Agent 只通过 MCP/HTTP 工具调用模型服务
 
 模型分工原则：
 
-- Qwen3.6 通过 CodeClaw provider 接入，承担主报告生成、检测结果结构化评估、冲突解释和医生复核重点生成。
-- MedGemma 不替代 Qwen3.6 作为主报告模型；它作为医学复核辅助模型，用于医学表达、安全风险、影像解释材料和二次复核提示。
+- qwen/qwen3.5-9b 通过 CodeClaw provider 接入，承担主报告生成、检测结果结构化评估、冲突解释和医生复核重点生成。
+- MedGemma 不替代 qwen/qwen3.5-9b 作为主报告模型；它作为医学复核辅助模型，用于医学表达、安全风险、影像解释材料和二次复核提示。
 - RF-DETR/YOLO/RT-DETR 等视觉检测模型不走 provider 聊天通道，继续由 model-gateway 执行本地 GPU 推理并输出可审计 artifact。
 - LLM/VLM 都不得新增、删除或移动 bbox；bbox 修订只能来自医生操作或专用检测/分割模型重新推理。
 
-当前 5090 验证配置采用 CodeClaw provider `lmstudio:qwen36-35b-a3b` 调用本地 LM Studio OpenAI-compatible endpoint。Qwen3.6-35B-A3B 已完成直接 JSON 输出、CodeClaw provider 流式调用、以及 `medical-agent-worker` 检测结果结构化复核烟测；Qwen3.6-27B 当前保留为候选模型，需先解决本地运行时加载失败后再作为 fallback。
+当前 5090 验证配置采用 CodeClaw provider `lmstudio:qwen35-9b` 调用本地 LM Studio OpenAI-compatible endpoint，模型为 `qwen/qwen3.5-9b`。旧的 Qwen3.6-27B 不再作为验证版默认主报告模型；Qwen3.6-35B-A3B 保留为更强模型候选，可在需要更高报告质量时手动切换。
 
-验证版 `medical-agent-worker` 已把同一 provider 通道复用到 `draft_report`：报告生成前会先查询 `tirads_rules`，再按 TI-RADS 分级、随访/FNA 建议和报告安全边界检索医学 RAG，形成 `tirads_rule` + `medical_guideline` evidence pack。同步模式保持确定性模板草稿，但仍会把证据包写入 `report.evidence_json` 和 `report.structured_json.knowledge_evidence`；异步模式在配置 `llmProvider` 时，会向 Qwen3.6 提供报告模板、TI-RADS 结构化结果、规则库证据、RAG 证据和安全约束，要求返回 JSON 草稿。系统仍会强制保留医生审核提示，并将 provider 报告生成结果写入 `medical.report.llm_draft` 审计日志。
+验证版 `medical-agent-worker` 已把同一 provider 通道复用到 `draft_report`：报告生成前会先查询 `tirads_rules`，再按 TI-RADS 分级、随访/FNA 建议和报告安全边界检索医学 RAG，形成 `tirads_rule` + `medical_guideline` evidence pack。同步模式保持确定性模板草稿，但仍会把证据包写入 `report.evidence_json` 和 `report.structured_json.knowledge_evidence`；异步模式在配置 `llmProvider` 时，会向 `qwen/qwen3.5-9b` 提供报告模板、TI-RADS 结构化结果、规则库证据、RAG 证据和安全约束，要求返回 JSON 草稿。系统仍会强制保留医生审核提示，并将 provider 报告生成结果写入 `medical.report.llm_draft` 审计日志。
 
-MedGemma 复核辅助采用独立 provider 通道 `medicalReviewProvider`，不参与主报告生成。启用后，worker 可在 `draft_report` 同步复核，也可在后续 `safety_review` 阶段复核同一条已落库报告。5090 验证环境推荐串行调度：先加载 Qwen3.6 完成主报告，再卸载 Qwen3.6、加载 `medgemma-4b-it` 执行 `safety_review` 复核。复核输入会被压缩为报告正文、结节摘要、规则库证据和 RAG 证据摘要，避免医学模型复述大 JSON。结果写入 `report.structured_json.medical_review_assistant`，并追加 `medical.report.medgemma_review` 审计日志。
+MedGemma 复核辅助采用独立 provider 通道 `medicalReviewProvider`，不参与主报告生成。启用后，worker 可在 `draft_report` 同步复核，也可在后续 `safety_review` 阶段复核同一条已落库报告。5090 验证环境推荐串行调度：先加载 `qwen/qwen3.5-9b` 完成主报告，再卸载该模型、加载 `medgemma-4b-it` 执行 `safety_review` 复核。复核输入会被压缩为报告正文、结节摘要、规则库证据和 RAG 证据摘要，避免医学模型复述大 JSON。结果写入 `report.structured_json.medical_review_assistant`，并追加 `medical.report.medgemma_review` 审计日志。
 
 ### 5.3 结节检测模型
 
@@ -835,7 +835,7 @@ Reranker 主模型：Qwen3-Reranker-8B
 模型调度：SQLite model_job 队列，避免多个重量级模型同时常驻 GPU
 ```
 
-Qwen3.6 这类大模型在 32GB 显存下应采用量化运行。图像模型、Embedding/Reranker 和 MedGemma 按任务调度或按需加载。
+qwen/qwen3.5-9b 这类大模型在 32GB 显存下应采用量化运行。图像模型、Embedding/Reranker 和 MedGemma 按任务调度或按需加载。
 
 ### 5.8 模型选型结论
 
@@ -843,7 +843,7 @@ Qwen3.6 这类大模型在 32GB 显存下应采用量化运行。图像模型、
 
 | 能力 | 推荐实现 |
 |---|---|
-| 报告生成 | Qwen3.6 主报告模型 + 模板 + RAG evidence pack |
+| 报告生成 | qwen/qwen3.5-9b 主报告模型 + 模板 + RAG evidence pack |
 | 医学复核 | MedGemma 辅助复核和安全提示 |
 | 多模态解释 | Qwen3-VL / MedGemma 辅助，不参与最终分级 |
 | 结节检测 | RF-DETR-Medium 主模型 + YOLO11m 对照验证 + RT-DETR 研究对照 |
@@ -2742,6 +2742,21 @@ study_instance_uid
 - 标记病例是否可进入经验库。
 
 所有人工修改必须记录修改前后差异。
+
+### 13.4 验证版报告编辑器落地约束
+
+验证版医生工作台的报告编辑器按“结构化段落 + 固定证据 + 审核状态机”实现，不把报告编辑做成自由文本孤岛。
+
+| 能力 | 验证版实现 |
+|---|---|
+| 结构化段落编辑 | 报告正文拆为 sections，医生可逐段修改、预览和保存 |
+| 证据固定 | `report.evidence_json` 不随正文编辑被覆盖，编辑器显示证据数量、来源和证据指纹 |
+| 修改痕迹 | `doctor_review.before_json/after_json` 保存正文、结构化段落、证据快照和状态变化 |
+| 审核动作 | `revise` 保存修订并保持 `pending_review`，`approve` 写入 `final_text` 和确认医生 |
+| 归档动作 | 只有 `confirmed` 报告可 `archive`，归档后只读，后续修改必须创建修订版本 |
+| 医生提示 | UI 明确显示可编辑、待归档只读、只读归档等状态，避免误把 AI 草稿当最终报告 |
+
+报告编辑提交时，`structured_json.editor` 记录编辑器版本、证据锁定状态、证据数量、证据来源、证据指纹、基础报告更新时间和最后审核意见。该字段用于回放医生修改时的证据上下文，不替代 `report.evidence_json`。
 
 ## 14. 安全、合规与审计设计
 

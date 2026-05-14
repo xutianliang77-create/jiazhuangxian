@@ -47,6 +47,8 @@
     "medical-agent-worker": "tsx scripts/medical-agent-worker.ts",
     "medical-agent-worker:once": "tsx scripts/medical-agent-worker.ts --once",
     "medical-demo:run": "tsx scripts/medical-live-demo-runner.ts",
+    "medical:final-validation:static": "tsx scripts/medical-final-validation-static.ts",
+    "medical:video-smoke:import": "tsx scripts/medical-video-smoke-import.ts",
     "image-worker": "cd services/image-worker && python3 -m app",
     "model-gateway": "cd services/model-gateway && python3 -m app",
     "model-gateway:check": "cd services/model-gateway && python3 -m app.config_check",

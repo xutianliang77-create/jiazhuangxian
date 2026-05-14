@@ -1,12 +1,12 @@
-# 5090 Qwen3.6 Provider Setup
+# 5090 qwen/qwen3.5-9b Provider Setup
 
-本文记录验证版在远程 RTX 5090 主机上接入 Qwen3.6 的当前可运行配置。
+本文记录验证版在远程 RTX 5090 主机上接入 `qwen/qwen3.5-9b` 的当前可运行配置。
 
 ## 目标
 
 - CodeClaw provider 统一管理主 LLM。
-- Qwen3.6 作为主报告模型和检测结果结构化复核模型。
-- MedGemma 作为医学复核辅助模型，不替代 Qwen3.6。
+- `qwen/qwen3.5-9b` 作为主报告模型和检测结果结构化复核模型。
+- MedGemma 作为医学复核辅助模型，不替代主报告模型。
 - RF-DETR/YOLO 等视觉模型继续由 `services/model-gateway` 执行，不走聊天 provider。
 
 ## 当前结论
@@ -14,21 +14,21 @@
 当前可用验证配置：
 
 ```text
-主 provider：lmstudio:qwen36-35b-a3b
+主 provider：lmstudio:qwen35-9b
 endpoint：http://127.0.0.1:1234/v1
-model：qwen/qwen3.6-35b-a3b
+model：qwen/qwen3.5-9b
 用途：报告草稿、检测结果结构化评估、医生复核重点生成
 ```
 
 验证结果：
 
-- LM Studio OpenAI-compatible `/v1/models` 可见 `qwen/qwen3.6-35b-a3b`、`qwen/qwen3.6-27b`、`unsloth/qwen3.6-27b`、`medgemma-4b-it`、`medgemma-1.5-4b-it` 等模型；当前复核 provider 优先使用实测可调用的 `medgemma-4b-it`。
-- `qwen/qwen3.6-35b-a3b` 已通过直接 JSON 输出烟测。
-- CodeClaw `loadRuntimeSelection()` 已能选中 `lmstudio:qwen36-35b-a3b`。
+- LM Studio OpenAI-compatible `/v1/models` 可见 `qwen/qwen3.5-9b`、`qwen/qwen3.6-35b-a3b`、`qwen/qwen3.6-27b`、`unsloth/qwen3.6-27b`、`medgemma-4b-it`、`medgemma-1.5-4b-it` 等模型；当前复核 provider 优先使用实测可调用的 `medgemma-4b-it`。
+- `qwen/qwen3.5-9b` 当前在 5090 LM Studio 中可见并处于 loaded 状态。
+- CodeClaw `loadRuntimeSelection()` 已能选中 `lmstudio:qwen35-9b`。
 - CodeClaw `streamProviderResponse()` 已能正确只返回最终 `content`，不会把 Qwen reasoning 内容混入医疗 JSON。
 - `medical-agent-worker` 已通过真实 provider 复核烟测，写入 `result.llm_provider_evaluation` 和 `medical.detector.llm_evaluation` 审计日志。
 - `draft_report` 已接入医学知识证据链：出报告前查询 `tirads_rules`，并在配置 `JZX_RAG_DB` 或 `--rag-db` 时检索医学 RAG chunk；证据进入 `report.evidence_json` 与 Qwen/MedGemma prompt。
-- `qwen/qwen3.6-27b` 与 `unsloth/qwen3.6-27b` 当前在 LM Studio API 调用时返回 `Failed to load model`，先保留为候选，不作为自动 fallback。
+- `qwen/qwen3.6-27b` 与 `unsloth/qwen3.6-27b` 当前不作为自动 fallback；Qwen3.6-35B-A3B 保留为更强模型候选，需要时手动切换 provider。
 
 ## 模型目录
 
@@ -73,24 +73,24 @@ Qwen3.6-27B-Q5_K_M.gguf      19.5 GB
 
 ```json
 {
-  "lmstudio:qwen36-35b-a3b": {
+  "lmstudio:qwen35-9b": {
     "type": "lmstudio",
-    "displayName": "LM Studio · Qwen3.6-35B-A3B",
+    "displayName": "LM Studio · qwen/qwen3.5-9b",
     "enabled": true,
     "baseUrl": "http://127.0.0.1:1234/v1",
-    "model": "qwen/qwen3.6-35b-a3b",
-    "timeoutMs": 180000,
+    "model": "qwen/qwen3.5-9b",
+    "timeoutMs": 120000,
     "maxTokens": 8192,
     "contextWindow": 8192
   },
-  "lmstudio:qwen36-27b": {
+  "lmstudio:qwen36-35b-a3b": {
     "type": "lmstudio",
-    "displayName": "LM Studio · Qwen3.6-27B",
+    "displayName": "LM Studio · Qwen3.6-35B-A3B candidate",
     "enabled": true,
     "baseUrl": "http://127.0.0.1:1234/v1",
-    "model": "qwen/qwen3.6-27b",
-    "timeoutMs": 180000,
-    "maxTokens": 4096,
+    "model": "qwen/qwen3.6-35b-a3b",
+    "timeoutMs": 300000,
+    "maxTokens": 8192,
     "contextWindow": 8192
   },
   "lmstudio:medgemma-review": {
@@ -110,8 +110,8 @@ Qwen3.6-27B-Q5_K_M.gguf      19.5 GB
 
 ```yaml
 provider:
-  default: lmstudio:qwen36-35b-a3b
-  fallback: lmstudio:qwen36-35b-a3b
+  default: lmstudio:qwen35-9b
+  fallback: lmstudio:qwen35-9b
 defaults:
   language: zh
   permissionMode: plan
@@ -141,9 +141,9 @@ npm run medical-agent-worker:once -- \
   --data-db data/artifacts/medical/data.db \
   --rag-db data/artifacts/medical/rag.db \
   --knowledge-top-k 3 \
-  --worker-id qwen36-worker \
+  --worker-id qwen35-worker \
   --enable-llm-evaluation \
-  --llm-provider lmstudio:qwen36-35b-a3b \
+  --llm-provider lmstudio:qwen35-9b \
   --enable-medical-review \
   --medical-review-provider lmstudio:medgemma-review
 ```
@@ -153,9 +153,9 @@ npm run medical-agent-worker:once -- \
 直接 provider 烟测：
 
 ```text
-provider: lmstudio:qwen36-35b-a3b
-model: qwen/qwen3.6-35b-a3b
-output: {"status":"ok","model":"qwen3.6"}
+provider: lmstudio:qwen35-9b
+model: qwen/qwen3.5-9b
+output: {"status":"ok","model":"qwen/qwen3.5-9b"}
 ```
 
 医疗 worker 真实链路烟测：
@@ -204,7 +204,7 @@ audit_log_id: 01KR7N32W130XHR403NYPC8VCK
 ```text
 data_db: data/artifacts/medical-report-rag-medgemma-smoke2-20260510/data.db
 qwen_task_type: draft_report
-qwen_provider: lmstudio:qwen36-35b-a3b
+qwen_provider: lmstudio:qwen35-9b
 report_id: 01KR7R1ZDZR4NTNZ9MF3TK2P2G
 structured.generator: llm_provider_structured_report
 knowledge_evidence.tirads_rule_count: 2
@@ -221,13 +221,13 @@ medical_review_audit_log_id: 01KR7RQX6AJX8QTX4NXJRMS8FQ
 该烟测证明：
 
 - `draft_report` 会在出报告前查询 `tirads_rules` 和医学 RAG，并把证据写入报告。
-- Qwen3.6 主报告可以在只加载 Qwen 的情况下完成 `llm_provider_structured_report`。
+- `qwen/qwen3.5-9b` 主报告可以在只加载该模型的情况下完成 `llm_provider_structured_report`。
 - 换载 `medgemma-4b-it` 后，`safety_review` 可以复核同一条已落库报告。
 - MedGemma 复核结果写回 `report.structured_json.medical_review_assistant`，并写入 `audit_log.action = medical.report.medgemma_review`。
 
 ## 后续待办
 
-1. 修复或重新加载 `qwen/qwen3.6-27b`，确认 27B 是否可作为低显存 fallback。
+1. 对 `qwen/qwen3.5-9b` 跑完整“主报告 + MedGemma 复核 + RAG evidence pack”smoke，并记录报告质量。
 2. 评估是否继续使用 LM Studio GGUF，或切换到 `data/llm` 下 HF 格式模型 + vLLM。
-3. 在 5090 上完成“Qwen3.6 主报告 + MedGemma 复核 + RAG evidence pack”完整 smoke。
+3. 若 9B 报告质量不足，再手动切换到 `qwen/qwen3.6-35b-a3b` 做质量对照。
 4. 将同一 provider 能力继续扩展到安全复核和医生修改建议。

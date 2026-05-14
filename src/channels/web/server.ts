@@ -86,11 +86,14 @@ import {
   handleCreateMedicalImage,
   handleCreateMedicalPatient,
   handleCreateMedicalStudy,
+  handleListMedicalFinalValidationResults,
+  handleListMedicalFinalValidationRuns,
   handleMedicalKnowledgeSearch,
   handleMedicalModelGatewayCheck,
   handleMedicalSummary,
   handleReadMedicalArtifact,
   handleReadMedicalStudy,
+  handleReviewMedicalFinalValidationResult,
   handleReviewMedicalReport,
   handleReviseMedicalNodule,
   handleStartMedicalAnalysis,
@@ -419,6 +422,17 @@ async function dispatch(
   }
   if (url.pathname === "/v1/web/medical/artifacts" && method === "GET") {
     return handleReadMedicalArtifact(req, res, deps, url);
+  }
+  if (url.pathname === "/v1/web/medical/final-validation/runs" && method === "GET") {
+    return handleListMedicalFinalValidationRuns(req, res, deps, url);
+  }
+  const medicalFinalValidationResultsMatch = /^\/v1\/web\/medical\/final-validation\/runs\/([^/]+)\/results$/.exec(url.pathname);
+  if (medicalFinalValidationResultsMatch && method === "GET") {
+    return handleListMedicalFinalValidationResults(req, res, deps, url, decodeURIComponent(medicalFinalValidationResultsMatch[1]));
+  }
+  const medicalFinalValidationReviewMatch = /^\/v1\/web\/medical\/final-validation\/results\/([^/]+)\/review$/.exec(url.pathname);
+  if (medicalFinalValidationReviewMatch && method === "POST") {
+    return handleReviewMedicalFinalValidationResult(req, res, deps, decodeURIComponent(medicalFinalValidationReviewMatch[1]));
   }
   if (url.pathname === "/v1/web/medical/patients" && method === "POST") {
     return handleCreateMedicalPatient(req, res, deps);

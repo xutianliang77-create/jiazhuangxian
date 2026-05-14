@@ -120,14 +120,14 @@ cd /Users/xutianliang/Downloads/jiazhuangxian
 JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1:8765 npm run medical-agent-worker
 ```
 
-可选：打开主 LLM 结构化评估。该通道复用 CodeClaw provider 配置，推荐指向本地 vLLM/LM Studio/OpenAI-compatible 的 Qwen3.6；MedGemma 保持医学复核辅助，不替代主报告模型。
+可选：打开主 LLM 结构化评估。该通道复用 CodeClaw provider 配置，当前验证版默认指向 5090 LM Studio 的 `qwen/qwen3.5-9b`；MedGemma 保持医学复核辅助，不替代主报告模型。
 
 ```bash
 JZX_DATA_DB=data/artifacts/medical/data.db \
 JZX_RAG_DB=data/artifacts/medical/rag.db \
 JZX_IMAGE_WORKER_URL=http://127.0.0.1:8765 \
 JZX_MEDICAL_LLM_EVALUATION=1 \
-JZX_MEDICAL_LLM_PROVIDER=lmstudio:qwen36-35b-a3b \
+JZX_MEDICAL_LLM_PROVIDER=lmstudio:qwen35-9b \
 JZX_MEDICAL_REVIEW=1 \
 JZX_MEDICAL_REVIEW_PROVIDER=lmstudio:medgemma-review \
 JZX_MEDICAL_KNOWLEDGE_TOP_K=3 \
@@ -142,12 +142,12 @@ npm run medical-agent-worker:once -- \
   --rag-db data/artifacts/medical/rag.db \
   --knowledge-top-k 3 \
   --enable-llm-evaluation \
-  --llm-provider lmstudio:qwen36-35b-a3b \
+  --llm-provider lmstudio:qwen35-9b \
   --enable-medical-review \
   --medical-review-provider lmstudio:medgemma-review
 ```
 
-5090 验证主机的 Qwen3.6 配置记录见 [LLM_PROVIDER_SETUP_5090.md](LLM_PROVIDER_SETUP_5090.md)。当前可用验证 provider 是 `lmstudio:qwen36-35b-a3b`，endpoint 为 `http://127.0.0.1:1234/v1`，模型文件入口统一放在远程项目的 `~/jiazhuangxian/data/llm`。远程运行医疗 worker 时需先使用 Node 22：
+5090 验证主机的大模型配置记录见 [LLM_PROVIDER_SETUP_5090.md](LLM_PROVIDER_SETUP_5090.md)。当前可用验证 provider 是 `lmstudio:qwen35-9b`，endpoint 为 `http://127.0.0.1:1234/v1`，模型为 `qwen/qwen3.5-9b`。远程运行医疗 worker 时需先使用 Node 22：
 
 ```bash
 export PATH=/home/beelink/.local/node/node-v22.9.0-linux-x64/bin:$PATH
@@ -205,13 +205,13 @@ JZX_DATA_DB=data/artifacts/medical/data.db JZX_IMAGE_WORKER_URL=http://127.0.0.1
 3. `medical-agent-worker` 消费 `agent_task`；`image_qc` 会调用 `image-worker` 的 `/image/v1/image-quality-check`，并将成功返回的 `image_quality`/`quality_score` 写回 `image` 表。
 4. `detect_nodules` 任务会进入 `waiting_model`，并创建 `model_job`。
 5. `model-worker` 消费 `model_job`；配置 RF-DETR/YOLO 权重后会写入 `detections.json`、`comparison.json` 和 `overlay.png`，未配置权重时会写入 `detector_not_configured`。
-6. `medical-agent-worker` 再次同步 `waiting_model`；如果检测成功，会把模型返回的结节框写入 `nodule` 表并继续推进下游任务；如果启用 `JZX_MEDICAL_LLM_EVALUATION=1`，还会把 `model_job.output_json.llm_evaluation` 交给 CodeClaw provider 中的 Qwen3.6 生成结构化复核意见，并写入 `medical.detector.llm_evaluation` 审计日志。该 LLM 通道不得新增、删除或移动 bbox。
+6. `medical-agent-worker` 再次同步 `waiting_model`；如果检测成功，会把模型返回的结节框写入 `nodule` 表并继续推进下游任务；如果启用 `JZX_MEDICAL_LLM_EVALUATION=1`，还会把 `model_job.output_json.llm_evaluation` 交给 CodeClaw provider 中的 `qwen/qwen3.5-9b` 生成结构化复核意见，并写入 `medical.detector.llm_evaluation` 审计日志。该 LLM 通道不得新增、删除或移动 bbox。
 7. `segment_nodules` 会创建 `thyroid.segment_nodule` model_job。当前验证版未配置真实分割权重时，会生成明确标记为 `bbox_fallback` 的矩形 mask、`segmentation.json` 和 `mask_nodule_<index>.png`，并把 `mask_uri` 写回 `nodule`；该 mask 仅用于链路验证和医生复核。
 8. `measure_nodules` 会创建 `thyroid.measure_nodule` model_job。worker 优先基于 mask 计算测量；缺少 DICOM `PixelSpacing` 时只输出像素测量，毫米字段保持空，并标记需要医生复核/人工标定。
 9. `classify_tirads_features` 当前支持验证版结构化输入：如果 task input 带 `feature_candidates` / `tirads_features` / `features`，会绑定 `nodule_id` 或 `nodule_index` 并写入 `tirads_feature`；未接真实特征模型时会返回明确未配置 warning。
 10. 当 `tirads_feature` 表已有结构化特征时，`calculate_tirads` 会调用本地 ACR TI-RADS 2017 规则引擎，并把分值、分级、建议和证据规则写入 `tirads_result`。
-11. `draft_report` 会读取同一病例下已持久化的结节和最新 TI-RADS 结果，先查询 `tirads_rules` 补齐结构化规则依据，再通过医学 RAG 检索已审核指南 chunk。规则与 RAG 证据会写入 `report.evidence_json` 和 `report.structured_json.knowledge_evidence`。如果启用 `JZX_MEDICAL_LLM_EVALUATION=1` 并配置 Qwen3.6 provider，则会把模板、结构化结果、规则库证据、RAG 证据和安全约束交给 provider 生成受控报告草稿，并写入 `medical.report.llm_draft` 审计日志。草稿状态始终为 `draft`，输出始终带 `doctor_review_required`，必须由医生审核后才可生效。
-12. `safety_review` 会读取最新报告草稿、`safety_rules`、图像质量和结节置信度，检查最终诊断表述、缺证据 FNA/随访建议、低质量/低置信度、缺少标定的毫米级表述和 PHI 泄露风险，并把审核摘要写入 `audit_log`。如果启用 `JZX_MEDICAL_REVIEW=1` 并配置 MedGemma provider，`safety_review` 会用精简后的报告正文、结节摘要、规则库证据和 RAG 证据复核同一条已落库报告，结果写回 `report.structured_json.medical_review_assistant`，并追加 `medical.report.medgemma_review` 审计日志。5090 显存紧张时推荐串行执行：先加载 Qwen3.6 跑 `draft_report`，再卸载 Qwen3.6、加载 `medgemma-4b-it` 跑 `safety_review`。
+11. `draft_report` 会读取同一病例下已持久化的结节和最新 TI-RADS 结果，先查询 `tirads_rules` 补齐结构化规则依据，再通过医学 RAG 检索已审核指南 chunk。规则与 RAG 证据会写入 `report.evidence_json` 和 `report.structured_json.knowledge_evidence`。如果启用 `JZX_MEDICAL_LLM_EVALUATION=1` 并配置 `qwen/qwen3.5-9b` provider，则会把模板、结构化结果、规则库证据、RAG 证据和安全约束交给 provider 生成受控报告草稿，并写入 `medical.report.llm_draft` 审计日志。草稿状态始终为 `draft`，输出始终带 `doctor_review_required`，必须由医生审核后才可生效。
+12. `safety_review` 会读取最新报告草稿、`safety_rules`、图像质量和结节置信度，检查最终诊断表述、缺证据 FNA/随访建议、低质量/低置信度、缺少标定的毫米级表述和 PHI 泄露风险，并把审核摘要写入 `audit_log`。如果启用 `JZX_MEDICAL_REVIEW=1` 并配置 MedGemma provider，`safety_review` 会用精简后的报告正文、结节摘要、规则库证据和 RAG 证据复核同一条已落库报告，结果写回 `report.structured_json.medical_review_assistant`，并追加 `medical.report.medgemma_review` 审计日志。5090 显存紧张时推荐串行执行：先加载 `qwen/qwen3.5-9b` 跑 `draft_report`，再卸载该模型、加载 `medgemma-4b-it` 跑 `safety_review`。
 13. 病例详情接口和医生工作台会展示同一病例下的 `model_job`、`nodule`、`measurement`、`tirads_feature`、`tirads_result`、`report` 和 `audit_log`，其中检测/分割/测量成功的 `model_job.artifact_uri` 会指向标准化 JSON 产物；如果源图像可读取且请求允许 overlay，模型输出还会包含同目录 `overlay.png` 复核图 URI，并通过 `GET /v1/web/medical/artifacts?uri=<artifact-uri>` 在医生工作台内预览。
 14. 医生工作台的 `知识证据` 面板可调用 `POST /v1/web/medical/knowledge/search` 检索已审核指南证据；返回结果来自 CodeClaw RAG chunk，并带 `medical_documents` / `medical_chunk_metadata` provenance。
 15. 医生工作台可对 AI 结节 bbox 执行数字修订；修订会更新 `nodule.bbox`、将 `source` 标记为 `doctor`、将状态改为 `doctor_revised`，同时追加 `medical.nodule.revise` 审计日志。

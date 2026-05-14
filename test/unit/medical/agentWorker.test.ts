@@ -1528,6 +1528,250 @@ describe("medical agent worker", () => {
       },
     ]);
   });
+
+  it("heuristically prefills TI-RADS features when no feature model output is configured", () => {
+    const { tasks } = seedAgentTaskChain(["classify_tirads_features"]);
+    const studyId = String(tasks[0].input.study_id);
+    const imageId = String(tasks[0].input.image_id);
+    const nodule = repo.upsertNodule({
+      studyId,
+      imageId,
+      noduleIndex: 1,
+      bbox: [10, 20, 34, 58],
+      detectionConfidence: 0.91,
+      now: 7200,
+    });
+    repo.createMeasurement({
+      noduleId: nodule.id,
+      longAxisMm: 12,
+      shortAxisMm: 8,
+      apAxisMm: 9,
+      measurementSource: "mask",
+      confidence: 0.88,
+      now: 7250,
+    });
+
+    const result = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 7300 });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      claimed: true,
+      taskType: "classify_tirads_features",
+      output: {
+        result: {
+          feature_status: "prefilled_requires_review",
+          source: "heuristic_prefill_v2",
+          features: [
+            {
+              nodule_id: nodule.id,
+              nodule_index: 1,
+              features: {
+                composition: "solid",
+                echogenicity: "isoechoic",
+                shape: "taller_than_wide",
+                margin: "ill_defined",
+                echogenic_foci: ["none"],
+                size_mm: { long_axis: 12, short_axis: 8, ap_axis: 9 },
+              },
+              source_model: "tirads-prefill-heuristic-v2",
+              requires_review: true,
+            },
+          ],
+        },
+        warnings: ["tirads_feature_prefill_requires_doctor_review"],
+      },
+    });
+    expect(repo.listTiradsFeaturesByStudy(studyId)).toMatchObject([
+      {
+        noduleId: nodule.id,
+        features: {
+          composition: "solid",
+          echogenicity: "isoechoic",
+          shape: "taller_than_wide",
+          margin: "ill_defined",
+          echogenic_foci: ["none"],
+          size_mm: { long_axis: 12, short_axis: 8, ap_axis: 9 },
+        },
+        sourceModel: "tirads-prefill-heuristic-v2",
+        requiresReview: true,
+      },
+    ]);
+  });
+
+  it("uses segmentation, measurement, texture, and boundary cues in TI-RADS prefill v2", () => {
+    const { tasks } = seedAgentTaskChain(["classify_tirads_features"]);
+    const studyId = String(tasks[0].input.study_id);
+    const imageId = String(tasks[0].input.image_id);
+    const nodule = repo.upsertNodule({
+      studyId,
+      imageId,
+      noduleIndex: 1,
+      bbox: [10, 20, 70, 80],
+      maskUri: "artifact://model-output/S/IMG/J/mask_nodule_1.png",
+      detectionConfidence: 0.91,
+      now: 7350,
+    });
+    repo.createMeasurement({
+      noduleId: nodule.id,
+      longAxisMm: 14,
+      shortAxisMm: 9,
+      apAxisMm: 8,
+      measurementSource: "mask",
+      confidence: 0.9,
+      now: 7360,
+    });
+    repo.createModelJob({
+      studyId,
+      imageId,
+      jobType: "thyroid.segment_nodule",
+      status: "succeeded",
+      modelName: "nnunet-tight-roi-segmenter",
+      modelVersion: "tn3k-tight-roi-5fold-best",
+      artifactUri: "artifact://model-output/S/IMG/J/segmentation.json",
+      output: {
+        segmentations: [
+          {
+            nodule_id: nodule.id,
+            nodule_index: 1,
+            bbox: [10, 20, 70, 80],
+            contour: [[10, 20], [70, 24], [55, 80], [16, 70]],
+            mask_uri: "artifact://model-output/S/IMG/J/mask_nodule_1.png",
+            segmentation_source: "nnunet_tight_roi",
+            confidence: 0.9,
+          },
+        ],
+      },
+      completedAt: 7370,
+      now: 7370,
+    });
+    repo.createModelJob({
+      studyId,
+      imageId,
+      jobType: "thyroid.measure_nodule",
+      status: "succeeded",
+      modelName: "mask-measurement-worker",
+      modelVersion: "validation-measurement-v1",
+      artifactUri: "artifact://model-output/S/IMG/J/measurements.json",
+      output: {
+        measurements: [
+          {
+            nodule_id: nodule.id,
+            nodule_index: 1,
+            long_axis_mm: 14,
+            short_axis_mm: 9,
+            ap_axis_mm: 8,
+            area_mm2: 98,
+            aspect_ratio: 1.55,
+            measurement_source: "mask",
+            confidence: 0.9,
+            pixel_measurements: { width_px: 60, height_px: 56, long_axis_px: 60, short_axis_px: 56, area_px2: 2100 },
+            tirads_prefill_metrics: {
+              texture: {
+                composition_hint: "solid",
+                echogenicity_hint: "hypoechoic",
+                echogenic_foci_hint: ["punctate_echogenic_foci"],
+                bright_foci_fraction: 0.012,
+              },
+              boundary: {
+                compactness: 0.4,
+                fill_ratio: 0.6,
+              },
+            },
+          },
+        ],
+      },
+      completedAt: 7380,
+      now: 7380,
+    });
+
+    const result = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 7390 });
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      taskType: "classify_tirads_features",
+      output: {
+        result: {
+          feature_status: "prefilled_requires_review",
+          source: "heuristic_prefill_v2",
+          features: [
+            {
+              nodule_id: nodule.id,
+              features: {
+                composition: "solid",
+                echogenicity: "hypoechoic",
+                shape: "wider_than_tall",
+                margin: "irregular",
+                echogenic_foci: ["punctate_echogenic_foci"],
+                prefill_evidence: {
+                  method: "mask_measurement_texture_boundary_v2",
+                  texture: {
+                    echogenicity_hint: "hypoechoic",
+                  },
+                  boundary: {
+                    compactness: 0.4,
+                  },
+                },
+              },
+              confidence: {
+                composition: 0.42,
+                echogenicity: 0.44,
+                shape: 0.72,
+                margin: 0.48,
+                echogenic_foci: 0.38,
+              },
+              source_model: "tirads-prefill-heuristic-v2",
+              requires_review: true,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("waits for doctor confirmation before calculating from heuristic TI-RADS prefill", () => {
+    const { tasks } = seedAgentTaskChain(["calculate_tirads"]);
+    const studyId = String(tasks[0].input.study_id);
+    const imageId = String(tasks[0].input.image_id);
+    const nodule = repo.upsertNodule({
+      studyId,
+      imageId,
+      noduleIndex: 1,
+      bbox: [10, 20, 30, 40],
+      detectionConfidence: 0.91,
+      now: 7400,
+    });
+    const feature = repo.createTiradsFeature({
+      noduleId: nodule.id,
+      features: {
+        composition: "solid",
+        echogenicity: "isoechoic",
+        shape: "wider_than_tall",
+        margin: "ill_defined",
+        echogenic_foci: ["none"],
+        size_mm: { long_axis: 12, short_axis: 8, ap_axis: 9 },
+      },
+      sourceModel: "tirads-prefill-heuristic-v2",
+      requiresReview: true,
+      now: 7450,
+    });
+
+    const result = runMedicalAgentWorkerOnce(repo, { workerId: "worker-test", now: () => 7500 });
+
+    expect(result).toMatchObject({
+      status: "waiting_doctor_input",
+      claimed: true,
+      taskType: "calculate_tirads",
+      output: {
+        status: "waiting_doctor_tirads_features",
+        pending_nodule_ids: [nodule.id],
+        pending_feature_ids: [feature.id],
+        confirmed_nodule_count: 0,
+        total_nodule_count: 1,
+      },
+    });
+    expect(repo.getAgentTask(tasks[0].id)?.status).toBe("queued");
+    expect(repo.listTiradsResultsByStudy(studyId)).toEqual([]);
+  });
 });
 
 function seedAgentTaskChain(

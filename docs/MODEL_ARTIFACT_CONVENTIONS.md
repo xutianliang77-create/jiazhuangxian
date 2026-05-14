@@ -79,7 +79,7 @@ artifact://model-output/thyroid-detect-nodules/<study_id>/<image_id>/<model_job_
   },
   "llm_evaluation": {
     "status": "pending_llm",
-    "intended_model": "qwen3.6",
+    "intended_model": "qwen/qwen3.5-9b",
     "overall_assessment": "consistent",
     "doctor_review_focus": [
       "Matched detections can be reviewed at lower priority unless ImageQC flags risk."

@@ -5,9 +5,12 @@ import {
   createMedicalPatient,
   createMedicalStudy,
   getMedicalStudy,
+  getMedicalFinalValidationResults,
+  getMedicalFinalValidationRuns,
   getMedicalModelGatewayCheck,
   getMedicalSummary,
   medicalArtifactUrl,
+  reviewMedicalFinalValidationResult,
   reviewMedicalReport,
   reviseMedicalNodule,
   searchMedicalKnowledge,
@@ -16,6 +19,9 @@ import {
   type MedicalAgentTask,
   type MedicalAuditLog,
   type MedicalDoctorReview,
+  type MedicalFinalValidationImageResult,
+  type MedicalFinalValidationReviewStatus,
+  type MedicalFinalValidationRun,
   type MedicalImage,
   type MedicalKnowledgeSearchResult,
   type MedicalMeasurement,
@@ -35,20 +41,28 @@ interface Props {
 }
 
 const COUNT_LABELS: Array<[keyof MedicalSummary["counts"], string]> = [
-  ["patients", "Patients"],
-  ["studies", "Studies"],
-  ["images", "Images"],
-  ["analysisSessions", "Analysis"],
-  ["nodules", "Nodules"],
-  ["reports", "Reports"],
-  ["pendingReviews", "Review"],
+  ["patients", "患者"],
+  ["studies", "检查"],
+  ["images", "图像"],
+  ["analysisSessions", "分析"],
+  ["nodules", "结节"],
+  ["reports", "报告"],
+  ["pendingReviews", "待审核"],
 ];
 
 const SEGMENT_MODEL_JOB_TYPE = "thyroid.segment_nodule";
 const MEASURE_MODEL_JOB_TYPE = "thyroid.measure_nodule";
 const MIN_REVISION_BBOX_EDGE_PX = 1;
 type MedicalReportReviewAction = "approve" | "revise" | "reject" | "archive";
+type StudyQueueFilter = "all" | "tirads" | "review" | "archive" | "progress" | "exception";
+type ValidationReviewFilter = MedicalFinalValidationReviewStatus | "all";
 type TiradsFeatureFormKey = "composition" | "echogenicity" | "shape" | "margin" | "echogenicFoci";
+
+type BatchQueueAction =
+  | { kind: "confirm_tirads"; label: string; reason: string | null; noduleId: string | null }
+  | { kind: "confirm_report"; label: string; reason: string | null; reportId: string | null }
+  | { kind: "archive_report"; label: string; reason: string | null; reportId: string | null }
+  | { kind: "none"; label: string; reason: string | null };
 
 interface TiradsFeatureFormState {
   composition: string;
@@ -60,37 +74,37 @@ interface TiradsFeatureFormState {
 
 const TIRADS_FEATURE_OPTIONS: Record<TiradsFeatureFormKey, Array<[string, string]>> = {
   composition: [
-    ["cystic", "cystic"],
-    ["almost_completely_cystic", "almost cystic"],
-    ["spongiform", "spongiform"],
-    ["mixed_cystic_solid", "mixed"],
-    ["solid", "solid"],
-    ["almost_completely_solid", "almost solid"],
+    ["cystic", "囊性"],
+    ["almost_completely_cystic", "几乎完全囊性"],
+    ["spongiform", "海绵状"],
+    ["mixed_cystic_solid", "囊实混合"],
+    ["solid", "实性"],
+    ["almost_completely_solid", "几乎完全实性"],
   ],
   echogenicity: [
-    ["anechoic", "anechoic"],
-    ["hyperechoic", "hyperechoic"],
-    ["isoechoic", "isoechoic"],
-    ["hypoechoic", "hypoechoic"],
-    ["very_hypoechoic", "very hypoechoic"],
+    ["anechoic", "无回声"],
+    ["hyperechoic", "高回声"],
+    ["isoechoic", "等回声"],
+    ["hypoechoic", "低回声"],
+    ["very_hypoechoic", "极低回声"],
   ],
   shape: [
-    ["wider_than_tall", "wider than tall"],
-    ["taller_than_wide", "taller than wide"],
+    ["wider_than_tall", "宽大于高"],
+    ["taller_than_wide", "高大于宽"],
   ],
   margin: [
-    ["smooth", "smooth"],
-    ["ill_defined", "ill-defined"],
-    ["lobulated", "lobulated"],
-    ["irregular", "irregular"],
-    ["extrathyroidal_extension", "extension"],
+    ["smooth", "光滑"],
+    ["ill_defined", "边界不清"],
+    ["lobulated", "分叶"],
+    ["irregular", "不规则"],
+    ["extrathyroidal_extension", "甲状腺外侵犯"],
   ],
   echogenicFoci: [
-    ["none", "none"],
-    ["large_comet_tail", "comet-tail"],
-    ["macrocalcifications", "macrocalcifications"],
-    ["peripheral_rim_calcifications", "rim calcifications"],
-    ["punctate_echogenic_foci", "punctate foci"],
+    ["none", "无"],
+    ["large_comet_tail", "大彗尾伪像"],
+    ["macrocalcifications", "粗大钙化"],
+    ["peripheral_rim_calcifications", "周边环状钙化"],
+    ["punctate_echogenic_foci", "点状强回声"],
   ],
 };
 
@@ -143,12 +157,36 @@ export default function MedicalPanel({ onError }: Props) {
   const [reviewBusyReportId, setReviewBusyReportId] = useState<string | null>(null);
   const [noduleBusyId, setNoduleBusyId] = useState<string | null>(null);
   const [tiradsFeatureBusyNoduleId, setTiradsFeatureBusyNoduleId] = useState<string | null>(null);
+  const [queueFilter, setQueueFilter] = useState<StudyQueueFilter>("all");
   const [knowledgeQuery, setKnowledgeQuery] = useState("TI-RADS TR4");
   const [knowledgeResult, setKnowledgeResult] = useState<MedicalKnowledgeSearchResult | null>(null);
   const [knowledgeBusy, setKnowledgeBusy] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [validationRuns, setValidationRuns] = useState<MedicalFinalValidationRun[]>([]);
+  const [validationReviewQueues, setValidationReviewQueues] = useState<Record<string, number>>({});
+  const [selectedValidationRunId, setSelectedValidationRunId] = useState<string | null>(null);
+  const [validationResults, setValidationResults] = useState<MedicalFinalValidationImageResult[]>([]);
+  const [validationReviewCounts, setValidationReviewCounts] = useState<Record<string, number>>({});
+  const [validationReviewFilter, setValidationReviewFilter] = useState<ValidationReviewFilter>("unreviewed");
+  const [validationBusy, setValidationBusy] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationReviewBusyId, setValidationReviewBusyId] = useState<string | null>(null);
+  const activeWorkPollKey = studyBundle ? medicalActiveWorkPollKey(studyBundle) : "";
+  const summaryStudies = summary?.recentStudies ?? [];
+  const workQueueStudies = sortedWorkQueueStudies(summaryStudies).filter((study) =>
+    queueFilterMatches(study, queueFilter)
+  );
+  const queueCounts = workQueueCounts(summaryStudies);
+  const workQueueKey = workQueueStudies.map((study) => study.id).join("|");
+  const currentQueueIndex = selectedStudyId
+    ? workQueueStudies.findIndex((study) => study.id === selectedStudyId)
+    : -1;
+  const currentQueueStudy = currentQueueIndex >= 0 ? workQueueStudies[currentQueueIndex] : null;
+  const activeQueueBundle = currentQueueStudy && studyBundle?.study.id === currentQueueStudy.id ? studyBundle : null;
+  const batchQueueAction = batchQueuePrimaryAction(queueFilter, activeQueueBundle);
+  const nextQueueFilter = queueFilter !== "all" ? nextRecommendedQueueFilter(queueCounts, queueFilter) : null;
 
-  async function refresh() {
+  async function refresh(): Promise<MedicalSummary | null> {
     setBusy(true);
     setLocalError(null);
     try {
@@ -167,10 +205,12 @@ export default function MedicalPanel({ onError }: Props) {
       ]);
       setSummary(nextSummary);
       setGatewayCheck(nextGatewayCheck);
+      return nextSummary;
     } catch (err) {
-      const message = `Medical 加载失败：${(err as Error).message}`;
+      const message = `医疗工作台加载失败：${(err as Error).message}`;
       setLocalError(message);
       onError(message);
+      return null;
     } finally {
       setBusy(false);
     }
@@ -178,7 +218,69 @@ export default function MedicalPanel({ onError }: Props) {
 
   useEffect(() => {
     void refresh();
+    void loadFinalValidationRuns();
   }, []);
+
+  useEffect(() => {
+    if (!selectedStudyId || !activeWorkPollKey) return;
+    let cancelled = false;
+    const intervalId = window.setInterval(() => {
+      void Promise.all([getMedicalStudy(selectedStudyId), getMedicalSummary()])
+        .then(([detail, nextSummary]) => {
+          if (cancelled) return;
+          setStudyBundle(detail.bundle);
+          setSummary(nextSummary);
+        })
+        .catch(() => {
+          // Background refresh is best-effort; explicit user actions still surface errors.
+        });
+    }, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedStudyId, activeWorkPollKey]);
+
+  useEffect(() => {
+    if (!summary?.enabled || queueFilter === "all" || detailBusy || workQueueStudies.length === 0) return;
+    if (!selectedStudyId || currentQueueIndex < 0) {
+      const targetId = workQueueStudies[0]?.id;
+      if (targetId && targetId !== selectedStudyId) {
+        void selectStudy(targetId);
+      }
+    }
+  }, [summary?.enabled, queueFilter, detailBusy, selectedStudyId, currentQueueIndex, workQueueKey]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || !event.altKey) return;
+      const editableTarget = isEditableKeyboardTarget(event.target);
+      if (event.key === "ArrowUp" && !event.shiftKey) {
+        if (editableTarget) return;
+        event.preventDefault();
+        void selectAdjacentQueuedStudy(-1);
+        return;
+      }
+      if (event.key === "ArrowDown" && !event.shiftKey) {
+        if (editableTarget) return;
+        event.preventDefault();
+        void selectAdjacentQueuedStudy(1);
+        return;
+      }
+      if (event.key === "Enter" && event.shiftKey) {
+        event.preventDefault();
+        triggerReportShortcutAction("archive");
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        triggerReportShortcutAction("approve");
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [currentQueueIndex, workQueueKey, reviewBusyReportId, detailBusy]);
 
   async function loadStudyDetail(studyId: string) {
     setDetailBusy(true);
@@ -187,7 +289,7 @@ export default function MedicalPanel({ onError }: Props) {
       const result = await getMedicalStudy(studyId);
       setStudyBundle(result.bundle);
     } catch (err) {
-      const message = `Medical 病例加载失败：${(err as Error).message}`;
+      const message = `医疗病例加载失败：${(err as Error).message}`;
       setDetailError(message);
       onError(message);
     } finally {
@@ -209,7 +311,7 @@ export default function MedicalPanel({ onError }: Props) {
       await startMedicalAnalysis(studyBundle.study.id, { imageId });
       await Promise.all([refresh(), loadStudyDetail(studyBundle.study.id)]);
     } catch (err) {
-      const message = `Medical 分析启动失败：${(err as Error).message}`;
+      const message = `医疗分析启动失败：${(err as Error).message}`;
       setDetailError(message);
       onError(message);
     } finally {
@@ -217,7 +319,14 @@ export default function MedicalPanel({ onError }: Props) {
     }
   }
 
-  async function reviewReport(report: MedicalReport, action: MedicalReportReviewAction, finalText?: string, comment?: string) {
+  async function reviewReport(
+    report: MedicalReport,
+    action: MedicalReportReviewAction,
+    finalText?: string,
+    comment?: string,
+    structured?: Record<string, unknown>
+  ) {
+    const advancePlan = queueAdvancePlan(summary, queueFilter, studyBundle?.study.id ?? null);
     setReviewBusyReportId(report.id);
     setDetailError(null);
     try {
@@ -225,11 +334,16 @@ export default function MedicalPanel({ onError }: Props) {
         action,
         finalText: action === "reject" ? undefined : finalText ?? report.finalText ?? report.draftText ?? undefined,
         comment,
+        structured: action === "reject" ? undefined : structured,
       });
       setStudyBundle(result.bundle);
-      await refresh();
+      const nextSummary = await refresh();
+      const nextStudyId = nextQueueStudyId(nextSummary, advancePlan);
+      if (nextStudyId) {
+        await selectStudy(nextStudyId);
+      }
     } catch (err) {
-      const message = `Medical 报告审核失败：${(err as Error).message}`;
+      const message = `医疗报告审核失败：${(err as Error).message}`;
       setDetailError(message);
       onError(message);
     } finally {
@@ -248,7 +362,7 @@ export default function MedicalPanel({ onError }: Props) {
       setStudyBundle(result.bundle);
       await refresh();
     } catch (err) {
-      const message = `Medical 结节修订失败：${(err as Error).message}`;
+      const message = `医疗结节修订失败：${(err as Error).message}`;
       setDetailError(message);
       onError(message);
       throw err;
@@ -258,6 +372,7 @@ export default function MedicalPanel({ onError }: Props) {
   }
 
   async function submitTiradsFeatureInput(nodule: MedicalNodule, features: TiradsFeatureFormState) {
+    const advancePlan = queueAdvancePlan(summary, queueFilter, studyBundle?.study.id ?? null);
     setTiradsFeatureBusyNoduleId(nodule.id);
     setDetailError(null);
     try {
@@ -273,9 +388,13 @@ export default function MedicalPanel({ onError }: Props) {
         requiresReview: false,
       });
       setStudyBundle(result.bundle);
-      await refresh();
+      const nextSummary = await refresh();
+      const nextStudyId = nextQueueStudyId(nextSummary, advancePlan);
+      if (nextStudyId) {
+        await selectStudy(nextStudyId);
+      }
     } catch (err) {
-      const message = `Medical TI-RADS 特征保存失败：${(err as Error).message}`;
+      const message = `医疗 TI-RADS 特征保存失败：${(err as Error).message}`;
       setDetailError(message);
       onError(message);
       throw err;
@@ -297,11 +416,90 @@ export default function MedicalPanel({ onError }: Props) {
       const result = await searchMedicalKnowledge(query, 5);
       setKnowledgeResult(result);
     } catch (err) {
-      const message = `Medical 证据检索失败：${(err as Error).message}`;
+      const message = `医学证据检索失败：${(err as Error).message}`;
       setKnowledgeError(message);
       onError(message);
     } finally {
       setKnowledgeBusy(false);
+    }
+  }
+
+  async function loadFinalValidationRuns() {
+    setValidationBusy(true);
+    setValidationError(null);
+    try {
+      const payload = await getMedicalFinalValidationRuns(20);
+      setValidationRuns(payload.runs);
+      setValidationReviewQueues(payload.reviewQueues);
+      const nextRunId = selectedValidationRunId ?? payload.runs[0]?.id ?? null;
+      setSelectedValidationRunId(nextRunId);
+      if (nextRunId) {
+        await loadFinalValidationResults(nextRunId, validationReviewFilter);
+      } else {
+        setValidationResults([]);
+        setValidationReviewCounts({});
+      }
+    } catch (err) {
+      const message = `最终验证加载失败：${(err as Error).message}`;
+      setValidationError(message);
+      onError(message);
+    } finally {
+      setValidationBusy(false);
+    }
+  }
+
+  async function loadFinalValidationResults(runId: string, reviewStatus: ValidationReviewFilter = validationReviewFilter) {
+    setValidationBusy(true);
+    setValidationError(null);
+    try {
+      const payload = await getMedicalFinalValidationResults(runId, { reviewStatus, limit: 200 });
+      setSelectedValidationRunId(runId);
+      setValidationResults(payload.results);
+      setValidationReviewCounts(payload.reviewCounts);
+    } catch (err) {
+      const message = `最终验证结果加载失败：${(err as Error).message}`;
+      setValidationError(message);
+      onError(message);
+    } finally {
+      setValidationBusy(false);
+    }
+  }
+
+  async function changeValidationReviewFilter(next: ValidationReviewFilter) {
+    setValidationReviewFilter(next);
+    if (selectedValidationRunId) await loadFinalValidationResults(selectedValidationRunId, next);
+  }
+
+  async function reviewValidationResult(
+    result: MedicalFinalValidationImageResult,
+    reviewStatus: MedicalFinalValidationReviewStatus,
+    comment?: string
+  ) {
+    setValidationReviewBusyId(result.id);
+    setValidationError(null);
+    try {
+      const response = await reviewMedicalFinalValidationResult(result.id, {
+        reviewStatus,
+        comment,
+      });
+      setValidationResults((current) => current.map((item) => item.id === response.result.id ? response.result : item));
+      if (selectedValidationRunId) {
+        const refreshed = await getMedicalFinalValidationResults(selectedValidationRunId, {
+          reviewStatus: validationReviewFilter,
+          limit: 200,
+        });
+        setValidationResults(refreshed.results);
+        setValidationReviewCounts(refreshed.reviewCounts);
+      }
+      const runs = await getMedicalFinalValidationRuns(20);
+      setValidationRuns(runs.runs);
+      setValidationReviewQueues(runs.reviewQueues);
+    } catch (err) {
+      const message = `最终验证复核保存失败：${(err as Error).message}`;
+      setValidationError(message);
+      onError(message);
+    } finally {
+      setValidationReviewBusyId(null);
     }
   }
 
@@ -331,19 +529,23 @@ export default function MedicalPanel({ onError }: Props) {
         clinicalContext: optionalText(manualCase.clinicalContext),
         sourceType: "manual",
       });
-      await createMedicalImage({
+      const image = await createMedicalImage({
         studyId: study.study.id,
         fileUri: imageUri,
         fileType: optionalText(manualCase.fileType),
         width: optionalNumber(manualCase.width),
         height: optionalNumber(manualCase.height),
       });
+      await startMedicalAnalysis(study.study.id, {
+        imageId: image.image.id,
+        triggerSource: "web_manual_case_auto",
+      });
       setManualCase(EMPTY_MANUAL_CASE);
-      setFormMessage(`已登记 ${accessionNo}`);
+      setFormMessage(`已登记并启动分析 ${accessionNo}`);
       setSelectedStudyId(study.study.id);
       await Promise.all([refresh(), loadStudyDetail(study.study.id)]);
     } catch (err) {
-      const message = `Medical 登记失败：${(err as Error).message}`;
+      const message = `医疗病例登记失败：${(err as Error).message}`;
       setFormError(message);
       onError(message);
     } finally {
@@ -361,24 +563,67 @@ export default function MedicalPanel({ onError }: Props) {
   }
 
   if (!summary) {
-    return <div className="p-4 text-sm text-muted">Loading medical workspace...</div>;
+    return <div className="p-4 text-sm text-muted">正在加载医疗工作台...</div>;
   }
 
   if (!summary.enabled) {
     return (
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold">Medical Workstation</h2>
+          <h2 className="text-sm font-bold">医生工作台</h2>
           <button onClick={refresh} disabled={busy} className="btn-secondary text-sm">
             {busy ? "刷新中..." : "刷新"}
           </button>
         </div>
         <div className="border border-warning rounded p-3 text-sm text-warning">
-          {summary.message ?? "medical storage disabled"}
+          {medicalStorageMessage(summary.message)}
         </div>
         <ModelGatewayStatus check={gatewayCheck} />
       </div>
     );
+  }
+
+  async function selectAdjacentQueuedStudy(step: -1 | 1) {
+    const baseIndex = currentQueueIndex >= 0 ? currentQueueIndex : -1;
+    const next = workQueueStudies[baseIndex + step];
+    if (next) await selectStudy(next.id);
+  }
+
+  function triggerReportShortcutAction(action: "approve" | "archive", reportId: string | null = null) {
+    const exactSelector = reportId
+      ? `button[data-medical-report-shortcut="${action}"][data-medical-report-id="${reportId}"]`
+      : null;
+    const fallbackSelector = `button[data-medical-report-shortcut="${action}"]`;
+    const button =
+      (exactSelector ? window.document.querySelector<HTMLButtonElement>(exactSelector) : null)
+      ?? Array.from(window.document.querySelectorAll<HTMLButtonElement>(fallbackSelector))
+        .find((candidate) => !candidate.disabled)
+      ?? null;
+    if (!button || button.disabled) return;
+    button.click();
+  }
+
+  function triggerTiradsShortcutAction(noduleId: string | null = null) {
+    const selector = noduleId
+      ? `button[data-medical-tirads-shortcut="confirm"][data-medical-nodule-id="${noduleId}"]`
+      : `button[data-medical-tirads-shortcut="confirm"]`;
+    const button = window.document.querySelector<HTMLButtonElement>(selector);
+    if (!button || button.disabled) return;
+    button.click();
+  }
+
+  function triggerBatchQueueAction(action: BatchQueueAction) {
+    if (action.kind === "confirm_tirads") {
+      triggerTiradsShortcutAction(action.noduleId);
+      return;
+    }
+    if (action.kind === "confirm_report") {
+      triggerReportShortcutAction("approve", action.reportId);
+      return;
+    }
+    if (action.kind === "archive_report") {
+      triggerReportShortcutAction("archive", action.reportId);
+    }
   }
 
   return (
@@ -386,8 +631,8 @@ export default function MedicalPanel({ onError }: Props) {
       <aside className="border-b lg:border-b-0 lg:border-r border-border p-4 overflow-y-auto space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold">Medical Workstation</h2>
-            <p className="text-xs text-muted">{summary.recentStudies.length} recent study(s)</p>
+            <h2 className="text-sm font-bold">医生工作台</h2>
+            <p className="text-xs text-muted">最近检查 {summary.recentStudies.length} 例</p>
           </div>
           <button onClick={refresh} disabled={busy} className="btn-secondary text-sm">
             {busy ? "刷新中..." : "刷新"}
@@ -403,8 +648,8 @@ export default function MedicalPanel({ onError }: Props) {
           ))}
         </div>
 
-        <QueueBlock title="Model Jobs" values={summary.queues.modelJobs} />
-        <QueueBlock title="Agent Tasks" values={summary.queues.agentTasks} />
+        <QueueBlock title="模型任务" values={summary.queues.modelJobs} />
+        <QueueBlock title="智能体任务" values={summary.queues.agentTasks} />
         <ModelGatewayStatus check={gatewayCheck} />
       </aside>
 
@@ -427,6 +672,44 @@ export default function MedicalPanel({ onError }: Props) {
           onSubmit={searchKnowledgeEvidence}
         />
 
+        <FinalValidationReviewPanel
+          runs={validationRuns}
+          reviewQueues={validationReviewQueues}
+          selectedRunId={selectedValidationRunId}
+          results={validationResults}
+          reviewCounts={validationReviewCounts}
+          reviewFilter={validationReviewFilter}
+          busy={validationBusy}
+          error={validationError}
+          reviewingResultId={validationReviewBusyId}
+          onRefresh={loadFinalValidationRuns}
+          onSelectRun={(runId) => void loadFinalValidationResults(runId)}
+          onFilterChange={(next) => void changeValidationReviewFilter(next)}
+          onReview={(result, status, comment) => void reviewValidationResult(result, status, comment)}
+        />
+
+        {queueFilter !== "all" && (
+          workQueueStudies.length > 0 ? (
+            <BatchQueueModeBar
+              filter={queueFilter}
+              study={currentQueueStudy}
+              position={currentQueueIndex >= 0 ? currentQueueIndex + 1 : 0}
+              total={workQueueStudies.length}
+              action={batchQueueAction}
+              busy={detailBusy || reviewBusyReportId !== null || tiradsFeatureBusyNoduleId !== null}
+              onSelectPrev={() => void selectAdjacentQueuedStudy(-1)}
+              onSelectNext={() => void selectAdjacentQueuedStudy(1)}
+              onTriggerAction={() => triggerBatchQueueAction(batchQueueAction)}
+            />
+          ) : (
+            <EmptyQueueStateBar
+              filter={queueFilter}
+              recommendedFilter={nextQueueFilter}
+              onSelectRecommended={(next) => setQueueFilter(next)}
+            />
+          )
+        )}
+
         <StudyDetail
           bundle={studyBundle}
           busy={detailBusy}
@@ -442,16 +725,25 @@ export default function MedicalPanel({ onError }: Props) {
         />
 
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-bold">Recent Studies</h3>
+          <div>
+            <h3 className="text-sm font-bold">病例工作队列</h3>
+            <div className="text-xs text-muted mt-1">
+              {workQueueStudies.length} / {summary.recentStudies.length} 例
+            </div>
+          </div>
           {summary.warnings.length > 0 && (
             <span className="text-xs text-warning">{summary.warnings.join(", ")}</span>
           )}
         </div>
-        {summary.recentStudies.length === 0 ? (
+        <QueueFilterBar value={queueFilter} counts={queueCounts} onChange={setQueueFilter} />
+        <div className="mb-3 text-xs text-muted">
+          快捷键: `Alt+↑` / `Alt+↓` 切换，`Alt+Enter` 确认，`Alt+Shift+Enter` 归档
+        </div>
+        {workQueueStudies.length === 0 ? (
           <p className="text-sm text-muted">暂无甲状腺超声验证病例。</p>
         ) : (
           <div className="space-y-2">
-            {summary.recentStudies.map((study) => (
+            {workQueueStudies.map((study) => (
               <StudyRow
                 key={study.id}
                 study={study}
@@ -488,9 +780,9 @@ function ManualCaseForm({
   return (
     <form onSubmit={onSubmit} className="border border-border rounded p-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-bold">Manual Case</h3>
+        <h3 className="text-sm font-bold">手工登记病例</h3>
         <button type="submit" disabled={busy} className="btn-primary">
-          {busy ? "登记中..." : "登记"}
+          {busy ? "登记中..." : "登记并启动分析"}
         </button>
       </div>
 
@@ -527,9 +819,9 @@ function ManualCaseForm({
             onChange={(event) => update("sex", event.target.value)}
           >
             <option value="">未填</option>
-            <option value="F">F</option>
-            <option value="M">M</option>
-            <option value="O">O</option>
+            <option value="F">女</option>
+            <option value="M">男</option>
+            <option value="O">其他</option>
           </select>
         </Field>
         <Field label="出生年">
@@ -621,14 +913,14 @@ function KnowledgeEvidencePanel({
       {result && (
         <div className="mt-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-            <span>{result.mode}</span>
-            <span>{result.count} evidence</span>
+            <span>{knowledgeSearchModeLabel(result.mode)}</span>
+            <span>{result.count} 条证据</span>
             {result.warnings.map((warning) => (
               <span key={warning} className="text-warning">{warning}</span>
             ))}
           </div>
           {result.evidence.length === 0 ? (
-            <div className="text-sm text-muted border border-border rounded p-2">none</div>
+            <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
           ) : (
             result.evidence.map((item) => (
               <KnowledgeEvidenceRow key={item.chunkId} item={item} />
@@ -660,18 +952,378 @@ function KnowledgeEvidenceRow({ item }: { item: MedicalKnowledgeSearchResult["ev
   );
 }
 
+const VALIDATION_REVIEW_FILTERS: Array<[ValidationReviewFilter, string]> = [
+  ["unreviewed", "待复核"],
+  ["needs_review", "需再看"],
+  ["accepted", "已接受"],
+  ["rejected", "已退回"],
+  ["all", "全部"],
+];
+
+function FinalValidationReviewPanel({
+  runs,
+  reviewQueues,
+  selectedRunId,
+  results,
+  reviewCounts,
+  reviewFilter,
+  busy,
+  error,
+  reviewingResultId,
+  onRefresh,
+  onSelectRun,
+  onFilterChange,
+  onReview,
+}: {
+  runs: MedicalFinalValidationRun[];
+  reviewQueues: Record<string, number>;
+  selectedRunId: string | null;
+  results: MedicalFinalValidationImageResult[];
+  reviewCounts: Record<string, number>;
+  reviewFilter: ValidationReviewFilter;
+  busy: boolean;
+  error: string | null;
+  reviewingResultId: string | null;
+  onRefresh(): void;
+  onSelectRun(runId: string): void;
+  onFilterChange(next: ValidationReviewFilter): void;
+  onReview(result: MedicalFinalValidationImageResult, status: MedicalFinalValidationReviewStatus, comment?: string): void;
+}) {
+  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? null;
+  return (
+    <section className="border border-border rounded p-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 className="text-sm font-bold">最终验证复核</h3>
+          <div className="mt-1 text-xs text-muted">
+            {runs.length} 个批次 · {reviewQueues.unreviewed ?? 0} 条待复核结果
+          </div>
+        </div>
+        <button type="button" onClick={onRefresh} disabled={busy} className="btn-secondary">
+          {busy ? "刷新中..." : "刷新验证"}
+        </button>
+      </div>
+
+      {error && <div className="mt-3 text-sm text-danger">{error}</div>}
+
+      {runs.length === 0 ? (
+        <div className="mt-3 border border-border rounded p-2 text-sm text-muted">暂无最终验证批次。</div>
+      ) : (
+        <>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+            <Field label="验证批次">
+              <select
+                className={inputClass}
+                value={selectedRunId ?? ""}
+                onChange={(event) => onSelectRun(event.target.value)}
+              >
+                {runs.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    {run.datasetId} · {statusLabel(run.status)} · {formatTime(run.createdAt)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="grid grid-cols-2 gap-2 text-xs md:min-w-[260px]">
+              <Metric label="流程" value={selectedRun?.pipelineMode ?? "无"} />
+              <Metric label="状态" value={statusLabel(selectedRun?.status)} />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {VALIDATION_REVIEW_FILTERS.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onFilterChange(value)}
+                className={value === reviewFilter ? "btn-primary" : "btn-secondary"}
+              >
+                {label} {value !== "all" ? `(${reviewCounts[value] ?? 0})` : ""}
+              </button>
+            ))}
+          </div>
+
+          {results.length === 0 ? (
+            <div className="mt-3 border border-border rounded p-2 text-sm text-muted">当前筛选没有结果。</div>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {results.map((result) => (
+                <FinalValidationResultRow
+                  key={result.id}
+                  result={result}
+                  busy={reviewingResultId === result.id}
+                  onReview={onReview}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function FinalValidationResultRow({
+  result,
+  busy,
+  onReview,
+}: {
+  result: MedicalFinalValidationImageResult;
+  busy: boolean;
+  onReview(result: MedicalFinalValidationImageResult, status: MedicalFinalValidationReviewStatus, comment?: string): void;
+}) {
+  const artifactUris = finalValidationArtifactUris(result);
+  const confidence = numberFromRecord(result.detection, "confidence");
+  const bbox = result.detection.bbox;
+  const measurementSource = stringFromRecord(result.measurement, "measurementSource");
+  function review(status: MedicalFinalValidationReviewStatus) {
+    const comment = status === "accepted" || status === "unreviewed"
+      ? undefined
+      : window.prompt("复核备注", result.reviewComment ?? "") ?? undefined;
+    onReview(result, status, comment);
+  }
+
+  return (
+    <article className="border border-border rounded p-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[160px_1fr]">
+        <div className="min-w-0">
+          <img
+            src={medicalArtifactUrl(result.artifactUri)}
+            alt={result.datasetImageId}
+            className="h-32 w-full rounded border border-border object-contain bg-black"
+          />
+          {artifactUris.overlay_image && (
+            <img
+              src={medicalArtifactUrl(artifactUris.overlay_image)}
+              alt={`${result.datasetImageId} 叠加图`}
+              className="mt-2 h-32 w-full rounded border border-border object-contain bg-black"
+            />
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-mono text-xs font-semibold truncate">{result.datasetImageId}</div>
+              <div className="mt-1 text-xs text-muted truncate">{result.sourceRelativePath ?? "来源未知"}</div>
+            </div>
+            <div className="flex flex-wrap gap-1 text-xs">
+              <span className="rounded border border-border px-1.5 py-0.5">{result.datasetLabel ?? "未标注"}</span>
+              <span className="rounded border border-border px-1.5 py-0.5">{statusLabel(result.status)}</span>
+              <span className="rounded border border-border px-1.5 py-0.5">{reviewStatusLabel(result.reviewStatus)}</span>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs lg:grid-cols-4">
+            <Metric label="置信度" value={confidence === null ? "无" : confidence.toFixed(3)} />
+            <Metric label="测量" value={measurementSource ?? "无"} />
+            <Metric label="产物" value={String(Object.keys(artifactUris).length)} />
+            <Metric label="复核时间" value={result.reviewedAt ? formatTime(result.reviewedAt) : "未复核"} />
+          </div>
+
+          <div className="mt-3 text-xs text-muted">
+            检测框：<span className="font-mono">{Array.isArray(bbox) ? JSON.stringify(bbox) : "无"}</span>
+          </div>
+          {result.note && <div className="mt-2 text-xs text-warning">{result.note}</div>}
+          {result.reviewComment && <div className="mt-2 text-xs text-muted">备注：{result.reviewComment}</div>}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" disabled={busy} onClick={() => review("accepted")} className="btn-primary">
+              接受
+            </button>
+            <button type="button" disabled={busy} onClick={() => review("needs_review")} className="btn-secondary">
+              需再看
+            </button>
+            <button type="button" disabled={busy} onClick={() => review("rejected")} className="btn-secondary">
+              退回
+            </button>
+            {artifactUris.detections_json && (
+              <a className="btn-secondary" href={medicalArtifactUrl(artifactUris.detections_json)} target="_blank" rel="noreferrer">
+                检测 JSON
+              </a>
+            )}
+            {artifactUris.segmentation_json && (
+              <a className="btn-secondary" href={medicalArtifactUrl(artifactUris.segmentation_json)} target="_blank" rel="noreferrer">
+                分割 JSON
+              </a>
+            )}
+            {artifactUris.measurements_json && (
+              <a className="btn-secondary" href={medicalArtifactUrl(artifactUris.measurements_json)} target="_blank" rel="noreferrer">
+                测量 JSON
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function finalValidationArtifactUris(result: MedicalFinalValidationImageResult): Record<string, string> {
+  const uris: Record<string, string> = {};
+  for (const artifact of recordList(result.modelArtifacts)) {
+    const jobType = stringValue(artifact.jobType);
+    const artifactUri = stringValue(artifact.artifactUri);
+    if (jobType && artifactUri) uris[`${jobType}_artifact`] = artifactUri;
+    const nestedArtifacts = objectValue(artifact.nestedArtifacts);
+    if (!nestedArtifacts) continue;
+    for (const [key, value] of Object.entries(nestedArtifacts)) {
+      if (typeof value === "string" && value.startsWith("artifact://")) uris[key] = value;
+    }
+  }
+  return uris;
+}
+
+function numberFromRecord(record: Record<string, unknown>, key: string): number | null {
+  return numberValue(record[key]);
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string | undefined {
+  return stringValue(record[key]);
+}
+
+function reviewStatusLabel(status: MedicalFinalValidationReviewStatus): string {
+  if (status === "unreviewed") return "待复核";
+  if (status === "accepted") return "已接受";
+  if (status === "rejected") return "已退回";
+  return "需再看";
+}
+
+function reviewActionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    approve: "确认",
+    revise: "修订",
+    reject: "驳回",
+    archive: "归档",
+  };
+  return labels[action] ?? action;
+}
+
+function statusLabel(status: string | null | undefined): string {
+  if (!status) return "未知";
+  const labels: Record<string, string> = {
+    created: "已创建",
+    uploaded: "已上传",
+    pending: "待处理",
+    queued: "排队中",
+    running: "运行中",
+    waiting_model: "等待模型",
+    waiting_doctor_input: "等待医生确认",
+    succeeded: "成功",
+    completed: "已完成",
+    ok: "正常",
+    failed: "失败",
+    error: "异常",
+    draft: "草稿",
+    pending_review: "待审核",
+    confirmed: "已确认",
+    archived: "已归档",
+    rejected: "已退回",
+    reviewed: "已复核",
+    unreviewed: "待复核",
+    accepted: "已接受",
+    needs_review: "需再看",
+    needs_doctor_review: "需医生复核",
+    pending_llm: "等待大模型",
+    consistent: "一致",
+    matched: "已匹配",
+    none: "无",
+    unknown: "未知",
+    ready: "就绪",
+    reachable: "可连接",
+    unreachable: "不可连接",
+    checking: "检查中",
+    online: "在线",
+    offline: "离线",
+    doctor_revised: "医生已修订",
+    measured: "已测量",
+  };
+  return labels[status] ?? status;
+}
+
+function sourceTypeLabel(source: string | null | undefined): string {
+  if (!source) return "未知";
+  const labels: Record<string, string> = {
+    manual: "手工录入",
+    final_validation: "最终验证",
+    dicom_import: "DICOM 导入",
+    csv_import: "CSV 导入",
+    json_import: "JSON 导入",
+  };
+  return labels[source] ?? source;
+}
+
+function medicalStorageMessage(message: string | null | undefined): string {
+  if (!message) return "医疗数据存储未启用";
+  if (message.includes("medical storage disabled")) return `医疗数据存储未启用${message.includes("no data.db") ? "（缺少 data.db）" : ""}`;
+  return message;
+}
+
+function taskTypeLabel(taskType: string): string {
+  const labels: Record<string, string> = {
+    image_qc: "图像质控",
+    detect_nodules: "结节检测",
+    segment_nodules: "结节分割",
+    measure_nodules: "结节测量",
+    classify_tirads_features: "TI-RADS 特征识别",
+    calculate_tirads: "TI-RADS 规则计算",
+    draft_report: "报告生成",
+    safety_review: "安全审核",
+  };
+  return labels[taskType] ?? taskType;
+}
+
+function modelJobTypeLabel(jobType: string): string {
+  const labels: Record<string, string> = {
+    "thyroid.detect_nodules": "甲状腺结节检测",
+    "thyroid.segment_nodule": "甲状腺结节分割",
+    "thyroid.measure_nodule": "甲状腺结节测量",
+  };
+  return labels[jobType] ?? jobType;
+}
+
+function knowledgeSearchModeLabel(mode: string): string {
+  const labels: Record<string, string> = {
+    hybrid: "混合检索",
+    bm25: "关键词检索",
+    vector: "向量检索",
+    semantic: "语义检索",
+  };
+  return labels[mode] ?? mode;
+}
+
+function auditActionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    "medical.nodule.revise": "医生修订结节检测框",
+    "medical.report.review": "医生审核报告",
+    "medical.report.archive": "报告归档",
+    "medical.final_validation.review": "最终验证复核",
+  };
+  return labels[action] ?? action;
+}
+
+function actorTypeLabel(actorType: string): string {
+  const labels: Record<string, string> = {
+    doctor: "医生",
+    system: "系统",
+    worker: "工作器",
+    agent: "智能体",
+    user: "用户",
+  };
+  return labels[actorType] ?? actorType;
+}
+
 function QueueBlock({ title, values }: { title: string; values: Record<string, number> }) {
   const entries = Object.entries(values);
   return (
     <div>
       <h3 className="text-xs uppercase text-muted mb-2">{title}</h3>
       {entries.length === 0 ? (
-        <div className="text-sm text-muted border border-border rounded p-2">none</div>
+        <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
       ) : (
         <div className="space-y-1">
           {entries.map(([status, count]) => (
             <div key={status} className="flex items-center justify-between text-sm border border-border rounded px-2 py-1.5">
-              <span>{status}</span>
+              <span>{statusLabel(status)}</span>
               <strong>{count}</strong>
             </div>
           ))}
@@ -691,19 +1343,19 @@ function ModelGatewayStatus({ check }: { check: MedicalModelGatewayCheck | null 
       : "unreachable";
   return (
     <div>
-      <h3 className="text-xs uppercase text-muted mb-2">Model Gateway</h3>
+      <h3 className="text-xs uppercase text-muted mb-2">模型网关</h3>
       <div className="border border-border rounded p-2 text-xs space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-medium">{status}</span>
+          <span className="font-medium">{statusLabel(status)}</span>
           <span className="border border-border rounded px-1.5 py-0.5">
-            {check?.reachable ? "online" : "offline"}
+            {check?.reachable ? "在线" : "离线"}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Metric label="ready" value={readyDetectors.length > 0 ? readyDetectors.join(", ") : "none"} />
-          <Metric label="gpu" value={gpuLabel(result)} />
-          <Metric label="latency" value={check ? `${check.durationMs}ms` : "pending"} />
-          <Metric label="checked" value={check ? formatTime(check.checkedAt) : "pending"} />
+          <Metric label="可用模型" value={readyDetectors.length > 0 ? readyDetectors.join(", ") : "无"} />
+          <Metric label="GPU" value={gpuLabel(result)} />
+          <Metric label="延迟" value={check ? `${check.durationMs}ms` : "等待中"} />
+          <Metric label="检查时间" value={check ? formatTime(check.checkedAt) : "等待中"} />
         </div>
         {check?.gatewayUrl && <div className="font-mono text-[11px] text-muted truncate">{check.gatewayUrl}</div>}
         {check?.warnings && check.warnings.length > 0 && (
@@ -735,7 +1387,13 @@ function StudyDetail({
   revisingNoduleId: string | null;
   tiradsFeatureBusyNoduleId: string | null;
   onStartAnalysis(imageId: string): void;
-  onReviewReport(report: MedicalReport, action: MedicalReportReviewAction, finalText?: string, comment?: string): void;
+  onReviewReport(
+    report: MedicalReport,
+    action: MedicalReportReviewAction,
+    finalText?: string,
+    comment?: string,
+    structured?: Record<string, unknown>
+  ): void;
   onReviseNodule(nodule: MedicalNodule, bbox: number[]): Promise<void>;
   onSubmitTiradsFeatures(nodule: MedicalNodule, features: TiradsFeatureFormState): Promise<void>;
 }) {
@@ -770,31 +1428,31 @@ function StudyDetail({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-mono text-xs text-muted">{study.id}</div>
-          <h3 className="text-sm font-bold mt-1">{study.accessionNo ?? "manual study"}</h3>
+          <h3 className="text-sm font-bold mt-1">{study.accessionNo ?? "手工病例"}</h3>
           <p className="text-xs text-muted mt-1">
-            {patient?.externalPatientId ?? "unknown patient"} · {study.modality}/{study.bodyPart}
+            {patient?.externalPatientId ?? "未知患者"} · {study.modality}/{study.bodyPart}
           </p>
         </div>
-        <span className="text-xs border border-border rounded px-2 py-1">{study.status}</span>
+        <span className="text-xs border border-border rounded px-2 py-1">{statusLabel(study.status)}</span>
       </div>
 
       {error && <div className="mt-3 text-sm text-danger">{error}</div>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-xs">
-        <Metric label="source" value={study.sourceType} />
-        <Metric label="images" value={String(images.length)} />
-        <Metric label="nodules" value={String(nodules.length)} />
-        <Metric label="reports" value={String(reports.length)} />
-        <Metric label="audits" value={String(auditLogs.length)} />
-        <Metric label="model jobs" value={String(modelJobs.length)} />
-        <Metric label="analysis" value={String(analysisSessions.length)} />
-        <Metric label="tasks" value={String(agentTasks.length)} />
+        <Metric label="来源" value={sourceTypeLabel(study.sourceType)} />
+        <Metric label="图像" value={String(images.length)} />
+        <Metric label="结节" value={String(nodules.length)} />
+        <Metric label="报告" value={String(reports.length)} />
+        <Metric label="审计" value={String(auditLogs.length)} />
+        <Metric label="模型任务" value={String(modelJobs.length)} />
+        <Metric label="分析" value={String(analysisSessions.length)} />
+        <Metric label="智能体任务" value={String(agentTasks.length)} />
       </div>
 
       <div className="mt-4">
-        <h4 className="text-xs uppercase text-muted mb-2">Images</h4>
+        <h4 className="text-xs uppercase text-muted mb-2">图像</h4>
         {images.length === 0 ? (
-          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
         ) : (
           <div className="space-y-2">
             {images.map((image) => (
@@ -822,9 +1480,9 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
-        <h4 className="text-xs uppercase text-muted mb-2">AI Results</h4>
+        <h4 className="text-xs uppercase text-muted mb-2">AI 结果</h4>
         {nodules.length === 0 && tiradsResults.length === 0 ? (
-          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {nodules.map((nodule) => (
@@ -850,19 +1508,20 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
-        <h4 className="text-xs uppercase text-muted mb-2">Reports</h4>
+        <h4 className="text-xs uppercase text-muted mb-2">报告</h4>
         {hasReportStageSignal(reports, agentTasks) && <RealDemoModelNotice reports={reports} agentTasks={agentTasks} />}
         {reports.length === 0 ? (
-          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
         ) : (
           <div className="space-y-2">
             {reports.map((report) => (
               <ReportRow
                 key={report.id}
                 report={report}
+                reviews={doctorReviews.filter((review) => review.reportId === report.id)}
                 busy={busy || reviewingReportId !== null}
                 reviewing={reviewingReportId === report.id}
-                onReview={(action, finalText, comment) => onReviewReport(report, action, finalText, comment)}
+                onReview={(action, finalText, comment, structured) => onReviewReport(report, action, finalText, comment, structured)}
               />
             ))}
           </div>
@@ -870,9 +1529,9 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
-        <h4 className="text-xs uppercase text-muted mb-2">Doctor Reviews</h4>
+        <h4 className="text-xs uppercase text-muted mb-2">医生审核记录</h4>
         {doctorReviews.length === 0 ? (
-          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
         ) : (
           <div className="space-y-2">
             {doctorReviews.map((review) => (
@@ -883,9 +1542,9 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
-        <h4 className="text-xs uppercase text-muted mb-2">Safety Audit</h4>
+        <h4 className="text-xs uppercase text-muted mb-2">安全审计</h4>
         {auditLogs.length === 0 ? (
-          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
         ) : (
           <div className="space-y-2">
             {auditLogs.map((audit) => (
@@ -896,9 +1555,9 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
-        <h4 className="text-xs uppercase text-muted mb-2">Model Jobs</h4>
+        <h4 className="text-xs uppercase text-muted mb-2">模型任务</h4>
         {modelJobs.length === 0 ? (
-          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {modelJobs.map((job) => (
@@ -909,9 +1568,9 @@ function StudyDetail({
       </div>
 
       <div className="mt-4">
-        <h4 className="text-xs uppercase text-muted mb-2">Agent Tasks</h4>
+        <h4 className="text-xs uppercase text-muted mb-2">智能体任务</h4>
         {agentTasks.length === 0 ? (
-          <div className="text-sm text-muted border border-border rounded p-2">none</div>
+          <div className="text-sm text-muted border border-border rounded p-2">暂无</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {agentTasks.map((task) => (
@@ -955,16 +1614,25 @@ function OverlayRevisionWorkspace({
   const [draftBbox, setDraftBbox] = useState<number[] | null>(null);
   const [dragStart, setDragStart] = useState<ImagePoint | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  const [loadedImageSize, setLoadedImageSize] = useState<{ width: number; height: number } | null>(null);
 
   const selectedNodule = overlay?.nodules.find((nodule) => nodule.id === selectedNoduleId)
     ?? overlay?.nodules[0]
     ?? null;
   const displayBbox = draftBbox ?? selectedNodule?.bbox ?? null;
+  const revisionImage = overlay
+    ? {
+        ...overlay.image,
+        width: overlay.image.width ?? loadedImageSize?.width ?? null,
+        height: overlay.image.height ?? loadedImageSize?.height ?? null,
+      }
+    : null;
 
   useEffect(() => {
     if (!overlay) {
       setSelectedNoduleId(null);
       setDraftBbox(null);
+      setLoadedImageSize(null);
       return;
     }
     if (!selectedNoduleId || !overlay.nodules.some((nodule) => nodule.id === selectedNoduleId)) {
@@ -976,13 +1644,14 @@ function OverlayRevisionWorkspace({
   useEffect(() => {
     setDraftBbox(null);
     setEditError(null);
+    setLoadedImageSize(null);
   }, [selectedNodule?.id, selectedNodule?.updatedAt]);
 
   if (!overlay || overlay.nodules.length === 0) return null;
 
   function beginDrag(event: ReactMouseEvent<HTMLDivElement>) {
-    if (busy || !overlay) return;
-    const point = mousePointToImagePoint(event, overlay.image);
+    if (busy || !revisionImage) return;
+    const point = mousePointToImagePoint(event, revisionImage);
     if (!point) return;
     setDragStart(point);
     setDraftBbox([point.x, point.y, point.x, point.y]);
@@ -990,15 +1659,15 @@ function OverlayRevisionWorkspace({
   }
 
   function updateDrag(event: ReactMouseEvent<HTMLDivElement>) {
-    if (!dragStart || !overlay) return;
-    const point = mousePointToImagePoint(event, overlay.image);
+    if (!dragStart || !revisionImage) return;
+    const point = mousePointToImagePoint(event, revisionImage);
     if (!point) return;
     setDraftBbox(bboxFromPoints(dragStart, point));
   }
 
   function endDrag(event: ReactMouseEvent<HTMLDivElement>) {
-    if (!dragStart || !overlay) return;
-    const point = mousePointToImagePoint(event, overlay.image);
+    if (!dragStart || !revisionImage) return;
+    const point = mousePointToImagePoint(event, revisionImage);
     if (point) setDraftBbox(bboxFromPoints(dragStart, point));
     setDragStart(null);
   }
@@ -1006,7 +1675,7 @@ function OverlayRevisionWorkspace({
   async function saveOverlayRevision() {
     if (!selectedNodule) return;
     if (!isNumberTuple4(draftBbox)) {
-      setEditError("请先在 overlay 上拖拽框选新 bbox。");
+      setEditError("请先在叠加图上拖拽框选新的检测框。");
       return;
     }
     const validationError = bboxValidationMessage(draftBbox);
@@ -1026,11 +1695,11 @@ function OverlayRevisionWorkspace({
     <div className="border border-border rounded p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h4 className="text-xs uppercase text-muted">Overlay Revision</h4>
-          <div className="mt-1 text-xs text-muted">拖拽图像区域生成新 bbox，再保存到选中的结节。</div>
+          <h4 className="text-xs uppercase text-muted">叠加图修订</h4>
+          <div className="mt-1 text-xs text-muted">拖拽图像区域生成新的检测框，再保存到选中的结节。</div>
         </div>
         <button type="button" className="btn-secondary" disabled={busy} onClick={saveOverlayRevision}>
-          {selectedNodule && revisingNoduleId === selectedNodule.id ? "保存中..." : "保存 overlay 修订"}
+          {selectedNodule && revisingNoduleId === selectedNodule.id ? "保存中..." : "保存叠加图修订"}
         </button>
       </div>
 
@@ -1054,7 +1723,7 @@ function OverlayRevisionWorkspace({
 
       <div
         role="img"
-        aria-label="overlay bbox revision canvas"
+        aria-label="叠加图检测框修订画布"
         data-testid="overlay-revision-canvas"
         className="relative mt-3 max-h-[520px] overflow-hidden rounded border border-border bg-bg select-none cursor-crosshair"
         onMouseDown={beginDrag}
@@ -1064,28 +1733,34 @@ function OverlayRevisionWorkspace({
       >
         <img
           src={medicalArtifactUrl(overlay.overlayUri)}
-          alt="overlay revision preview"
+          alt="叠加图修订预览"
           className="block h-auto w-full object-contain"
           draggable={false}
+          onLoad={(event) => {
+            const element = event.currentTarget;
+            if ((!overlay.image.width || !overlay.image.height) && element.naturalWidth > 0 && element.naturalHeight > 0) {
+              setLoadedImageSize({ width: element.naturalWidth, height: element.naturalHeight });
+            }
+          }}
         />
         {overlay.nodules.map((nodule) => (
           <BboxOverlay
             key={nodule.id}
             bbox={nodule.bbox}
-            image={overlay.image}
+            image={revisionImage ?? overlay.image}
             active={selectedNodule?.id === nodule.id}
             label={`N${nodule.noduleIndex}`}
           />
         ))}
         {isNumberTuple4(displayBbox) && (
-          <BboxOverlay bbox={displayBbox} image={overlay.image} active label="draft" dashed />
+          <BboxOverlay bbox={displayBbox} image={revisionImage ?? overlay.image} active label="草稿" dashed />
         )}
       </div>
 
       <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-        <Metric label="image" value={overlay.image.id} />
-        <Metric label="current bbox" value={formatBbox(selectedNodule?.bbox)} />
-        <Metric label="draft bbox" value={formatBbox(draftBbox)} />
+        <Metric label="图像" value={overlay.image.id} />
+        <Metric label="当前检测框" value={formatBbox(selectedNodule?.bbox)} />
+        <Metric label="草稿检测框" value={formatBbox(draftBbox)} />
       </div>
       {editError && <div className="mt-2 text-xs text-danger">{editError}</div>}
     </div>
@@ -1131,29 +1806,29 @@ function ModelJobRow({ job }: { job: MedicalModelJob }) {
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium truncate">{job.jobType}</span>
-        <span className="border border-border rounded px-1.5 py-0.5">{job.status}</span>
+        <span className="font-medium truncate">{modelJobTypeLabel(job.jobType)}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{statusLabel(job.status)}</span>
       </div>
       <div className="grid grid-cols-2 gap-2 mt-2">
-        <Metric label="model" value={job.modelName ?? "unknown"} />
-        <Metric label="version" value={job.modelVersion ?? "unknown"} />
-        <Metric label="attempts" value={`${job.attempts}/${job.maxAttempts}`} />
-        <Metric label="updated" value={formatTime(job.updatedAt)} />
+        <Metric label="模型" value={job.modelName ?? "未知"} />
+        <Metric label="版本" value={job.modelVersion ?? "未知"} />
+        <Metric label="尝试次数" value={`${job.attempts}/${job.maxAttempts}`} />
+        <Metric label="更新时间" value={formatTime(job.updatedAt)} />
       </div>
       {detectionsJsonUri && (
-        <ArtifactLine label="detections" value={detectionsJsonUri} />
+        <ArtifactLine label="检测结果" value={detectionsJsonUri} />
       )}
       {overlayUri && (
-        <ArtifactLine label="overlay" value={overlayUri} />
+        <ArtifactLine label="叠加图" value={overlayUri} />
       )}
       {comparisonJsonUri && (
-        <ArtifactLine label="comparison" value={comparisonJsonUri} />
+        <ArtifactLine label="模型对比" value={comparisonJsonUri} />
       )}
       <DetectorComparisonSummary comparison={comparison} llmEvaluation={llmEvaluation} />
       {overlayUri && (
         <img
           src={medicalArtifactUrl(overlayUri)}
-          alt="detector overlay preview"
+          alt="检测叠加图预览"
           className="mt-2 max-h-48 w-full rounded border border-border object-contain bg-bg"
         />
       )}
@@ -1177,28 +1852,28 @@ function DetectorComparisonSummary({
   if (!consensus && !llmEvaluation) return null;
   const focus = stringList(llmEvaluation?.doctor_review_focus);
   const constraints = stringList(llmEvaluation?.constraints);
-  const intendedModel = stringValue(llmEvaluation?.intended_model) ?? "Qwen3.6";
+  const intendedModel = stringValue(llmEvaluation?.intended_model) ?? "Qwen3.5-9B";
   const llmStatus = stringValue(llmEvaluation?.status) ?? "pending_llm";
   const assessment = stringValue(llmEvaluation?.overall_assessment) ?? "needs_review";
   return (
     <div className="mt-3 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold">Detector Consensus</span>
+        <span className="font-semibold">检测模型一致性</span>
         <span className="border border-border rounded px-1.5 py-0.5">
-          {stringValue(consensus?.status) ?? "unknown"}
+          {statusLabel(stringValue(consensus?.status) ?? "unknown")}
         </span>
       </div>
       {consensus && (
         <div className="grid grid-cols-2 gap-2">
-          <Metric label="matched" value={numberLabel(consensus.matched_count)} />
-          <Metric label="primary only" value={numberLabel(consensus.primary_only_count)} />
-          <Metric label="YOLO only" value={numberLabel(consensus.comparator_only_count)} />
-          <Metric label="detectors" value={`${numberLabel(consensus.primary_count)}/${numberLabel(consensus.comparator_count)}`} />
+          <Metric label="一致检出" value={numberLabel(consensus.matched_count)} />
+          <Metric label="主模型独有" value={numberLabel(consensus.primary_only_count)} />
+          <Metric label="YOLO 独有" value={numberLabel(consensus.comparator_only_count)} />
+          <Metric label="模型检出数" value={`${numberLabel(consensus.primary_count)}/${numberLabel(consensus.comparator_count)}`} />
         </div>
       )}
       {llmEvaluation && (
         <div className="text-muted">
-          {intendedModel} · {llmStatus} · {assessment}
+          {intendedModel} · {statusLabel(llmStatus)} · {statusLabel(assessment)}
         </div>
       )}
       {focus.length > 0 && (
@@ -1241,7 +1916,7 @@ function ModelEvidencePanel({ rows }: { rows: NoduleModelEvidence[] }) {
   if (rows.length === 0) return null;
   return (
     <div>
-      <h4 className="text-xs uppercase text-muted mb-2">Model Evidence</h4>
+      <h4 className="text-xs uppercase text-muted mb-2">模型依据</h4>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {rows.map((row) => (
           <NoduleModelEvidenceRow key={row.nodule.id} row={row} />
@@ -1267,47 +1942,47 @@ function NoduleModelEvidenceRow({ row }: { row: NoduleModelEvidence }) {
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold">Nodule {row.nodule.noduleIndex}</span>
+        <span className="font-semibold">结节 {row.nodule.noduleIndex}</span>
         <span className="border border-border rounded px-1.5 py-0.5">
-          {segmentation || measurement ? "report evidence" : "pending evidence"}
+          {segmentation || measurement ? "报告依据" : "等待依据"}
         </span>
       </div>
 
       <div className="mt-3">
-        <div className="font-semibold">Segmentation</div>
+        <div className="font-semibold">分割</div>
         <div className="grid grid-cols-2 gap-2 mt-2">
-          <Metric label="source" value={stringValue(segmentation?.segmentation_source) ?? "pending"} />
-          <Metric label="model" value={modelLabel(segmentation, row.segmentationJob)} />
-          <Metric label="version" value={versionLabel(segmentation, row.segmentationJob)} />
-          <Metric label="confidence" value={formatUnknownNumber(segmentation?.confidence)} />
-          <Metric label="crop" value={formatNumberList(metadata?.crop_box_xyxy)} />
-          <Metric label="roi" value={formatNumberList(metadata?.roi_size)} />
+          <Metric label="来源" value={stringValue(segmentation?.segmentation_source) ?? "待生成"} />
+          <Metric label="模型" value={modelLabel(segmentation, row.segmentationJob)} />
+          <Metric label="版本" value={versionLabel(segmentation, row.segmentationJob)} />
+          <Metric label="置信度" value={formatUnknownNumber(segmentation?.confidence)} />
+          <Metric label="裁剪框" value={formatNumberList(metadata?.crop_box_xyxy)} />
+          <Metric label="ROI" value={formatNumberList(metadata?.roi_size)} />
         </div>
-        {maskUri && <ArtifactLine label="mask" value={maskUri} />}
+        {maskUri && <ArtifactLine label="掩膜" value={maskUri} />}
         {stringValue(segmentation?.artifact_uri) && (
-          <ArtifactLine label="segmentation" value={stringValue(segmentation?.artifact_uri)!} />
+          <ArtifactLine label="分割结果" value={stringValue(segmentation?.artifact_uri)!} />
         )}
       </div>
 
       <div className="mt-3 border-t border-border pt-3">
-        <div className="font-semibold">Measurement</div>
+        <div className="font-semibold">测量</div>
         <div className="grid grid-cols-2 gap-2 mt-2">
-          <Metric label="source" value={stringValue(measurement?.measurement_source) ?? row.measurement?.measurementSource ?? "pending"} />
-          <Metric label="model" value={modelLabel(measurement, row.measurementJob)} />
-          <Metric label="long" value={formatMm(longAxisMm)} />
-          <Metric label="short" value={formatMm(shortAxisMm)} />
-          <Metric label="ap" value={formatMm(apAxisMm)} />
-          <Metric label="area" value={formatArea(areaMm2)} />
-          <Metric label="ratio" value={formatNullableNumber(aspectRatio)} />
-          <Metric label="confidence" value={formatUnknownNumber(measurement?.confidence ?? row.measurement?.confidence)} />
+          <Metric label="来源" value={stringValue(measurement?.measurement_source) ?? row.measurement?.measurementSource ?? "待生成"} />
+          <Metric label="模型" value={modelLabel(measurement, row.measurementJob)} />
+          <Metric label="长径" value={formatMm(longAxisMm)} />
+          <Metric label="短径" value={formatMm(shortAxisMm)} />
+          <Metric label="前后径" value={formatMm(apAxisMm)} />
+          <Metric label="面积" value={formatArea(areaMm2)} />
+          <Metric label="纵横比" value={formatNullableNumber(aspectRatio)} />
+          <Metric label="置信度" value={formatUnknownNumber(measurement?.confidence ?? row.measurement?.confidence)} />
         </div>
-        {pixelSummary !== "pending" && (
+        {pixelSummary !== "待生成" && (
           <div className="mt-2 text-muted">
-            pixels {pixelSummary}
+            像素测量 {pixelSummary}
           </div>
         )}
         {stringValue(measurement?.artifact_uri) && (
-          <ArtifactLine label="measurement" value={stringValue(measurement?.artifact_uri)!} />
+          <ArtifactLine label="测量结果" value={stringValue(measurement?.artifact_uri)!} />
         )}
       </div>
     </div>
@@ -1407,11 +2082,11 @@ function noduleKeysFromRecord(record: Record<string, unknown>): string[] {
 }
 
 function modelLabel(evidence: Record<string, unknown> | null, job: MedicalModelJob | null): string {
-  return stringValue(evidence?.model_name) ?? job?.modelName ?? "pending";
+  return stringValue(evidence?.model_name) ?? job?.modelName ?? "待生成";
 }
 
 function versionLabel(evidence: Record<string, unknown> | null, job: MedicalModelJob | null): string {
-  return stringValue(evidence?.model_version) ?? job?.modelVersion ?? "pending";
+  return stringValue(evidence?.model_version) ?? job?.modelVersion ?? "待生成";
 }
 
 function evidenceRowForAudit(audit: MedicalAuditLog, rows: NoduleModelEvidence[]): NoduleModelEvidence | null {
@@ -1447,9 +2122,9 @@ function reportEvidenceSourceLabel(report: MedicalReport): string {
   const sources = new Set<string>();
   for (const rawEvidence of report.evidence) {
     const source = stringValue(objectValue(rawEvidence)?.source);
-    if (source) sources.add(source);
+    if (source) sources.add(reportEvidenceSourceDisplayLabel(source));
   }
-  return sources.size === 0 ? "pending" : Array.from(sources).join(", ");
+  return sources.size === 0 ? "等待依据" : Array.from(sources).join(", ");
 }
 
 function hasReportStageSignal(reports: MedicalReport[], agentTasks: MedicalAgentTask[]): boolean {
@@ -1469,13 +2144,45 @@ function reportEvidenceRows(evidence: unknown[]): ReportEvidenceDisplayRow[] {
     if (source === "segmentation_result") return segmentationEvidenceRow(item, source);
     if (source === "measurement_result") return measurementEvidenceRow(item, source);
     return {
-      source,
+      source: reportEvidenceSourceDisplayLabel(source),
       title: "其他依据",
       summary: compactTextSnippet(JSON.stringify(item)),
       detail: null,
       artifactUri: stringValue(item.artifact_uri) ?? null,
     };
   });
+}
+
+function reportEvidenceSourceDisplayLabel(source: string): string {
+  const labels: Record<string, string> = {
+    medical_guideline: "医学指南",
+    tirads_rule: "TI-RADS 规则",
+    tirads_result: "TI-RADS 结果",
+    segmentation_result: "分割结果",
+    measurement_result: "测量结果",
+    report_template: "报告模板",
+    similar_case: "相似病例",
+    unknown: "未知来源",
+  };
+  return labels[source] ?? source;
+}
+
+function reportEvidenceFingerprint(evidence: unknown[]): string {
+  const text = JSON.stringify(recordList(evidence).map((item) => ({
+    source: stringValue(item.source) ?? "unknown",
+    rule: stringValue(item.rule_code),
+    chunk: stringValue(item.chunk_id) ?? stringValue(item.chunkId),
+    nodule: numberValue(item.nodule_index) ?? numberValue(item.noduleIndex),
+    artifact: stringValue(item.artifact_uri),
+    model: stringValue(item.model_name),
+    version: stringValue(item.model_version) ?? stringValue(item.system_version),
+  })));
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `ev-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function guidelineEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
@@ -1488,7 +2195,7 @@ function guidelineEvidenceRow(item: Record<string, unknown>, source: string): Re
   const lineEnd = numberValue(metadata?.lineEnd) ?? numberValue(metadata?.line_end);
   const location = relPath && lineStart !== null && lineEnd !== null ? `${relPath}:${lineStart}-${lineEnd}` : null;
   return {
-    source,
+    source: reportEvidenceSourceDisplayLabel(source),
     title: "医学知识库",
     summary: [title, section].filter(Boolean).join(" / "),
     detail: location ?? compactOptionalText(stringValue(item.text)),
@@ -1497,13 +2204,13 @@ function guidelineEvidenceRow(item: Record<string, unknown>, source: string): Re
 }
 
 function tiradsRuleEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
-  const ruleCode = stringValue(item.rule_code) ?? "unknown_rule";
+  const ruleCode = stringValue(item.rule_code) ?? "未知规则";
   const category = stringValue(item.category);
   const points = numberValue(item.points);
   return {
-    source,
+    source: reportEvidenceSourceDisplayLabel(source),
     title: "TI-RADS 规则库",
-    summary: [ruleCode, category, points !== null ? `${points} points` : null].filter(Boolean).join(" · "),
+    summary: [ruleCode, category, points !== null ? `${points} 分` : null].filter(Boolean).join(" · "),
     detail: compactOptionalText(stringValue(item.recommendation) ?? stringValue(item.rule)),
     artifactUri: null,
   };
@@ -1512,7 +2219,7 @@ function tiradsRuleEvidenceRow(item: Record<string, unknown>, source: string): R
 function tiradsResultEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
   const ruleCodes = evidenceRuleCodeList(item);
   return {
-    source,
+    source: reportEvidenceSourceDisplayLabel(source),
     title: "TI-RADS 计算结果",
     summary: ruleCodes.length > 0 ? ruleCodes.join("、") : stringValue(item.rule_code) ?? "规则结果待补充",
     detail: stringValue(item.recommendation) ?? null,
@@ -1522,15 +2229,15 @@ function tiradsResultEvidenceRow(item: Record<string, unknown>, source: string):
 
 function segmentationEvidenceRow(item: Record<string, unknown>, source: string): ReportEvidenceDisplayRow {
   return {
-    source,
+    source: reportEvidenceSourceDisplayLabel(source),
     title: `分割依据${noduleIndexLabel(item)}`,
     summary: [
-      stringValue(item.segmentation_source) ?? "segmentation",
+      stringValue(item.segmentation_source) ?? "分割",
       stringValue(item.model_name),
       stringValue(item.model_version),
       confidenceLabel(item.confidence),
     ].filter(Boolean).join(" · "),
-    detail: stringValue(item.mask_uri) ? `mask ${stringValue(item.mask_uri)}` : null,
+    detail: stringValue(item.mask_uri) ? `掩膜 ${stringValue(item.mask_uri)}` : null,
     artifactUri: stringValue(item.artifact_uri) ?? null,
   };
 }
@@ -1540,13 +2247,13 @@ function measurementEvidenceRow(item: Record<string, unknown>, source: string): 
   const shortAxis = numberValue(item.short_axis_mm);
   const area = numberValue(item.area_mm2);
   return {
-    source,
+    source: reportEvidenceSourceDisplayLabel(source),
     title: `测量依据${noduleIndexLabel(item)}`,
     summary: [
-      stringValue(item.measurement_source) ?? "measurement",
-      longAxis !== null ? `long ${formatMm(longAxis)}` : null,
-      shortAxis !== null ? `short ${formatMm(shortAxis)}` : null,
-      area !== null ? `area ${formatArea(area)}` : null,
+      stringValue(item.measurement_source) ?? "测量",
+      longAxis !== null ? `长径 ${formatMm(longAxis)}` : null,
+      shortAxis !== null ? `短径 ${formatMm(shortAxis)}` : null,
+      area !== null ? `面积 ${formatArea(area)}` : null,
       confidenceLabel(item.confidence),
     ].filter(Boolean).join(" · "),
     detail: null,
@@ -1569,7 +2276,7 @@ function noduleIndexLabel(item: Record<string, unknown>): string {
 
 function confidenceLabel(value: unknown): string | null {
   const confidence = numberValue(value);
-  return confidence === null ? null : `confidence ${confidence.toFixed(2)}`;
+  return confidence === null ? null : `置信度 ${confidence.toFixed(2)}`;
 }
 
 function snapshotMaskUri(snapshot: Record<string, unknown> | undefined): string | null {
@@ -1646,34 +2353,46 @@ function NoduleResultRow({
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold">Nodule {nodule.noduleIndex}</span>
-        <span className="border border-border rounded px-1.5 py-0.5">{nodule.status}</span>
+        <span className="font-semibold">结节 {nodule.noduleIndex}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{statusLabel(nodule.status)}</span>
       </div>
       <div className="grid grid-cols-2 gap-2 mt-2">
-        <Metric label="confidence" value={formatOptionalNumber(nodule.detectionConfidence)} />
-        <Metric label="source" value={nodule.source} />
-        <Metric label="TI-RADS" value={result?.category ?? "pending"} />
-        <Metric label="score" value={result?.score === null || result?.score === undefined ? "pending" : String(result.score)} />
-        <Metric label="feature" value={feature?.sourceModel ?? "pending"} />
-        <Metric label="long" value={measurement?.longAxisMm === null || measurement?.longAxisMm === undefined ? "pending" : `${measurement.longAxisMm}mm`} />
+        <Metric label="置信度" value={formatOptionalNumber(nodule.detectionConfidence)} />
+        <Metric label="来源" value={nodule.source === "ai" ? "AI" : nodule.source === "doctor" ? "医生" : nodule.source} />
+        <Metric label="TI-RADS" value={result?.category ?? "待计算"} />
+        <Metric label="分值" value={result?.score === null || result?.score === undefined ? "待计算" : String(result.score)} />
+        <Metric label="特征来源" value={feature?.sourceModel ?? "待确认"} />
+        <Metric label="长径" value={measurement?.longAxisMm === null || measurement?.longAxisMm === undefined ? "待测量" : `${measurement.longAxisMm}mm`} />
       </div>
       {result?.recommendation && <div className="text-muted mt-2">{result.recommendation}</div>}
       <div className="mt-3 border-t border-border pt-2">
+        {feature?.requiresReview && (
+          <div className="mb-2 rounded border border-warning/40 px-2 py-1 text-warning">
+            已自动预填 TI-RADS 候选，请医生确认后保存。
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <FeatureSelect label="composition" value={featureForm.composition} options={TIRADS_FEATURE_OPTIONS.composition} onChange={(value) => updateFeature("composition", value)} />
-          <FeatureSelect label="echogenicity" value={featureForm.echogenicity} options={TIRADS_FEATURE_OPTIONS.echogenicity} onChange={(value) => updateFeature("echogenicity", value)} />
-          <FeatureSelect label="shape" value={featureForm.shape} options={TIRADS_FEATURE_OPTIONS.shape} onChange={(value) => updateFeature("shape", value)} />
-          <FeatureSelect label="margin" value={featureForm.margin} options={TIRADS_FEATURE_OPTIONS.margin} onChange={(value) => updateFeature("margin", value)} />
-          <FeatureSelect label="foci" value={featureForm.echogenicFoci} options={TIRADS_FEATURE_OPTIONS.echogenicFoci} onChange={(value) => updateFeature("echogenicFoci", value)} />
+          <FeatureSelect label="成分" value={featureForm.composition} options={TIRADS_FEATURE_OPTIONS.composition} onChange={(value) => updateFeature("composition", value)} />
+          <FeatureSelect label="回声" value={featureForm.echogenicity} options={TIRADS_FEATURE_OPTIONS.echogenicity} onChange={(value) => updateFeature("echogenicity", value)} />
+          <FeatureSelect label="形态" value={featureForm.shape} options={TIRADS_FEATURE_OPTIONS.shape} onChange={(value) => updateFeature("shape", value)} />
+          <FeatureSelect label="边缘" value={featureForm.margin} options={TIRADS_FEATURE_OPTIONS.margin} onChange={(value) => updateFeature("margin", value)} />
+          <FeatureSelect label="强回声灶" value={featureForm.echogenicFoci} options={TIRADS_FEATURE_OPTIONS.echogenicFoci} onChange={(value) => updateFeature("echogenicFoci", value)} />
         </div>
-        <button type="button" className="btn-secondary mt-2" disabled={busy} onClick={submitFeatures}>
-          {savingFeatures ? "保存中..." : "保存 TI-RADS 特征"}
+        <button
+          type="button"
+          className="btn-secondary mt-2"
+          disabled={busy}
+          data-medical-tirads-shortcut="confirm"
+          data-medical-nodule-id={nodule.id}
+          onClick={submitFeatures}
+        >
+          {savingFeatures ? "保存中..." : (feature?.requiresReview ? "确认并保存 TI-RADS 特征" : "保存 TI-RADS 特征")}
         </button>
         {featureError && <div className="text-danger mt-1">{featureError}</div>}
       </div>
       <div className="mt-2 flex flex-col gap-2">
         <label className="text-muted">
-          bbox xyxy
+          检测框坐标 xyxy
           <input
             className={`${inputClass} mt-1 font-mono text-xs`}
             value={bboxText}
@@ -1705,7 +2424,7 @@ function FeatureSelect({
     <label className="text-muted">
       {label}
       <select className={`${inputClass} mt-1 text-xs`} value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">pending</option>
+        <option value="">待选择</option>
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>{optionLabel}</option>
         ))}
@@ -1716,44 +2435,94 @@ function FeatureSelect({
 
 function ReportRow({
   report,
+  reviews,
   busy,
   reviewing,
   onReview,
 }: {
   report: MedicalReport;
+  reviews: MedicalDoctorReview[];
   busy: boolean;
   reviewing: boolean;
-  onReview(action: MedicalReportReviewAction, finalText?: string, comment?: string): void;
+  onReview(
+    action: MedicalReportReviewAction,
+    finalText?: string,
+    comment?: string,
+    structured?: Record<string, unknown>
+  ): void;
 }) {
   const text = report.finalText ?? report.draftText ?? "";
-  const [sections, setSections] = useState<ReportSection[]>(() => reportSectionsFromText(text, report.structured));
+  const sourceSections = reportSectionsFromText(text, report.structured);
+  const [sections, setSections] = useState<ReportSection[]>(() => sourceSections);
   const [comment, setComment] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const canReview = report.status === "draft" || report.status === "pending_review";
   const canArchive = report.status === "confirmed";
   const editedText = composeReportText(sections);
+  const structured = reportStructuredForSave(report, sections, comment);
+  const sectionsDirty = !sameReportSections(sourceSections, sections);
+  const textDirty = editedText !== text;
+  const generator = stringValue(report.structured.generator) ?? report.createdByAgent ?? "doctor_workbench";
 
   useEffect(() => {
-    setSections(reportSectionsFromText(text, report.structured));
+    setSections(sourceSections);
     setComment("");
+    setActionError(null);
   }, [report.id, report.status, report.updatedAt, text, report.structured]);
 
   function submit(action: MedicalReportReviewAction) {
-    onReview(action, action === "reject" ? undefined : editedText, optionalText(comment));
+    if (action !== "reject" && editedText.trim().length === 0) {
+      setActionError("报告正文不能为空。");
+      return;
+    }
+    if ((action === "reject" || action === "archive") && !optionalText(comment)) {
+      setActionError(action === "reject" ? "驳回时请填写审核意见。" : "归档时请填写归档说明。");
+      return;
+    }
+    setActionError(null);
+    onReview(
+      action,
+      action === "reject" ? undefined : editedText,
+      optionalText(comment),
+      action === "reject" ? undefined : structured
+    );
+  }
+
+  function resetSections() {
+    setSections(sourceSections);
+    setActionError(null);
   }
 
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-muted">{report.id}</span>
-        <span className="border border-border rounded px-1.5 py-0.5">{report.status}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{statusLabel(report.status)}</span>
       </div>
       <div className="text-muted mt-1">
-        {report.reportType} · {report.templateId ?? "no template"} · {formatTime(report.updatedAt)}
+        {report.reportType} · {report.templateId ?? "无模板"} · {formatTime(report.updatedAt)}
       </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+        <Metric label="生成器" value={generator} />
+        <Metric label="段落" value={String(structuredSectionCount(structured))} />
+        <Metric label="证据" value={String(report.evidence.length)} />
+        <Metric label="历史" value={String(reviews.length)} />
+      </div>
+      <ReportVersionPanel report={report} reviews={reviews} dirty={sectionsDirty || textDirty} />
       {reportUsesTemplateDraft(report) && <ReportModelStageNotice report={report} />}
       {canReview ? (
         <div className="mt-2 space-y-2">
-          <StructuredReportEditor sections={sections} onChange={setSections} />
+          <StructuredReportEditor
+            sections={sections}
+            dirty={sectionsDirty || textDirty}
+            onChange={setSections}
+            onReset={resetSections}
+          />
+          <div className="rounded border border-border px-2 py-1.5 text-muted">
+            正文编辑只影响结构化段落与报告正文，下方证据引用保持固定，不会被手工改写。
+          </div>
+          <ReportEvidencePanel evidence={report.evidence} />
+          <InlineReportReviewHistory reviews={reviews} />
           <label className="block text-muted">
             审核意见
             <input
@@ -1766,23 +2535,44 @@ function ReportRow({
           {text !== editedText && (
             <ReportTextDiff beforeText={text} afterText={editedText} tone="warning" />
           )}
+          {actionError && <div className="text-danger">{actionError}</div>}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn-secondary" disabled={busy} onClick={() => submit("revise")}>
+              {reviewing ? "保存中..." : "保存报告修订"}
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy}
+              data-medical-report-shortcut="approve"
+              data-medical-report-id={report.id}
+              aria-keyshortcuts="Alt+Enter"
+              onClick={() => submit("approve")}
+            >
+              {reviewing ? "处理中..." : "确认报告"}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary border-danger text-danger"
+              disabled={busy}
+              onClick={() => submit("reject")}
+            >
+              驳回
+            </button>
+          </div>
         </div>
       ) : text ? (
-        <ReadonlyReportSections sections={reportSectionsFromText(text, report.structured)} />
-      ) : null}
-      <ReportEvidencePanel evidence={report.evidence} />
-      {canReview && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" className="btn-primary" disabled={busy} onClick={() => submit("approve")}>
-            {reviewing ? "处理中..." : "确认报告"}
-          </button>
-          <button type="button" className="btn-secondary" disabled={busy} onClick={() => submit("reject")}>
-            驳回
-          </button>
+        <div className="mt-2 space-y-2">
+          <ReadonlyReportSections sections={sourceSections} />
+          <ReportEvidencePanel evidence={report.evidence} />
+          <InlineReportReviewHistory reviews={reviews} />
         </div>
-      )}
+      ) : null}
       {canArchive && (
         <div className="mt-2 space-y-2">
+          <div className="rounded border border-border px-2 py-1.5 text-muted">
+            已确认报告处于待归档状态，正文和证据引用只读；归档后需创建修订版本才能再次修改。
+          </div>
           <label className="block text-muted">
             审核意见
             <input
@@ -1793,10 +2583,18 @@ function ReportRow({
             />
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className="btn-secondary" disabled={busy} onClick={() => submit("archive")}>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy}
+              data-medical-report-shortcut="archive"
+              data-medical-report-id={report.id}
+              aria-keyshortcuts="Alt+Shift+Enter"
+              onClick={() => submit("archive")}
+            >
               {reviewing ? "归档中..." : "审核归档"}
             </button>
-            <span className="text-muted">confirmed by {report.confirmedBy ?? "doctor"}</span>
+            <span className="text-muted">确认医生：{report.confirmedBy ?? "医生"}</span>
           </div>
         </div>
       )}
@@ -1809,6 +2607,69 @@ interface ReportSection {
   title: string;
   text: string;
   includeTitle: boolean;
+}
+
+function ReportVersionPanel({
+  report,
+  reviews,
+  dirty,
+}: {
+  report: MedicalReport;
+  reviews: MedicalDoctorReview[];
+  dirty: boolean;
+}) {
+  const version = reportVersionNumber(report, reviews);
+  const latestReview = [...reviews].sort((left, right) => right.createdAt - left.createdAt)[0] ?? null;
+  const state = reportProductState(report, dirty);
+  const fingerprint = reportEvidenceFingerprint(report.evidence);
+  return (
+    <div className="mt-2 rounded border border-border px-2 py-1.5 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">报告版本 v{version}</span>
+        <span className={state.className}>{state.label}</span>
+      </div>
+      <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-2">
+        <Metric label="证据指纹" value={fingerprint} />
+        <Metric label="证据锁定" value="已锁定" />
+        <Metric label="最近动作" value={latestReview ? reviewActionLabel(latestReview.action) : "AI 草稿"} />
+        <Metric label="更新时间" value={formatTime(report.updatedAt)} />
+      </div>
+      <div className="mt-1 text-[11px] text-muted">{state.description}</div>
+    </div>
+  );
+}
+
+function reportVersionNumber(report: MedicalReport, reviews: MedicalDoctorReview[]): number {
+  return Math.max(1, reviews.filter((review) => review.reportId === report.id).length + 1);
+}
+
+function reportProductState(report: MedicalReport, dirty: boolean): { label: string; description: string; className: string } {
+  if (report.status === "archived") {
+    return {
+      label: "只读归档",
+      description: "归档报告不可直接覆盖；需要再次修改时应创建新的修订版本。",
+      className: "rounded border border-border px-1.5 py-0.5 text-muted",
+    };
+  }
+  if (report.status === "confirmed") {
+    return {
+      label: "待归档只读",
+      description: "报告已确认，归档前正文和证据保持只读。",
+      className: "rounded border border-border px-1.5 py-0.5 text-fg",
+    };
+  }
+  if (dirty) {
+    return {
+      label: "有未保存修改",
+      description: "保存报告修订会保留证据引用，并将报告维持在待审核状态。",
+      className: "rounded border border-warning/40 px-1.5 py-0.5 text-warning",
+    };
+  }
+  return {
+    label: "可编辑待审核",
+    description: "医生可编辑结构化段落；证据引用和模型依据不会随正文编辑而改变。",
+    className: "rounded border border-border px-1.5 py-0.5 text-muted",
+  };
 }
 
 function RealDemoModelNotice({
@@ -1825,13 +2686,13 @@ function RealDemoModelNotice({
     <div className="mb-2 rounded border border-border px-2 py-1.5 text-xs">
       <div className="font-semibold text-warning">真实演示提示：主报告大模型需手动加载</div>
       <div className="mt-1 text-muted">
-        演示 Qwen 主报告生成前，请先在 5090 上加载 qwen/qwen3.6-35b-a3b。若使用自动演示 Runner，
+        演示 Qwen 主报告生成前，请先在 5090 上加载 qwen/qwen3.5-9b。若使用自动演示 Runner，
         系统会在此阶段等待模型 loaded 后继续运行 draft_report / safety_review。未加载时系统会保留规则、知识库、分割和测量依据。
       </div>
       <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
-        <span>template drafts {templateDrafts}</span>
-        <span>draft_report tasks {draftReportTasks.length}</span>
-        {queuedDrafts > 0 && <span className="text-warning">queued {queuedDrafts}</span>}
+        <span>模板草稿 {templateDrafts}</span>
+        <span>报告生成任务 {draftReportTasks.length}</span>
+        {queuedDrafts > 0 && <span className="text-warning">排队中 {queuedDrafts}</span>}
       </div>
     </div>
   );
@@ -1843,7 +2704,7 @@ function ReportModelStageNotice({ report }: { report: MedicalReport }) {
     <div className="mt-2 rounded border border-border px-2 py-1.5 text-xs">
       <div className="font-medium text-warning">当前报告尚未由主报告大模型生成</div>
       <div className="mt-1 text-muted">
-        生成器：{generator}。真实演示主报告阶段前，请手动加载 qwen/qwen3.6-35b-a3b；自动演示 Runner 会检测模型 loaded 后继续生成报告。
+        生成器：{generator}。真实演示主报告阶段前，请手动加载 qwen/qwen3.5-9b；自动演示 Runner 会检测模型 loaded 后继续生成报告。
       </div>
     </div>
   );
@@ -1851,10 +2712,14 @@ function ReportModelStageNotice({ report }: { report: MedicalReport }) {
 
 function StructuredReportEditor({
   sections,
+  dirty,
   onChange,
+  onReset,
 }: {
   sections: ReportSection[];
+  dirty: boolean;
   onChange(next: ReportSection[]): void;
+  onReset(): void;
 }) {
   function updateSection(index: number, patch: Partial<ReportSection>) {
     onChange(sections.map((section, itemIndex) => itemIndex === index ? { ...section, ...patch } : section));
@@ -1867,6 +2732,26 @@ function StructuredReportEditor({
     ]);
   }
 
+  function duplicateSection(index: number) {
+    const section = sections[index];
+    if (!section) return;
+    const copy: ReportSection = {
+      ...section,
+      id: `${section.id}-copy-${sections.length + 1}`,
+      title: `${section.title} 副本`,
+    };
+    onChange([...sections.slice(0, index + 1), copy, ...sections.slice(index + 1)]);
+  }
+
+  function moveSection(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= sections.length) return;
+    const next = [...sections];
+    const [section] = next.splice(index, 1);
+    next.splice(targetIndex, 0, section);
+    onChange(next);
+  }
+
   function removeSection(index: number) {
     if (sections.length <= 1) return;
     onChange(sections.filter((_, itemIndex) => itemIndex !== index));
@@ -1876,7 +2761,16 @@ function StructuredReportEditor({
     <div className="rounded border border-border p-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold">结构化段落编辑</span>
-        <button type="button" className="btn-secondary" onClick={addSection}>新增段落</button>
+        <div className="flex flex-wrap gap-2">
+          {dirty && <button type="button" className="btn-secondary" onClick={onReset}>重置改动</button>}
+          <button type="button" className="btn-secondary" onClick={addSection}>新增段落</button>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+        <Metric label="段落" value={String(sections.length)} />
+        <Metric label="字符数" value={String(composeReportText(sections).length)} />
+        <Metric label="标题数" value={String(sections.filter((section) => section.includeTitle).length)} />
+        <Metric label="状态" value={dirty ? "已修改" : "未修改"} />
       </div>
       <div className="mt-2 space-y-2">
         {sections.map((section, index) => (
@@ -1887,18 +2781,42 @@ function StructuredReportEditor({
                 <input
                   className={`${inputClass} mt-1 text-xs`}
                   value={section.title}
-                  onChange={(event) => updateSection(index, { title: event.target.value, includeTitle: true })}
+                  onChange={(event) => updateSection(index, { title: event.target.value })}
                 />
               </label>
-              <button
-                type="button"
-                className="btn-secondary md:mt-5"
-                disabled={sections.length <= 1}
-                onClick={() => removeSection(index)}
-              >
-                删除
-              </button>
+              <div className="flex flex-wrap gap-2 md:mt-5">
+                <button type="button" className="btn-secondary" disabled={index === 0} onClick={() => moveSection(index, -1)}>
+                  上移
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={index === sections.length - 1}
+                  onClick={() => moveSection(index, 1)}
+                >
+                  下移
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => duplicateSection(index)}>
+                  复制
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={sections.length <= 1}
+                  onClick={() => removeSection(index)}
+                >
+                  删除
+                </button>
+              </div>
             </div>
+            <label className="mt-2 flex items-center gap-2 text-muted">
+              <input
+                type="checkbox"
+                checked={section.includeTitle}
+                onChange={(event) => updateSection(index, { includeTitle: event.target.checked })}
+              />
+              正文包含段落标题
+            </label>
             <label className="mt-2 block text-muted">
               段落内容
               <textarea
@@ -1926,7 +2844,7 @@ function ReadonlyReportSections({ sections }: { sections: ReportSection[] }) {
     <div className="mt-2 space-y-2">
       {sections.map((section) => (
         <div key={section.id} className="rounded border border-border px-2 py-1.5">
-          <div className="font-semibold">{section.title}</div>
+          {section.includeTitle && <div className="font-semibold">{section.title}</div>}
           <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
             {section.text || "无"}
           </pre>
@@ -1947,17 +2865,22 @@ interface ReportEvidenceDisplayRow {
 function ReportEvidencePanel({ evidence }: { evidence: unknown[] }) {
   const rows = reportEvidenceRows(evidence);
   const sources = Array.from(new Set(rows.map((row) => row.source)));
+  const sourceLabels = sources.map(reportEvidenceSourceDisplayLabel);
+  const fingerprint = reportEvidenceFingerprint(evidence);
   return (
     <div className="mt-3 border-t border-border pt-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="font-semibold">报告依据</span>
-        <span className="text-muted">证据引用固定 · {rows.length} 项</span>
+        <span className="text-muted">证据引用固定 · {rows.length} 项 · {fingerprint}</span>
       </div>
       {sources.length > 0 && (
         <div className="mt-1 text-[11px] text-muted">
-          {sources.join(", ")}
+          {sourceLabels.join(", ")}
         </div>
       )}
+      <div className="mt-1 text-[11px] text-muted">
+        证据引用固定，编辑正文不会改变这些来源。
+      </div>
       {rows.length === 0 ? (
         <div className="mt-2 text-xs text-warning">未记录结构化报告依据，需医生人工复核。</div>
       ) : (
@@ -1965,12 +2888,12 @@ function ReportEvidencePanel({ evidence }: { evidence: unknown[] }) {
           {rows.map((row, index) => (
             <div key={`${row.source}-${index}`} className="py-2 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium">{row.title}</span>
+                <span className="font-medium">{index + 1}. {row.title}</span>
                 <span className="rounded border border-border px-1.5 py-0.5 text-muted">{row.source}</span>
               </div>
               <div className="mt-1 text-muted">{row.summary}</div>
               {row.detail && <div className="mt-1 text-[11px] text-muted">{row.detail}</div>}
-              {row.artifactUri && <ArtifactLine label="artifact" value={row.artifactUri} />}
+              {row.artifactUri && <ArtifactLine label="产物" value={row.artifactUri} />}
             </div>
           ))}
         </div>
@@ -1979,18 +2902,46 @@ function ReportEvidencePanel({ evidence }: { evidence: unknown[] }) {
   );
 }
 
+function InlineReportReviewHistory({ reviews }: { reviews: MedicalDoctorReview[] }) {
+  if (reviews.length === 0) return null;
+  const latest = [...reviews].sort((left, right) => right.createdAt - left.createdAt).slice(0, 4);
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="font-semibold">审核历史</span>
+        <span className="text-muted">{reviews.length} 条</span>
+      </div>
+      <div className="mt-2 space-y-2">
+        {latest.map((review) => (
+          <div key={review.id} className="rounded border border-border px-2 py-1.5 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">{reviewActionLabel(review.action)}</span>
+              <span className="text-muted">{formatTime(review.createdAt)}</span>
+            </div>
+            <div className="mt-1 text-muted">{review.reviewerName}</div>
+            <div className="mt-1 text-[11px] text-muted">
+              {reviewStatusTransition(review.before, review.after)}
+            </div>
+            {review.comment && <div className="mt-1 text-muted">{review.comment}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DoctorReviewRow({ review }: { review: MedicalDoctorReview }) {
   const before = review.before ?? {};
   const after = review.after ?? {};
-  const beforeStatus = stringValue(before.status) ?? "unknown";
-  const afterStatus = stringValue(after.status) ?? "unknown";
+  const beforeStatus = statusLabel(stringValue(before.status));
+  const afterStatus = statusLabel(stringValue(after.status));
   const beforeText = stringValue(before.final_text) ?? stringValue(before.draft_text) ?? "";
   const afterText = stringValue(after.final_text) ?? stringValue(after.draft_text) ?? "";
   const textChanged = beforeText !== afterText;
   return (
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold">{review.action}</span>
+        <span className="font-semibold">{reviewActionLabel(review.action)}</span>
         <span className="border border-border rounded px-1.5 py-0.5">{review.reviewerName}</span>
       </div>
       <div className="text-muted mt-1">
@@ -2016,8 +2967,8 @@ function ReviewEvidenceSnapshot({
 }) {
   const beforeCount = numberValue(before.evidence_count);
   const afterCount = numberValue(after.evidence_count);
-  const beforeSources = stringList(before.evidence_sources);
-  const afterSources = stringList(after.evidence_sources);
+  const beforeSources = stringList(before.evidence_sources).map(reportEvidenceSourceDisplayLabel);
+  const afterSources = stringList(after.evidence_sources).map(reportEvidenceSourceDisplayLabel);
   if (beforeCount === null && afterCount === null && beforeSources.length === 0 && afterSources.length === 0) {
     return null;
   }
@@ -2025,11 +2976,11 @@ function ReviewEvidenceSnapshot({
     <div className="mt-2 rounded border border-border px-2 py-1.5 text-muted">
       <div className="font-semibold text-fg">证据快照</div>
       <div className="grid grid-cols-2 gap-2 mt-2">
-        <Metric label="审核前证据" value={beforeCount === null ? "unknown" : `${beforeCount} 项`} />
-        <Metric label="审核后证据" value={afterCount === null ? "unknown" : `${afterCount} 项`} />
+        <Metric label="审核前证据" value={beforeCount === null ? "未知" : `${beforeCount} 项`} />
+        <Metric label="审核后证据" value={afterCount === null ? "未知" : `${afterCount} 项`} />
       </div>
       <div className="mt-1 text-[11px]">
-        {(afterSources.length > 0 ? afterSources : beforeSources).join(", ") || "no sources"}
+        {(afterSources.length > 0 ? afterSources : beforeSources).join(", ") || "无来源"}
       </div>
     </div>
   );
@@ -2082,7 +3033,7 @@ function AuditRow({
   evidenceRows: NoduleModelEvidence[];
   reports: MedicalReport[];
 }) {
-  const safetyStatus = stringValue(audit.detail.safety_status) ?? audit.action;
+  const safetyStatus = statusLabel(stringValue(audit.detail.safety_status) ?? audit.action);
   const issues = Array.isArray(audit.detail.issues) ? audit.detail.issues : [];
   const bboxChange = bboxChangeLabel(audit.detail);
   const revisionEvidence = evidenceRowForAudit(audit, evidenceRows);
@@ -2090,10 +3041,10 @@ function AuditRow({
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold">{safetyStatus}</span>
-        <span className="border border-border rounded px-1.5 py-0.5">{audit.action}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{auditActionLabel(audit.action)}</span>
       </div>
       <div className="text-muted mt-1">
-        {audit.actorType}:{audit.actorId ?? "unknown"} · {formatTime(audit.createdAt)}
+        {actorTypeLabel(audit.actorType)}:{audit.actorId ?? "未知"} · {formatTime(audit.createdAt)}
       </div>
       {bboxChange && (
         <div className="mt-2 rounded border border-border px-2 py-1 font-mono text-[11px] text-muted">
@@ -2155,46 +3106,47 @@ function RevisionEvidenceDiff({
     ? numberValue(serverMeasurement?.short_axis_mm)
     : numberValue(freshMeasurementEvidence?.short_axis_mm) ?? freshMeasurement?.shortAxisMm ?? null;
   const measurementLabel = longAxisMm === null && shortAxisMm === null
-    ? "pending refresh"
+    ? "等待刷新"
     : `${formatMm(longAxisMm)} x ${formatMm(shortAxisMm)}`;
   const oldMaskUri = snapshotMaskUri(before);
   const sourceLabel = serverEvidence
-    ? (serverEvidenceSources.length > 0 ? serverEvidenceSources.join(", ") : "pending refresh")
-    : freshReport ? reportEvidenceSourceLabel(freshReport) : "pending refresh";
+    ? (serverEvidenceSources.length > 0 ? serverEvidenceSources.map(reportEvidenceSourceDisplayLabel).join(", ") : "等待刷新")
+    : freshReport ? reportEvidenceSourceLabel(freshReport) : "等待刷新";
   const refreshStatus = serverStatus
     ? revisionEvidenceStatusLabel(serverStatus)
     : afterBboxError
-    ? "invalid revision bbox"
+    ? "无效修订框"
     : hasFreshReport && !evidenceMatchesRevision
-      ? "bbox mismatch"
+      ? "检测框不匹配"
       : freshReport
-        ? "refreshed"
-        : "pending refresh";
+        ? "已刷新"
+        : "等待刷新";
 
   return (
     <div className="mt-3 border-t border-border pt-2">
-      <div className="font-semibold">Revision Evidence Diff</div>
+      <div className="font-semibold">修订后依据变化</div>
       <div className="grid grid-cols-2 gap-2 mt-2">
-        <Metric label="nodule" value={`Nodule ${row.nodule.noduleIndex}`} />
-        <Metric label="refresh status" value={refreshStatus} />
-        <Metric label="old bbox" value={formatBbox(before?.bbox) || "unknown"} />
-        <Metric label="new bbox" value={formatBbox(after?.bbox) || "unknown"} />
-        <Metric label="old mask" value={oldMaskUri ? "available" : "not captured"} />
-        <Metric label="new mask" value={newMaskUri ? "available" : "pending refresh"} />
-        <Metric label="new measure" value={measurementLabel} />
-        <Metric label="report basis" value={sourceLabel} />
+        <Metric label="结节" value={`结节 ${row.nodule.noduleIndex}`} />
+        <Metric label="刷新状态" value={refreshStatus} />
+        <Metric label="原检测框" value={formatBbox(before?.bbox) || "未知"} />
+        <Metric label="新检测框" value={formatBbox(after?.bbox) || "未知"} />
+        <Metric label="原掩膜" value={oldMaskUri ? "已捕获" : "未捕获"} />
+        <Metric label="新掩膜" value={newMaskUri ? "已生成" : "等待刷新"} />
+        <Metric label="新测量" value={measurementLabel} />
+        <Metric label="报告依据" value={sourceLabel} />
       </div>
-      {oldMaskUri && <ArtifactLine label="old mask" value={oldMaskUri} />}
-      {newMaskUri && <ArtifactLine label="new mask" value={newMaskUri} />}
-      {(serverReportId || freshReport) && <ArtifactLine label="report" value={serverReportId ?? freshReport!.id} />}
+      {oldMaskUri && <ArtifactLine label="原掩膜" value={oldMaskUri} />}
+      {newMaskUri && <ArtifactLine label="新掩膜" value={newMaskUri} />}
+      {(serverReportId || freshReport) && <ArtifactLine label="报告" value={serverReportId ?? freshReport!.id} />}
     </div>
   );
 }
 
 function revisionEvidenceStatusLabel(status: string): string {
-  if (status === "invalid_revision_bbox") return "invalid revision bbox";
-  if (status === "pending_refresh") return "pending refresh";
-  if (status === "bbox_mismatch") return "bbox mismatch";
+  if (status === "invalid_revision_bbox") return "无效修订框";
+  if (status === "pending_refresh") return "等待刷新";
+  if (status === "bbox_mismatch") return "检测框不匹配";
+  if (status === "refreshed") return "已刷新";
   return status;
 }
 
@@ -2226,14 +3178,14 @@ function ImageRow({
   analyzing: boolean;
   onStart(): void;
 }) {
-  const size = image.width && image.height ? `${image.width}×${image.height}` : "unknown";
+  const size = image.width && image.height ? `${image.width}×${image.height}` : "未知";
   return (
     <div className="flex flex-col md:flex-row md:items-center gap-3 border border-border rounded p-2">
       <div className="min-w-0 flex-1">
         <div className="font-mono text-xs text-muted truncate">{image.id}</div>
         <div className="font-mono text-xs truncate mt-1">{image.fileUri}</div>
         <div className="text-xs text-muted mt-1">
-          {image.fileType} · {size} · {image.processingStatus}
+          {image.fileType} · {size} · {statusLabel(image.processingStatus)}
         </div>
       </div>
       <button onClick={onStart} disabled={busy} className="btn-primary md:self-start">
@@ -2248,9 +3200,9 @@ function TaskRow({ task }: { task: MedicalAgentTask }) {
     <div className="border border-border rounded p-2 text-xs">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium truncate">{task.agentName}</span>
-        <span className="border border-border rounded px-1.5 py-0.5">{task.status}</span>
+        <span className="border border-border rounded px-1.5 py-0.5">{statusLabel(task.status)}</span>
       </div>
-      <div className="text-muted mt-1 truncate">{task.taskType}</div>
+      <div className="text-muted mt-1 truncate">{taskTypeLabel(task.taskType)}</div>
     </div>
   );
 }
@@ -2264,34 +3216,174 @@ function StudyRow({
   selected: boolean;
   onSelect(): void;
 }) {
+  const queue = recentStudyQueueMeta(study);
   return (
     <button
       type="button"
       onClick={onSelect}
       className={`w-full text-left border rounded p-3 hover:border-accent ${
-        selected ? "border-accent bg-accent/5" : "border-border"
+        selected ? "border-accent bg-accent/5 ring-1 ring-accent/60 shadow-sm" : "border-border"
       }`}
     >
       <div className="flex items-start gap-3">
         <div>
           <div className="font-mono text-xs text-muted">{study.id}</div>
           <h4 className="text-sm font-semibold mt-1">
-            {study.accessionNo ?? study.externalPatientId ?? "manual study"}
+            {study.accessionNo ?? study.externalPatientId ?? "手工病例"}
           </h4>
         </div>
-        <span className="ml-auto text-xs border border-border rounded px-2 py-1">{study.status}</span>
+        <div className="ml-auto flex flex-col items-end gap-1">
+          <span className="text-xs border border-border rounded px-2 py-1">{statusLabel(study.status)}</span>
+          {selected && <span className="text-[11px] rounded px-2 py-0.5 border border-accent text-accent">当前</span>}
+          <span className={`text-[11px] rounded px-2 py-0.5 ${queue.toneClass}`}>{queue.label}</span>
+        </div>
       </div>
+      <div className="mt-2 text-xs text-muted">{queue.reason}</div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-3 text-xs">
-        <Metric label="modality" value={`${study.modality}/${study.bodyPart}`} />
-        <Metric label="source" value={study.sourceType} />
-        <Metric label="images" value={String(study.imageCount)} />
-        <Metric label="nodules" value={String(study.noduleCount)} />
-        <Metric label="analysis" value={study.latestAnalysisStatus ?? "none"} />
-        <Metric label="report" value={study.latestReportStatus ?? "none"} />
-        <Metric label="updated" value={formatTime(study.updatedAt)} />
-        <Metric label="created by" value={study.createdBy ?? "local"} />
+        <Metric label="模态" value={`${study.modality}/${study.bodyPart}`} />
+        <Metric label="来源" value={sourceTypeLabel(study.sourceType)} />
+        <Metric label="图像" value={String(study.imageCount)} />
+        <Metric label="结节" value={String(study.noduleCount)} />
+        <Metric label="分析" value={statusLabel(study.latestAnalysisStatus)} />
+        <Metric label="报告" value={statusLabel(study.latestReportStatus)} />
+        <Metric label="更新时间" value={formatTime(study.updatedAt)} />
+        <Metric label="创建者" value={study.createdBy ?? "本地"} />
       </div>
     </button>
+  );
+}
+
+function QueueFilterBar({
+  value,
+  counts,
+  onChange,
+}: {
+  value: StudyQueueFilter;
+  counts: Record<StudyQueueFilter, number>;
+  onChange(next: StudyQueueFilter): void;
+}) {
+  const filters: Array<{ id: StudyQueueFilter; label: string }> = [
+    { id: "all", label: "全部" },
+    { id: "tirads", label: "待确认特征" },
+    { id: "review", label: "待审核报告" },
+    { id: "archive", label: "待归档" },
+    { id: "progress", label: "分析中" },
+    { id: "exception", label: "异常/驳回" },
+  ];
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      {filters.map((filter) => (
+        <button
+          key={filter.id}
+          type="button"
+          className={value === filter.id ? "btn-primary text-xs" : "btn-secondary text-xs"}
+          onClick={() => onChange(filter.id)}
+        >
+          {filter.label} {counts[filter.id] ?? 0}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BatchQueueModeBar({
+  filter,
+  study,
+  position,
+  total,
+  action,
+  busy,
+  onSelectPrev,
+  onSelectNext,
+  onTriggerAction,
+}: {
+  filter: StudyQueueFilter;
+  study: MedicalRecentStudy | null;
+  position: number;
+  total: number;
+  action: BatchQueueAction;
+  busy: boolean;
+  onSelectPrev(): void;
+  onSelectNext(): void;
+  onTriggerAction(): void;
+}) {
+  const queueMeta = study ? recentStudyQueueMeta(study) : null;
+  const canTrigger = !busy && action.kind !== "none" && !action.reason;
+  return (
+    <div className="sticky top-0 z-10 rounded border border-border bg-bg/95 px-3 py-2 backdrop-blur">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase text-muted">批量队列</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="font-semibold">{queueFilterLabel(filter)}</span>
+            <span className="text-muted">{position} / {total}</span>
+            {queueMeta && <span className={`text-[11px] rounded px-2 py-0.5 ${queueMeta.toneClass}`}>{queueMeta.label}</span>}
+          </div>
+          <div className="mt-1 text-sm">
+            {study?.accessionNo ?? study?.externalPatientId ?? "未选中病例"}
+          </div>
+          <div className="mt-1 text-xs text-muted">
+            {queueMeta?.reason ?? "选择队列病例后可连续处理。"}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary text-xs" disabled={busy || position <= 1} onClick={onSelectPrev}>
+            上一例
+          </button>
+          <button
+            type="button"
+            className="btn-primary text-xs"
+            disabled={!canTrigger}
+            onClick={onTriggerAction}
+          >
+            {action.label}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary text-xs"
+            disabled={busy || position <= 0 || position >= total}
+            onClick={onSelectNext}
+          >
+            下一例
+          </button>
+        </div>
+      </div>
+      {action.reason && <div className="mt-2 text-xs text-warning">{action.reason}</div>}
+    </div>
+  );
+}
+
+function EmptyQueueStateBar({
+  filter,
+  recommendedFilter,
+  onSelectRecommended,
+}: {
+  filter: StudyQueueFilter;
+  recommendedFilter: StudyQueueFilter | null;
+  onSelectRecommended(next: StudyQueueFilter): void;
+}) {
+  return (
+    <div className="sticky top-0 z-10 rounded border border-border bg-bg/95 px-3 py-2 backdrop-blur">
+      <div className="text-[11px] uppercase text-muted">批量队列</div>
+      <div className="mt-1 font-semibold">当前队列已清空</div>
+      <div className="mt-1 text-xs text-muted">
+        {queueFilterLabel(filter)} 已处理完。
+      </div>
+      {recommendedFilter ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted">推荐下一队列：{queueFilterLabel(recommendedFilter)}</span>
+          <button
+            type="button"
+            className="btn-primary text-xs"
+            onClick={() => onSelectRecommended(recommendedFilter)}
+          >
+            切换到 {queueFilterLabel(recommendedFilter)}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 text-xs text-muted">当前没有其他待处理队列。</div>
+      )}
+    </div>
   );
 }
 
@@ -2305,8 +3397,191 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function formatTime(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "unknown";
+  if (!Number.isFinite(value) || value <= 0) return "未知";
   return new Date(value).toLocaleString();
+}
+
+function sortedWorkQueueStudies(studies: MedicalRecentStudy[]): MedicalRecentStudy[] {
+  return [...studies].sort((left, right) => {
+    const leftPriority = recentStudyQueueMeta(left).priority;
+    const rightPriority = recentStudyQueueMeta(right).priority;
+    if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+    return right.updatedAt - left.updatedAt;
+  });
+}
+
+function queueAdvancePlan(
+  summary: MedicalSummary | null,
+  filter: StudyQueueFilter,
+  currentStudyId: string | null
+): { filter: StudyQueueFilter; currentStudyId: string; currentIndex: number } | null {
+  if (!summary || !currentStudyId || filter === "all") return null;
+  const filtered = sortedWorkQueueStudies(summary.recentStudies).filter((study) => queueFilterMatches(study, filter));
+  const currentIndex = filtered.findIndex((study) => study.id === currentStudyId);
+  return currentIndex >= 0 ? { filter, currentStudyId, currentIndex } : null;
+}
+
+function nextQueueStudyId(
+  summary: MedicalSummary | null,
+  plan: { filter: StudyQueueFilter; currentStudyId: string; currentIndex: number } | null
+): string | null {
+  if (!summary || !plan) return null;
+  const filtered = sortedWorkQueueStudies(summary.recentStudies).filter((study) => queueFilterMatches(study, plan.filter));
+  if (filtered.some((study) => study.id === plan.currentStudyId)) return null;
+  return filtered[plan.currentIndex]?.id ?? filtered[plan.currentIndex - 1]?.id ?? null;
+}
+
+function workQueueCounts(studies: MedicalRecentStudy[]): Record<StudyQueueFilter, number> {
+  return {
+    all: studies.length,
+    tirads: studies.filter((study) => queueFilterMatches(study, "tirads")).length,
+    review: studies.filter((study) => queueFilterMatches(study, "review")).length,
+    archive: studies.filter((study) => queueFilterMatches(study, "archive")).length,
+    progress: studies.filter((study) => queueFilterMatches(study, "progress")).length,
+    exception: studies.filter((study) => queueFilterMatches(study, "exception")).length,
+  };
+}
+
+function nextRecommendedQueueFilter(
+  counts: Record<StudyQueueFilter, number>,
+  current: StudyQueueFilter
+): StudyQueueFilter | null {
+  const priority: StudyQueueFilter[] = ["tirads", "review", "archive", "exception", "progress"];
+  for (const filter of priority) {
+    if (filter !== current && (counts[filter] ?? 0) > 0) return filter;
+  }
+  return null;
+}
+
+function batchQueuePrimaryAction(filter: StudyQueueFilter, bundle: MedicalStudyBundle | null): BatchQueueAction {
+  if (filter === "tirads") {
+    if (!bundle) {
+      return { kind: "confirm_tirads", label: "确认特征并下一例", reason: "正在加载病例详情。", noduleId: null };
+    }
+    const targetNoduleId = firstPendingTiradsNoduleId(bundle);
+    return {
+      kind: "confirm_tirads",
+      label: "确认特征并下一例",
+      reason: targetNoduleId ? null : "当前病例没有可直接确认的 TI-RADS 预填特征。",
+      noduleId: targetNoduleId,
+    };
+  }
+  if (filter === "review") {
+    if (!bundle) {
+      return { kind: "confirm_report", label: "确认并下一例", reason: "正在加载病例详情。", reportId: null };
+    }
+    const report = latestReportByStatuses(bundle.reports, ["draft", "pending_review"]);
+    return {
+      kind: "confirm_report",
+      label: "确认并下一例",
+      reason: report ? null : "当前病例没有待审核报告。",
+      reportId: report?.id ?? null,
+    };
+  }
+  if (filter === "archive") {
+    if (!bundle) {
+      return { kind: "archive_report", label: "归档并下一例", reason: "正在加载病例详情。", reportId: null };
+    }
+    const report = latestReportByStatuses(bundle.reports, ["confirmed"]);
+    return {
+      kind: "archive_report",
+      label: "归档并下一例",
+      reason: report ? null : "当前病例没有可归档报告。",
+      reportId: report?.id ?? null,
+    };
+  }
+  if (filter === "progress") {
+    return { kind: "none", label: "当前队列无批量动作", reason: "分析中病例请等待模型链路完成。" };
+  }
+  if (filter === "exception") {
+    return { kind: "none", label: "当前队列无批量动作", reason: "异常病例需人工判断后再处理。" };
+  }
+  return { kind: "none", label: "当前队列无批量动作", reason: null };
+}
+
+function queueFilterMatches(study: MedicalRecentStudy, filter: StudyQueueFilter): boolean {
+  const stage = recentStudyQueueMeta(study).stage;
+  if (filter === "all") return true;
+  if (filter === "tirads") return stage === "waiting_tirads_confirmation";
+  if (filter === "review") return stage === "pending_report_review";
+  if (filter === "archive") return stage === "ready_archive";
+  if (filter === "progress") return stage === "analysis_in_progress";
+  return stage === "analysis_failed" || stage === "report_rejected";
+}
+
+function recentStudyQueueMeta(study: MedicalRecentStudy): {
+  stage: string;
+  label: string;
+  reason: string;
+  priority: number;
+  toneClass: string;
+} {
+  const stage = study.queueStage ?? fallbackRecentStudyQueueStage(study);
+  const reason = study.queueReason ?? fallbackRecentStudyQueueReason(stage);
+  if (stage === "waiting_tirads_confirmation") {
+    return { stage, label: "待确认特征", reason, priority: study.queuePriority ?? 30, toneClass: "border border-warning/40 text-warning" };
+  }
+  if (stage === "pending_report_review") {
+    return { stage, label: "待审核报告", reason, priority: study.queuePriority ?? 10, toneClass: "border border-warning/40 text-warning" };
+  }
+  if (stage === "ready_archive") {
+    return { stage, label: "待归档", reason, priority: study.queuePriority ?? 20, toneClass: "border border-border text-fg" };
+  }
+  if (stage === "analysis_in_progress") {
+    return { stage, label: "分析中", reason, priority: study.queuePriority ?? 50, toneClass: "border border-border text-muted" };
+  }
+  if (stage === "analysis_failed" || stage === "report_rejected") {
+    return { stage, label: "异常", reason, priority: study.queuePriority ?? 5, toneClass: "border border-danger/40 text-danger" };
+  }
+  if (stage === "archived") {
+    return { stage, label: "已归档", reason, priority: study.queuePriority ?? 90, toneClass: "border border-border text-muted" };
+  }
+  return { stage, label: "待处理", reason, priority: study.queuePriority ?? 60, toneClass: "border border-border text-muted" };
+}
+
+function latestReportByStatuses(reports: MedicalReport[], statuses: string[]): MedicalReport | null {
+  const matches = reports
+    .filter((report) => statuses.includes(report.status))
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+  return matches[0] ?? null;
+}
+
+function firstPendingTiradsNoduleId(bundle: MedicalStudyBundle): string | null {
+  const featureByNodule = latestTiradsFeatureByNodule(bundle.tiradsFeatures);
+  for (const nodule of bundle.nodules) {
+    const feature = featureByNodule.get(nodule.id);
+    if (feature?.requiresReview) return nodule.id;
+  }
+  return null;
+}
+
+function queueFilterLabel(filter: StudyQueueFilter): string {
+  if (filter === "tirads") return "待确认特征";
+  if (filter === "review") return "待审核报告";
+  if (filter === "archive") return "待归档";
+  if (filter === "progress") return "分析中";
+  if (filter === "exception") return "异常/驳回";
+  return "全部";
+}
+
+function fallbackRecentStudyQueueStage(study: MedicalRecentStudy): string {
+  if (study.latestReportStatus === "draft" || study.latestReportStatus === "pending_review") return "pending_report_review";
+  if (study.latestReportStatus === "confirmed") return "ready_archive";
+  if (study.latestReportStatus === "archived") return "archived";
+  if (study.latestAnalysisStatus === "failed") return "analysis_failed";
+  if (study.latestAnalysisStatus === "queued" || study.latestAnalysisStatus === "running") return "analysis_in_progress";
+  if (study.imageCount === 0) return "awaiting_image";
+  return "ready_to_start";
+}
+
+function fallbackRecentStudyQueueReason(stage: string): string {
+  if (stage === "pending_report_review") return "等待医生审核报告草稿";
+  if (stage === "ready_archive") return "报告已确认，等待归档";
+  if (stage === "archived") return "病例已归档";
+  if (stage === "analysis_failed") return "AI 分析失败，等待复核或重跑";
+  if (stage === "analysis_in_progress") return "AI 分析进行中";
+  if (stage === "awaiting_image") return "等待上传图像";
+  return "可启动 AI 分析";
 }
 
 function reportSectionsFromText(text: string, structured: Record<string, unknown>): ReportSection[] {
@@ -2317,7 +3592,7 @@ function reportSectionsFromText(text: string, structured: Record<string, unknown
         id: stringValue(section.id) ?? `structured-${index + 1}`,
         title: stringValue(section.title) ?? `段落 ${index + 1}`,
         text: sectionText,
-        includeTitle: true,
+        includeTitle: booleanValue(section.includeTitle) ?? true,
       };
     })
     .filter((section) => section.text.trim().length > 0 || section.title.trim().length > 0);
@@ -2343,6 +3618,50 @@ function reportSectionsFromText(text: string, structured: Record<string, unknown
     };
   });
   return sections.length > 0 ? sections : [{ id: "line-1", title: "段落 1", text: "", includeTitle: false }];
+}
+
+function reportStructuredForSave(
+  report: MedicalReport,
+  sections: ReportSection[],
+  comment: string
+): Record<string, unknown> {
+  const evidenceSources = Array.from(new Set(reportEvidenceRows(report.evidence).map((row) => row.source)));
+  const nextStructured = {
+    ...report.structured,
+    sections: serializeReportSections(sections),
+    editor: {
+      mode: "doctor_workbench_v1",
+      evidence_locked: true,
+      evidence_count: report.evidence.length,
+      evidence_sources: evidenceSources,
+      evidence_fingerprint: reportEvidenceFingerprint(report.evidence),
+      base_report_id: report.id,
+      base_report_updated_at: report.updatedAt,
+      section_count: sections.length,
+      last_comment: optionalText(comment) ?? null,
+      updated_at: Date.now(),
+    },
+  };
+  return nextStructured;
+}
+
+function serializeReportSections(sections: ReportSection[]): Array<Record<string, unknown>> {
+  return sections
+    .map((section) => ({
+      id: section.id,
+      title: section.title.trim(),
+      text: section.text,
+      includeTitle: section.includeTitle,
+    }))
+    .filter((section) => section.text.trim().length > 0 || (section.includeTitle && section.title.trim().length > 0));
+}
+
+function sameReportSections(left: ReportSection[], right: ReportSection[]): boolean {
+  return JSON.stringify(serializeReportSections(left)) === JSON.stringify(serializeReportSections(right));
+}
+
+function structuredSectionCount(structured: Record<string, unknown>): number {
+  return serializeReportSections(reportSectionsFromText("", structured)).length;
 }
 
 function composeReportText(sections: ReportSection[]): string {
@@ -2391,6 +3710,20 @@ function textDiffSummary(beforeText: string, afterText: string): {
   };
 }
 
+function reviewStatusTransition(
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null
+): string {
+  const beforeStatus = statusLabel(stringValue(before?.status));
+  const afterStatus = statusLabel(stringValue(after?.status));
+  const beforeCount = numberValue(before?.evidence_count);
+  const afterCount = numberValue(after?.evidence_count);
+  const countLabel = beforeCount === null && afterCount === null
+    ? ""
+    : ` · 证据 ${beforeCount ?? "?"} -> ${afterCount ?? "?"}`;
+  return `${beforeStatus} -> ${afterStatus}${countLabel}`;
+}
+
 function compactTextSnippet(value: string): string {
   const normalized = value.trim();
   if (!normalized) return "无";
@@ -2404,7 +3737,7 @@ function compactOptionalText(value: string | undefined): string | null {
 }
 
 function formatOptionalNumber(value: number | null | undefined): string {
-  return value === null || value === undefined ? "unknown" : value.toFixed(2);
+  return value === null || value === undefined ? "未知" : value.toFixed(2);
 }
 
 function formatBbox(value: unknown): string {
@@ -2413,9 +3746,9 @@ function formatBbox(value: unknown): string {
 
 function parseBboxInput(value: string): number[] | string {
   const parts = value.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
-  if (parts.length !== 4) return "bbox 需要 4 个数字：x1, y1, x2, y2";
+  if (parts.length !== 4) return "检测框需要 4 个数字：x1, y1, x2, y2";
   const numbers = parts.map(Number);
-  if (!numbers.every(Number.isFinite)) return "bbox 只能包含有限数字";
+  if (!numbers.every(Number.isFinite)) return "检测框只能包含有限数字";
   const validationError = bboxValidationMessage(numbers);
   if (validationError) return validationError;
   return normalizedBbox(numbers);
@@ -2477,7 +3810,7 @@ function bboxFromPoints(start: ImagePoint, end: ImagePoint): number[] {
 function bboxValidationMessage(value: number[]): string | null {
   const [x1, y1, x2, y2] = normalizedBbox(value);
   if (x2 - x1 < MIN_REVISION_BBOX_EDGE_PX || y2 - y1 < MIN_REVISION_BBOX_EDGE_PX) {
-    return "bbox 宽度和高度至少需要 1 像素，请重新拖拽框选。";
+    return "检测框宽度和高度至少需要 1 像素，请重新拖拽框选。";
   }
   return null;
 }
@@ -2522,54 +3855,67 @@ function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function booleanValue(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input"
+    || tagName === "textarea"
+    || tagName === "select"
+    || target.isContentEditable;
+}
+
 function numberLabel(value: unknown): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : "0";
 }
 
 function formatUnknownNumber(value: unknown): string {
   const number = numberValue(value);
-  return number === null ? "pending" : number.toFixed(2);
+  return number === null ? "待生成" : number.toFixed(2);
 }
 
 function formatNullableNumber(value: number | null): string {
-  return value === null ? "pending" : value.toFixed(2);
+  return value === null ? "待生成" : value.toFixed(2);
 }
 
 function formatMm(value: number | null): string {
-  return value === null ? "pending" : `${value.toFixed(2)} mm`;
+  return value === null ? "待生成" : `${value.toFixed(2)} mm`;
 }
 
 function formatArea(value: number | null): string {
-  return value === null ? "pending" : `${value.toFixed(2)} mm2`;
+  return value === null ? "待生成" : `${value.toFixed(2)} mm2`;
 }
 
 function formatNumberList(value: unknown): string {
-  if (!Array.isArray(value) || value.length === 0) return "pending";
+  if (!Array.isArray(value) || value.length === 0) return "待生成";
   const numbers = value.map(numberValue);
-  if (numbers.some((item) => item === null)) return "pending";
+  if (numbers.some((item) => item === null)) return "待生成";
   return numbers.map((item) => item!.toFixed(2).replace(/\.00$/, "")).join(", ");
 }
 
 function formatPixelMeasurements(value: Record<string, unknown> | undefined): string {
-  if (!value) return "pending";
+  if (!value) return "待生成";
   const parts = Object.entries(value)
     .map(([key, raw]) => {
       const number = numberValue(raw);
       return number === null ? null : `${key}=${number.toFixed(2).replace(/\.00$/, "")}`;
     })
     .filter((item): item is string => item !== null);
-  return parts.length === 0 ? "pending" : parts.join(", ");
+  return parts.length === 0 ? "待生成" : parts.join(", ");
 }
 
 function gpuLabel(result: Record<string, unknown> | null): string {
   const runtime = objectValue(result?.runtime);
   const gpu = objectValue(runtime?.gpu);
-  if (!gpu) return "unknown";
+  if (!gpu) return "未知";
   if (gpu.cuda_available === true) {
     const count = typeof gpu.device_count === "number" ? gpu.device_count : 0;
     return `cuda:${count}`;
   }
-  return "no cuda";
+  return "无 CUDA";
 }
 
 function issueLabel(value: unknown): string {
@@ -2582,7 +3928,49 @@ function bboxChangeLabel(detail: Record<string, unknown>): string | null {
   const before = objectValue(detail.before);
   const after = objectValue(detail.after);
   if (!isNumberTuple4(before?.bbox) || !isNumberTuple4(after?.bbox)) return null;
-  return `bbox ${formatBbox(before.bbox)} -> ${formatBbox(after.bbox)}`;
+  return `检测框 ${formatBbox(before.bbox)} → ${formatBbox(after.bbox)}`;
+}
+
+function medicalActiveWorkPollKey(bundle: MedicalStudyBundle): string {
+  const waitingDoctorInput = isWaitingDoctorTiradsInput(bundle);
+  const taskKey = bundle.agentTasks
+    .filter((task) => shouldPollMedicalTask(task, waitingDoctorInput))
+    .map((task) => `${task.id}:${task.status}:${task.updatedAt}`)
+    .join("|");
+  const modelJobKey = bundle.modelJobs
+    .filter((job) => isActiveMedicalStatus(job.status))
+    .map((job) => `${job.id}:${job.status}:${job.updatedAt}`)
+    .join("|");
+  return [taskKey, modelJobKey].filter(Boolean).join(";");
+}
+
+function shouldPollMedicalTask(task: MedicalAgentTask, waitingDoctorInput: boolean): boolean {
+  if (!isActiveMedicalStatus(task.status)) return false;
+  if (waitingDoctorInput && task.status === "queued") return false;
+  return true;
+}
+
+function isWaitingDoctorTiradsInput(bundle: MedicalStudyBundle): boolean {
+  return bundle.agentTasks.some((task) => task.taskType === "calculate_tirads" && task.status === "queued")
+    && !bundleHasConfirmedTiradsFeature(bundle);
+}
+
+function bundleHasConfirmedTiradsFeature(bundle: MedicalStudyBundle): boolean {
+  if (bundle.nodules.length === 0) return false;
+  const latestByNodule = latestTiradsFeatureByNodule(bundle.tiradsFeatures);
+  return bundle.nodules.every((nodule) => {
+    const feature = latestByNodule.get(nodule.id);
+    if (!feature || feature.requiresReview) return false;
+    const features = feature.features;
+    return ["composition", "echogenicity", "shape", "margin", "echogenic_foci"].every((key) => {
+      const value = features[key];
+      return Array.isArray(value) ? value.length > 0 : typeof value === "string" && value.trim().length > 0;
+    });
+  });
+}
+
+function isActiveMedicalStatus(status: string): boolean {
+  return status === "queued" || status === "running" || status === "waiting_model";
 }
 
 const inputClass = "w-full min-w-0 rounded border border-border bg-bg px-2 py-1.5 text-sm text-fg";

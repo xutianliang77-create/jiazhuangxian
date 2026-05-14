@@ -14,6 +14,9 @@ import { defaultDataDbPath, openDataDb } from "../src/storage/db";
 
 type JsonObject = Record<string, unknown>;
 
+const MEDICAL_MAIN_LLM_PROVIDER_ID = "lmstudio:qwen35-9b";
+const MEDICAL_MAIN_LLM_MODEL = "qwen/qwen3.5-9b";
+
 interface CliArgs {
   dataDb?: string;
   ragDb?: string;
@@ -70,7 +73,7 @@ async function main(): Promise<void> {
       rag_db: args.ragDb ? path.resolve(args.ragDb) : null,
       remote_model_gateway_url: args.remoteModelGatewayUrl ?? process.env.JZX_REMOTE_MODEL_GATEWAY_URL ?? null,
       worker_id: args.workerId,
-      qwen_provider: args.llmProviderId ?? process.env.JZX_MEDICAL_LLM_PROVIDER ?? "lmstudio:qwen36-35b-a3b",
+      qwen_provider: args.llmProviderId ?? process.env.JZX_MEDICAL_LLM_PROVIDER ?? MEDICAL_MAIN_LLM_PROVIDER_ID,
     });
 
     for (;;) {
@@ -85,7 +88,7 @@ async function main(): Promise<void> {
         if (lastGate !== key) {
           printEvent("waiting_doctor_tirads_features", {
             study_id: gate.studyId,
-            message: "请先在医生工作台为结节填写 TI-RADS 结构化特征；提交后本脚本会继续跑规则计算，并在报告阶段等待 Qwen。",
+            message: "请先在医生工作台确认或修订已预填的 TI-RADS 结构化特征；提交后本脚本会继续跑规则计算，并在报告阶段等待 Qwen。",
           });
           lastGate = key;
         }
@@ -105,7 +108,7 @@ async function main(): Promise<void> {
               task_id: gate.taskId,
               provider: providerSnapshot(provider),
               readiness,
-              message: "现在请在 5090 上手工加载 qwen/qwen3.6-35b-a3b；检测到模型 loaded 后会自动继续生成报告。",
+              message: `现在请在 5090 上手工加载 ${MEDICAL_MAIN_LLM_MODEL}；检测到模型 loaded 后会自动继续生成报告。`,
             });
             lastGate = key;
           }
@@ -138,6 +141,11 @@ async function main(): Promise<void> {
         printEvent("demo_failed", { error: result.error ?? null });
         process.exitCode = 1;
         return;
+      }
+
+      if (result.status === "waiting_doctor_input") {
+        await sleep(args.intervalMs);
+        continue;
       }
 
       if (result.status === "idle") {
@@ -178,7 +186,7 @@ async function nextGate(
   if (
     next.taskType === "calculate_tirads" &&
     args.waitForTiradsFeatures &&
-    !hasTiradsFeatures(db, next.studyId)
+    !hasConfirmedTiradsFeatures(db, next.studyId)
   ) {
     return { type: "tirads_features", studyId: next.studyId, taskId: next.id };
   }
@@ -219,22 +227,30 @@ function countWaitingModelTasks(db: Database.Database): number {
     .get()?.count ?? 0;
 }
 
-function hasTiradsFeatures(db: Database.Database, studyId: string): boolean {
-  return (
-    db
-      .prepare<[string], { count: number }>(
-        `SELECT COUNT(*) AS count
-         FROM tirads_feature feature
-         JOIN nodule ON nodule.id = feature.nodule_id
-         WHERE nodule.study_id = ?`
-      )
-      .get(studyId)?.count ?? 0
-  ) > 0;
+function hasConfirmedTiradsFeatures(db: Database.Database, studyId: string): boolean {
+  const repo = new MedicalCaseRepo(db);
+  const nodules = repo.listNodulesByStudy(studyId);
+  if (nodules.length === 0) return true;
+  const latestByNodule = new Map<string, ReturnType<MedicalCaseRepo["listTiradsFeaturesByStudy"]>[number]>();
+  for (const feature of repo.listTiradsFeaturesByStudy(studyId)) {
+    if (!latestByNodule.has(feature.noduleId)) latestByNodule.set(feature.noduleId, feature);
+  }
+  return nodules.every((nodule) => {
+    const feature = latestByNodule.get(nodule.id);
+    return Boolean(feature && !feature.requiresReview && isCompleteTiradsFeature(feature.features));
+  });
+}
+
+function isCompleteTiradsFeature(features: JsonObject): boolean {
+  return ["composition", "echogenicity", "shape", "margin", "echogenic_foci"].every((key) => {
+    const value = features[key];
+    return Array.isArray(value) ? value.length > 0 : typeof value === "string" && value.trim().length > 0;
+  });
 }
 
 async function resolveQwenProvider(args: CliArgs): Promise<ProviderStatus> {
   return resolveProvider(
-    args.llmProviderId ?? process.env.JZX_MEDICAL_LLM_PROVIDER ?? "lmstudio:qwen36-35b-a3b",
+    args.llmProviderId ?? process.env.JZX_MEDICAL_LLM_PROVIDER ?? MEDICAL_MAIN_LLM_PROVIDER_ID,
     "Qwen report"
   );
 }
@@ -519,13 +535,14 @@ function printHelp(): void {
     --rag-db data/artifacts/live-demo-001/rag.db \\
     --workspace /Users/xutianliang/Downloads/jiazhuangxian \\
     --remote-model-gateway-url http://100.110.127.117:8766 \\
-    --llm-provider lmstudio:qwen36-35b-a3b
+    --llm-provider ${MEDICAL_MAIN_LLM_PROVIDER_ID} \\
+    --qwen-model ${MEDICAL_MAIN_LLM_MODEL}
 
 Behavior:
   1. 自动循环执行 image_qc / detect / segment / measure / TI-RADS 规则等已排队任务。
   2. 若缺少医生 TI-RADS 特征，会等待医生在工作台提交。
-  3. 到 draft_report 前检测 Qwen 是否 loaded；未 loaded 时等待。
-  4. Qwen loaded 后自动继续 draft_report / safety_review 并落库报告。`);
+  3. 到 draft_report 前检测 ${MEDICAL_MAIN_LLM_MODEL} 是否 loaded；未 loaded 时等待。
+  4. 模型 loaded 后自动继续 draft_report / safety_review 并落库报告。`);
 }
 
 main().catch((error) => {

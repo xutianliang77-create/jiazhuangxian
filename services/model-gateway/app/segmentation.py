@@ -1068,20 +1068,26 @@ class Sam2VideoSegmenter:
             )
 
         tracks_by_obj = initialized_sam2_tracks(obj_to_track, self.model)
-        for frame_index, out_obj_ids, out_mask_logits in predictor.propagate_in_video(state):
-            if not frame_in_range(int(frame_index), request.frame_range):
-                continue
-            for position, obj_id in enumerate(list(out_obj_ids)):
-                target = obj_to_track.get(int(obj_id))
-                track = tracks_by_obj.get(int(obj_id))
-                if target is None or track is None:
+        seen_frames: set[tuple[int, int]] = set()
+        warnings: list[str] = []
+        for reverse in [False, True]:
+            for frame_index, out_obj_ids, out_mask_logits in sam2_propagate_in_video(predictor, state, reverse=reverse, warnings=warnings):
+                if not frame_in_range(int(frame_index), request.frame_range):
                     continue
-                frame = sam2_frame_from_logits(int(frame_index), out_mask_logits[position], target)
-                if frame is not None:
-                    track["frames"].append(frame)
+                for position, obj_id in enumerate(list(out_obj_ids)):
+                    target = obj_to_track.get(int(obj_id))
+                    track = tracks_by_obj.get(int(obj_id))
+                    if target is None or track is None:
+                        continue
+                    seen_key = (int(obj_id), int(frame_index))
+                    if seen_key in seen_frames:
+                        continue
+                    frame = sam2_frame_from_logits(int(frame_index), out_mask_logits[position], target)
+                    if frame is not None:
+                        track["frames"].append(frame)
+                        seen_frames.add(seen_key)
 
         tracks = finalize_sam2_tracks(list(tracks_by_obj.values()))
-        warnings = []
         if not tracks:
             warnings.append("sam2_video_no_tracks")
         for track in tracks:
@@ -1113,6 +1119,16 @@ class Sam2VideoSegmenter:
 
     def device(self) -> str:
         return torch_device(self.env)
+
+
+def sam2_propagate_in_video(predictor: Any, state: Any, *, reverse: bool, warnings: list[str]) -> Any:
+    try:
+        return predictor.propagate_in_video(state, reverse=reverse)
+    except TypeError:
+        if reverse:
+            warnings.append("sam2_video_reverse_propagation_unavailable")
+            return []
+        return predictor.propagate_in_video(state)
 
 
 def is_sam2_video_model(model_name: str | None) -> bool:
@@ -1296,6 +1312,8 @@ def confidence_from_logits(logits: Any, mask: Any) -> float:
 def finalize_sam2_tracks(tracks: list[JsonDict]) -> list[JsonDict]:
     for track in tracks:
         frames = track.get("frames") if isinstance(track.get("frames"), list) else []
+        frames.sort(key=video_frame_sort_key)
+        track["frames"] = frames
         confidences = [number_or_none(frame.get("confidence")) for frame in frames if isinstance(frame, dict)]
         valid_confidences = [confidence for confidence in confidences if confidence is not None]
         areas = []
@@ -1318,6 +1336,12 @@ def finalize_sam2_tracks(tracks: list[JsonDict]) -> list[JsonDict]:
             bool(frame.get("requires_doctor_review")) for frame in frames if isinstance(frame, dict)
         )
     return tracks
+
+
+def video_frame_sort_key(frame: Any) -> int:
+    if not isinstance(frame, dict):
+        return 0
+    return integer_or_none(frame.get("frame_index")) or 0
 
 
 def run_measurement_job(job: Mapping[str, Any], env: Mapping[str, str] | None = None) -> JsonDict:
@@ -1345,6 +1369,8 @@ def run_measurement_job(job: Mapping[str, Any], env: Mapping[str, str] | None = 
             long_mm, short_mm = mm_axes_from_bbox(pixels["width_px"], pixels["height_px"], row_spacing, column_spacing)
             area_mm2 = area_px2 * row_spacing * column_spacing
         aspect_ratio = long_px / short_px if short_px > 0 else None
+        prefill_metrics, prefill_warnings = tirads_prefill_metrics(request, target, pixels, source, root)
+        warnings.extend(f"{warning}:{target_label(target, index)}" for warning in prefill_warnings)
         measurements.append(
             {
                 "nodule_id": target.nodule_id,
@@ -1363,6 +1389,7 @@ def run_measurement_job(job: Mapping[str, Any], env: Mapping[str, str] | None = 
                 },
                 "measurement_source": source,
                 "confidence": target.confidence,
+                "tirads_prefill_metrics": prefill_metrics,
                 "requires_doctor_review": (not spacing_available) or source != "mask",
             }
         )
@@ -1552,6 +1579,152 @@ def coefficient_of_variation(values: list[float]) -> float | None:
         return 0.0
     variance = sum((value - avg) ** 2 for value in values) / len(values)
     return (variance**0.5) / avg
+
+
+def tirads_prefill_metrics(
+    request: MeasureRequest,
+    target: NoduleTarget,
+    pixels: JsonDict,
+    measurement_source: str,
+    root: Path,
+) -> tuple[JsonDict, list[str]]:
+    warnings: list[str] = []
+    metrics: JsonDict = {
+        "method": "measurement_texture_boundary_v1",
+        "measurement_source": measurement_source,
+        "boundary": boundary_prefill_metrics(target, pixels),
+    }
+    if request.image_uri and target.mask_uri:
+        texture, texture_warnings = texture_prefill_metrics(request.image_uri, target.mask_uri, root)
+        warnings.extend(texture_warnings)
+        if texture:
+            metrics["texture"] = texture
+    elif request.image_uri:
+        warnings.append("tirads_texture_mask_missing")
+    return metrics, warnings
+
+
+def boundary_prefill_metrics(target: NoduleTarget, pixels: JsonDict) -> JsonDict:
+    contour = target.contour
+    width = number_or_none(pixels.get("width_px")) or 0.0
+    height = number_or_none(pixels.get("height_px")) or 0.0
+    bbox_area = width * height
+    if contour and len(contour) >= 3:
+        area = polygon_area(contour)
+        perimeter = polygon_perimeter(contour)
+    else:
+        area = number_or_none(pixels.get("area_px2")) or bbox_area
+        perimeter = 2.0 * (width + height) if width > 0 and height > 0 else 0.0
+    compactness = (4.0 * 3.141592653589793 * area / (perimeter * perimeter)) if perimeter > 0 else None
+    fill_ratio = (area / bbox_area) if bbox_area > 0 else None
+    return {
+        "area_px2": round(area, 4),
+        "bbox_area_px2": round(bbox_area, 4),
+        "compactness": round(compactness, 4) if compactness is not None else None,
+        "fill_ratio": round(fill_ratio, 4) if fill_ratio is not None else None,
+        "source": "contour" if contour else "measurement_bbox",
+    }
+
+
+def texture_prefill_metrics(image_uri: str, mask_uri: str, root: Path) -> tuple[JsonDict | None, list[str]]:
+    try:
+        import numpy as np  # type: ignore[import-not-found]
+        from PIL import Image  # type: ignore[import-not-found]
+    except ImportError:
+        return None, ["tirads_texture_dependencies_missing"]
+    try:
+        image_path = resolve_artifact_uri(image_uri, root)
+        mask_path = resolve_artifact_uri(mask_uri, root)
+        with Image.open(image_path) as image:
+            gray_image = image.convert("L")
+            gray = np.asarray(gray_image, dtype=np.float32)
+            image_size = gray_image.size
+        with Image.open(mask_path) as mask_image:
+            mask_gray = mask_image.convert("L")
+            if mask_gray.size != image_size:
+                mask_gray = mask_gray.resize(image_size, Image.Resampling.NEAREST)
+            mask = np.asarray(mask_gray, dtype=np.uint8) > 0
+    except Exception:
+        return None, ["tirads_texture_read_failed"]
+    if gray.shape != mask.shape or not mask.any():
+        return None, ["tirads_texture_empty_mask"]
+
+    ys, xs = np.where(mask)
+    x1, x2 = int(xs.min()), int(xs.max()) + 1
+    y1, y2 = int(ys.min()), int(ys.max()) + 1
+    margin = max(8, int(round(max(x2 - x1, y2 - y1) * 0.25)))
+    left = max(0, x1 - margin)
+    right = min(gray.shape[1], x2 + margin)
+    top = max(0, y1 - margin)
+    bottom = min(gray.shape[0], y2 + margin)
+
+    local_mask = mask[top:bottom, left:right]
+    local_gray = gray[top:bottom, left:right]
+    background_values = local_gray[~local_mask]
+    if background_values.size < 8:
+        background_values = gray[~mask]
+    inside_values = gray[mask]
+    if inside_values.size == 0 or background_values.size == 0:
+        return None, ["tirads_texture_insufficient_background"]
+
+    inside_mean = float(inside_values.mean())
+    inside_std = float(inside_values.std())
+    background_mean = float(background_values.mean())
+    background_std = float(background_values.std())
+    ratio = inside_mean / max(background_mean, 1.0)
+    bright_threshold = max(220.0, background_mean + 2.0 * background_std)
+    bright_fraction = float((inside_values >= bright_threshold).mean())
+    anechoic_threshold = max(18.0, background_mean * 0.35)
+    anechoic_fraction = float((inside_values <= anechoic_threshold).mean())
+
+    return {
+        "inside_mean": round(inside_mean, 4),
+        "inside_std": round(inside_std, 4),
+        "background_mean": round(background_mean, 4),
+        "background_std": round(background_std, 4),
+        "mean_to_background_ratio": round(ratio, 4),
+        "anechoic_fraction": round(anechoic_fraction, 4),
+        "bright_foci_fraction": round(bright_fraction, 4),
+        "composition_hint": composition_hint(anechoic_fraction, inside_std),
+        "echogenicity_hint": echogenicity_hint(ratio, inside_mean, inside_std),
+        "echogenic_foci_hint": ["punctate_echogenic_foci"] if bright_fraction >= 0.006 else ["none"],
+    }, []
+
+
+def composition_hint(anechoic_fraction: float, inside_std: float) -> str:
+    if anechoic_fraction >= 0.75 and inside_std <= 18.0:
+        return "cystic"
+    if anechoic_fraction >= 0.28:
+        return "mixed_cystic_solid"
+    return "solid"
+
+
+def echogenicity_hint(ratio: float, inside_mean: float, inside_std: float) -> str:
+    if inside_mean <= 18.0 and inside_std <= 12.0:
+        return "anechoic"
+    if ratio <= 0.35:
+        return "very_hypoechoic"
+    if ratio <= 0.75:
+        return "hypoechoic"
+    if ratio <= 1.2:
+        return "isoechoic"
+    return "hyperechoic"
+
+
+def polygon_area(points: list[list[float]]) -> float:
+    total = 0.0
+    for index, current in enumerate(points):
+        nxt = points[(index + 1) % len(points)]
+        total += float(current[0]) * float(nxt[1]) - float(nxt[0]) * float(current[1])
+    return abs(total) / 2.0
+
+
+def polygon_perimeter(points: list[list[float]]) -> float:
+    total = 0.0
+    for index, current in enumerate(points):
+        nxt = points[(index + 1) % len(points)]
+        total += ((float(nxt[0]) - float(current[0])) ** 2 + (float(nxt[1]) - float(current[1])) ** 2) ** 0.5
+    return total
 
 
 def pixel_measurement(target: NoduleTarget, root: Path) -> tuple[JsonDict | None, str, list[str]]:

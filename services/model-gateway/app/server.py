@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from typing import Tuple
 
 from pydantic import ValidationError
 
@@ -21,6 +23,7 @@ from .schemas import (
 from .store import ModelJobStore, default_db_path
 
 ARTIFACT_MAX_BYTES = 32 * 1024 * 1024
+ARTIFACT_UPLOAD_MAX_BYTES = 512 * 1024 * 1024
 ARTIFACT_MIME_BY_EXT = {
     ".json": "application/json; charset=utf-8",
     ".png": "image/png",
@@ -55,6 +58,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
                                 "/model/v1/jobs/{job_id}",
                                 "/model/v1/config/check",
                                 "/model/v1/artifacts?uri={artifact_uri}",
+                                "/model/v1/artifacts/upload?uri={artifact_uri}",
                             ],
                         }
                     )
@@ -101,8 +105,35 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
                 "/model/v1/infer/thyroid/measure-nodule",
                 "/model/v1/infer/thyroid/segment-video-nodule",
                 "/model/v1/infer/thyroid/measure-video-nodule",
-            }:
+            } and not self.path.startswith("/model/v1/artifacts/upload"):
                 self._write_response(error("not_found", "route not found"), 404)
+                return
+            if self.path.startswith("/model/v1/artifacts/upload"):
+                parsed_url = urlparse(self.path)
+                artifact_uri = first_query_value(parsed_url.query, "uri")
+                if not artifact_uri:
+                    self._write_response(error("invalid_request", "uri is required"), 400)
+                    return
+                try:
+                    artifact_path = resolve_artifact_path(artifact_uri)
+                except ValueError as exc:
+                    self._write_response(error("invalid_request", str(exc)), 400)
+                    return
+                try:
+                    size_bytes, sha256 = self._write_uploaded_artifact(artifact_path)
+                except ValueError as exc:
+                    self._write_response(error("invalid_request", str(exc)), 400)
+                    return
+                self._write_response(
+                    ok(
+                        {
+                            "artifact_uri": artifact_uri,
+                            "size_bytes": size_bytes,
+                            "sha256": sha256,
+                            "stored_path": str(artifact_path),
+                        }
+                    )
+                )
                 return
             try:
                 payload = self._read_json()
@@ -163,6 +194,18 @@ def create_server(host: str = "127.0.0.1", port: int = 8766, db_path: Path | Non
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+
+        def _write_uploaded_artifact(self, artifact_path: Path) -> Tuple[int, str]:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 1:
+                raise ValueError("request body must contain artifact bytes")
+            if length > ARTIFACT_UPLOAD_MAX_BYTES:
+                raise ValueError(f"artifact upload exceeds limit: {length} > {ARTIFACT_UPLOAD_MAX_BYTES}")
+            body = self.rfile.read(length)
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_bytes(body)
+            digest = hashlib.sha256(body).hexdigest()
+            return len(body), digest
 
     return ThreadingHTTPServer((host, port), ModelGatewayHandler)
 

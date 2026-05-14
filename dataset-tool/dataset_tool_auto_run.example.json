@@ -1,0 +1,10 @@
+{
+  "source_root": "E:\\甲状腺原始资料",
+  "output_dir": "D:\\甲状腺脱敏数据集\\hospital-thyroid-v1",
+  "dataset_id": "hospital-thyroid-v1",
+  "identity_linkage": true,
+  "deidentify": true,
+  "overwrite": false,
+  "auto_start": false,
+  "sensitive_terms": []
+}

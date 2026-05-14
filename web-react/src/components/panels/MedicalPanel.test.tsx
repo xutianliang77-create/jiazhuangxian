@@ -13,6 +13,7 @@ vi.mock("@/api/endpoints", () => ({
   createMedicalImage: vi.fn(),
   reviewMedicalReport: vi.fn(),
   reviseMedicalNodule: vi.fn(),
+  submitMedicalTiradsFeatures: vi.fn(),
   searchMedicalKnowledge: vi.fn(),
   startMedicalAnalysis: vi.fn(),
 }));
@@ -27,6 +28,7 @@ import {
   getMedicalSummary,
   reviewMedicalReport,
   reviseMedicalNodule,
+  submitMedicalTiradsFeatures,
   searchMedicalKnowledge,
   startMedicalAnalysis,
 } from "@/api/endpoints";
@@ -64,6 +66,9 @@ const summary = {
       noduleCount: 2,
       latestAnalysisStatus: "running",
       latestReportStatus: "draft",
+      queueStage: "pending_report_review",
+      queueReason: "等待医生审核报告草稿",
+      queuePriority: 10,
     },
   ],
   warnings: [],
@@ -468,7 +473,14 @@ describe("MedicalPanel", () => {
       report: {
         ...studyBundle.reports[0],
         status: "confirmed",
+        draftText: "医生修订后的甲状腺超声报告",
         finalText: "医生修订后的甲状腺超声报告",
+        structured: {
+          ...studyBundle.reports[0].structured,
+          sections: [
+            { id: "line-1", title: "段落 1", text: "医生修订后的甲状腺超声报告", includeTitle: false },
+          ],
+        },
         confirmedBy: "web-test",
         confirmedAt: 1778245300000,
       },
@@ -492,7 +504,7 @@ describe("MedicalPanel", () => {
         },
         after: {
           status: "confirmed",
-          draft_text: studyBundle.reports[0].draftText,
+          draft_text: "医生修订后的甲状腺超声报告",
           final_text: "医生修订后的甲状腺超声报告",
           evidence_count: 5,
           evidence_sources: [
@@ -523,7 +535,14 @@ describe("MedicalPanel", () => {
           {
             ...studyBundle.reports[0],
             status: "confirmed",
+            draftText: "医生修订后的甲状腺超声报告",
             finalText: "医生修订后的甲状腺超声报告",
+            structured: {
+              ...studyBundle.reports[0].structured,
+              sections: [
+                { id: "line-1", title: "段落 1", text: "医生修订后的甲状腺超声报告", includeTitle: false },
+              ],
+            },
             confirmedBy: "web-test",
             confirmedAt: 1778245300000,
           },
@@ -829,19 +848,644 @@ describe("MedicalPanel", () => {
   it("loads medical summary and shows counts, queues, and recent studies", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 
-    expect(await screen.findByText("Medical Workstation")).toBeInTheDocument();
-    expect(screen.getByText("Patients")).toBeInTheDocument();
-    expect(screen.getByText("Studies")).toBeInTheDocument();
+    expect(await screen.findByText("医生工作台")).toBeInTheDocument();
+    expect(screen.getByText("病例工作队列")).toBeInTheDocument();
+    expect(screen.getByText("患者")).toBeInTheDocument();
+    expect(screen.getByText("检查")).toBeInTheDocument();
     expect(screen.getByText("ACC-1")).toBeInTheDocument();
     expect(screen.getByText("US/thyroid")).toBeInTheDocument();
-    expect(screen.getAllByText("running").length).toBeGreaterThan(0);
-    expect(screen.getByText("draft")).toBeInTheDocument();
-    expect(screen.getByText("Model Jobs")).toBeInTheDocument();
-    expect(screen.getByText("Agent Tasks")).toBeInTheDocument();
-    expect(screen.getByText("Model Gateway")).toBeInTheDocument();
+    expect(screen.getAllByText("运行中").length).toBeGreaterThan(0);
+    expect(screen.getByText("草稿")).toBeInTheDocument();
+    expect(screen.getByText("模型任务")).toBeInTheDocument();
+    expect(screen.getByText("智能体任务")).toBeInTheDocument();
+    expect(screen.getByText("模型网关")).toBeInTheDocument();
     expect(screen.getByText("yolov11")).toBeInTheDocument();
-    expect(screen.getByText("Manual Case")).toBeInTheDocument();
+    expect(screen.getByText("手工登记病例")).toBeInTheDocument();
     expect(screen.getByText("知识证据")).toBeInTheDocument();
+  });
+
+  it("filters the case work queue by stage", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        summary.recentStudies[0],
+        {
+          ...summary.recentStudies[0],
+          id: "S2",
+          accessionNo: "ACC-2",
+          latestAnalysisStatus: "queued",
+          latestReportStatus: null,
+          queueStage: "analysis_in_progress",
+          queueReason: "结节检测排队中",
+          queuePriority: 50,
+        },
+      ],
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByRole("button", { name: /S1 ACC-1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /S2 ACC-2/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待审核报告 1/ }));
+    expect(screen.getByRole("button", { name: /S1 ACC-1/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /S2 ACC-2/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /分析中 1/ }));
+    expect(screen.getByRole("button", { name: /S2 ACC-2/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /S1 ACC-1/ })).not.toBeInTheDocument();
+  });
+
+  it("auto-opens the first matching case when switching queue filters", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        {
+          ...summary.recentStudies[0],
+          id: "S1",
+          accessionNo: "ACC-1",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245200000,
+        },
+        {
+          ...summary.recentStudies[0],
+          id: "S2",
+          accessionNo: "ACC-2",
+          queueStage: "analysis_in_progress",
+          queueReason: "结节检测排队中",
+          queuePriority: 50,
+          latestAnalysisStatus: "queued",
+          latestReportStatus: null,
+          updatedAt: 1778245300000,
+        },
+      ],
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /分析中 1/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
+    expect(screen.getByText("当前")).toBeInTheDocument();
+  });
+
+  it("shows the batch queue mode bar for review queue", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        {
+          ...summary.recentStudies[0],
+          id: "S1",
+          accessionNo: "ACC-1",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245200000,
+        },
+      ],
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待审核报告 1/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    expect(screen.getByText("批量队列")).toBeInTheDocument();
+    expect(screen.getAllByText("待审核报告").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "确认并下一例" })).toBeInTheDocument();
+  });
+
+  it("shows an empty queue state with a recommended next queue", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        {
+          ...summary.recentStudies[0],
+          id: "S1",
+          accessionNo: "ACC-1",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245200000,
+        },
+      ],
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待确认特征 0/ }));
+    expect(screen.getByText("当前队列已清空")).toBeInTheDocument();
+    expect(screen.getByText("推荐下一队列：待审核报告")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "切换到 待审核报告" })).toBeInTheDocument();
+  });
+
+  it("switches to the recommended queue and auto-opens its first study", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        {
+          ...summary.recentStudies[0],
+          id: "S1",
+          accessionNo: "ACC-1",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245200000,
+        },
+      ],
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待确认特征 0/ }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到 待审核报告" }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    expect(screen.getByText("批量队列")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认并下一例" })).toBeInTheDocument();
+  });
+
+  it("navigates to the next study within the filtered work queue", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        {
+          ...summary.recentStudies[0],
+          id: "S1",
+          accessionNo: "ACC-1",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245200000,
+        },
+        {
+          ...summary.recentStudies[0],
+          id: "S2",
+          accessionNo: "ACC-2",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245300000,
+        },
+      ],
+    });
+    vi.mocked(getMedicalStudy)
+      .mockResolvedValueOnce({ bundle: studyBundle })
+      .mockResolvedValueOnce({
+        bundle: {
+          ...studyBundle,
+          study: { ...studyBundle.study, id: "S2", accessionNo: "ACC-2" },
+        },
+      });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待审核报告 2/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
+    fireEvent.click(screen.getAllByRole("button", { name: "下一例" })[0]!);
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+  });
+
+  it("supports queue navigation shortcuts", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        {
+          ...summary.recentStudies[0],
+          id: "S1",
+          accessionNo: "ACC-1",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245200000,
+        },
+        {
+          ...summary.recentStudies[0],
+          id: "S2",
+          accessionNo: "ACC-2",
+          queueStage: "pending_report_review",
+          queueReason: "等待医生审核报告草稿",
+          queuePriority: 10,
+          updatedAt: 1778245300000,
+        },
+      ],
+    });
+    vi.mocked(getMedicalStudy).mockImplementation(async (studyId: string) => ({
+      bundle: {
+        ...studyBundle,
+        study: {
+          ...studyBundle.study,
+          id: studyId,
+          accessionNo: studyId === "S1" ? "ACC-1" : "ACC-2",
+        },
+      },
+    }));
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待审核报告 2/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
+    fireEvent.keyDown(window, { key: "ArrowDown", altKey: true });
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    fireEvent.keyDown(window, { key: "ArrowUp", altKey: true });
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
+  });
+
+  it("auto-advances to the next review case after confirming a report", async () => {
+    vi.mocked(getMedicalSummary)
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245400000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245300000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "ready_archive",
+            queueReason: "报告已确认，等待归档",
+            queuePriority: 20,
+            latestReportStatus: "confirmed",
+            updatedAt: 1778245500000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245300000,
+          },
+        ],
+      });
+    vi.mocked(getMedicalStudy)
+      .mockResolvedValueOnce({ bundle: studyBundle })
+      .mockResolvedValueOnce({
+        bundle: {
+          ...studyBundle,
+          study: { ...studyBundle.study, id: "S2", accessionNo: "ACC-2" },
+        },
+      });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待审核报告 2/ }));
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    fireEvent.change(screen.getByLabelText("审核意见"), {
+      target: { value: "确认后切下一例" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认报告" }));
+
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
+  });
+
+  it("runs the batch queue review action button", async () => {
+    vi.mocked(getMedicalSummary)
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245400000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245300000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "ready_archive",
+            queueReason: "报告已确认，等待归档",
+            queuePriority: 20,
+            latestReportStatus: "confirmed",
+            updatedAt: 1778245500000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245300000,
+          },
+        ],
+      });
+    vi.mocked(getMedicalStudy)
+      .mockResolvedValueOnce({ bundle: studyBundle })
+      .mockResolvedValueOnce({
+        bundle: {
+          ...studyBundle,
+          study: { ...studyBundle.study, id: "S2", accessionNo: "ACC-2" },
+        },
+      });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待审核报告 2/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "确认并下一例" })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "确认报告" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "确认并下一例" }));
+    await waitFor(() => expect(reviewMedicalReport).toHaveBeenCalled());
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
+  });
+
+  it("supports report confirm shortcut and auto-advances", async () => {
+    vi.mocked(getMedicalSummary)
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245400000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245300000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "ready_archive",
+            queueReason: "报告已确认，等待归档",
+            queuePriority: 20,
+            latestReportStatus: "confirmed",
+            updatedAt: 1778245500000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "pending_report_review",
+            queueReason: "等待医生审核报告草稿",
+            queuePriority: 10,
+            updatedAt: 1778245300000,
+          },
+        ],
+      });
+    vi.mocked(getMedicalStudy)
+      .mockResolvedValueOnce({ bundle: studyBundle })
+      .mockResolvedValueOnce({
+        bundle: {
+          ...studyBundle,
+          study: { ...studyBundle.study, id: "S2", accessionNo: "ACC-2" },
+        },
+      });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待审核报告 2/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    fireEvent.keyDown(window, { key: "Enter", altKey: true });
+    await waitFor(() => expect(reviewMedicalReport).toHaveBeenCalled());
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
+  });
+
+  it("supports report archive shortcut", async () => {
+    vi.mocked(getMedicalSummary).mockResolvedValueOnce({
+      ...summary,
+      recentStudies: [
+        {
+          ...summary.recentStudies[0],
+          id: "S1",
+          accessionNo: "ACC-1",
+          queueStage: "ready_archive",
+          queueReason: "报告已确认，等待归档",
+          queuePriority: 20,
+          latestReportStatus: "confirmed",
+          updatedAt: 1778245400000,
+        },
+      ],
+    });
+    vi.mocked(getMedicalStudy).mockResolvedValueOnce({
+      bundle: {
+        ...studyBundle,
+        reports: [
+          {
+            ...studyBundle.reports[0],
+            status: "confirmed",
+            finalText: "医生确认后的报告",
+            draftText: "医生确认后的报告",
+            confirmedBy: "web-test",
+            confirmedAt: 1778245300000,
+          },
+        ],
+      },
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待归档 1/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    expect(await screen.findByRole("button", { name: "审核归档" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("审核意见"), {
+      target: { value: "快捷键归档" },
+    });
+    fireEvent.keyDown(window, { key: "Enter", altKey: true, shiftKey: true });
+    await waitFor(() =>
+      expect(reviewMedicalReport).toHaveBeenCalledWith(
+        "R1",
+        expect.objectContaining({
+          action: "archive",
+          comment: "快捷键归档",
+        })
+      )
+    );
+  });
+
+  it("auto-advances to the next TI-RADS confirmation case after saving features", async () => {
+    vi.mocked(getMedicalSummary)
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "waiting_tirads_confirmation",
+            queueReason: "等待医生确认 TI-RADS 结构化特征",
+            queuePriority: 30,
+            latestReportStatus: null,
+            updatedAt: 1778245400000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "waiting_tirads_confirmation",
+            queueReason: "等待医生确认 TI-RADS 结构化特征",
+            queuePriority: 30,
+            latestReportStatus: null,
+            updatedAt: 1778245300000,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ...summary,
+        recentStudies: [
+          {
+            ...summary.recentStudies[0],
+            id: "S1",
+            accessionNo: "ACC-1",
+            queueStage: "analysis_in_progress",
+            queueReason: "TI-RADS 规则计算排队中",
+            queuePriority: 50,
+            latestAnalysisStatus: "queued",
+            latestReportStatus: null,
+            updatedAt: 1778245500000,
+          },
+          {
+            ...summary.recentStudies[0],
+            id: "S2",
+            accessionNo: "ACC-2",
+            queueStage: "waiting_tirads_confirmation",
+            queueReason: "等待医生确认 TI-RADS 结构化特征",
+            queuePriority: 30,
+            latestReportStatus: null,
+            updatedAt: 1778245300000,
+          },
+        ],
+      });
+    vi.mocked(getMedicalStudy)
+      .mockResolvedValueOnce({
+        bundle: {
+          ...studyBundle,
+          tiradsFeatures: [
+            {
+              id: "TF1",
+              noduleId: "N1",
+              systemName: "ACR_TI_RADS",
+              features: {
+                composition: "solid",
+                echogenicity: "isoechoic",
+                shape: "wider_than_tall",
+                margin: "ill_defined",
+                echogenic_foci: ["none"],
+              },
+              confidence: {},
+              sourceModel: "tirads-prefill-heuristic-v2",
+              requiresReview: true,
+              createdAt: 1778245600000,
+            },
+          ],
+          tiradsResults: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        bundle: {
+          ...studyBundle,
+          study: { ...studyBundle.study, id: "S2", accessionNo: "ACC-2" },
+        },
+      });
+    vi.mocked(submitMedicalTiradsFeatures).mockResolvedValue({
+      tiradsFeature: {
+        id: "TF2",
+        noduleId: "N1",
+        systemName: "ACR_TI_RADS",
+        features: {
+          composition: "solid",
+          echogenicity: "isoechoic",
+          shape: "wider_than_tall",
+          margin: "ill_defined",
+          echogenic_foci: ["none"],
+        },
+        confidence: {},
+        sourceModel: "doctor_structured_input",
+        requiresReview: false,
+        createdAt: 1778245700000,
+      },
+      analysisSession: null,
+      agentTasks: [],
+      auditLog: {
+        id: "A-TIRADS",
+        studyId: "S1",
+        actorType: "doctor",
+        actorId: "web-test",
+        action: "medical.tirads_feature.submit",
+        targetType: "nodule",
+        targetId: "N1",
+        detail: {},
+        traceId: "TF2",
+        createdAt: 1778245700000,
+      },
+      bundle: {
+        ...studyBundle,
+      },
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /待确认特征 2/ }));
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S1"));
+    expect(await screen.findByRole("button", { name: "确认并保存 TI-RADS 特征" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认并保存 TI-RADS 特征" }));
+
+    await waitFor(() => expect(getMedicalStudy).toHaveBeenCalledWith("S2"));
   });
 
   it("searches approved medical knowledge evidence", async () => {
@@ -865,20 +1509,18 @@ describe("MedicalPanel", () => {
 
     expect(await screen.findByText("artifact://raw/S1/IMG1.png")).toBeInTheDocument();
     expect(screen.getByText(/640×480/)).toBeInTheDocument();
-    expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("结节 1").length).toBeGreaterThan(0);
     expect(screen.getByText("TR4")).toBeInTheDocument();
     expect(screen.getAllByText(/甲状腺超声AI辅助报告/).length).toBeGreaterThan(0);
     expect(screen.getByText("真实演示提示：主报告大模型需手动加载")).toBeInTheDocument();
     expect(screen.getByText("当前报告尚未由主报告大模型生成")).toBeInTheDocument();
-    expect(screen.getByText("报告依据")).toBeInTheDocument();
-    expect(screen.getByText("证据引用固定 · 5 项")).toBeInTheDocument();
-    expect(screen.getByText("TI-RADS 规则库")).toBeInTheDocument();
-    expect(screen.getByText("医学知识库")).toBeInTheDocument();
-    expect(screen.getByText("分割依据 N1")).toBeInTheDocument();
-    expect(screen.getByText("测量依据 N1")).toBeInTheDocument();
+    expect(screen.getAllByText("报告依据").length).toBeGreaterThan(0);
+    expect(screen.getByText(/证据引用固定 · 5 项 · ev-/)).toBeInTheDocument();
+    expect(screen.getByText(/TI-RADS 规则库/)).toBeInTheDocument();
+    expect(screen.getByText(/医学知识库/)).toBeInTheDocument();
     expect(screen.getByText("examples/medical-knowledge/acr.md:10-20")).toBeInTheDocument();
-    expect(screen.getByText("Overlay Revision")).toBeInTheDocument();
-    expect(screen.getByText("Model Evidence")).toBeInTheDocument();
+    expect(screen.getByText("叠加图修订")).toBeInTheDocument();
+    expect(screen.getByText("模型依据")).toBeInTheDocument();
     expect(screen.getByText("nnunet_tight_roi")).toBeInTheDocument();
     expect(screen.getAllByText("nnunet-tight-roi-segmenter").length).toBeGreaterThan(0);
     expect(screen.getAllByText("tn3k-tight-roi-5fold-best").length).toBeGreaterThan(0);
@@ -890,22 +1532,22 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("11.00 mm")).toBeInTheDocument();
     expect(screen.getByText("6.00 mm")).toBeInTheDocument();
     expect(screen.getByText("42.00 mm2")).toBeInTheDocument();
-    expect(screen.getByText("pixels long_axis_px=22, short_axis_px=12")).toBeInTheDocument();
+    expect(screen.getByText("像素测量 long_axis_px=22, short_axis_px=12")).toBeInTheDocument();
     expect(screen.getAllByText("artifact://model-output/S1/IMG1/MJ-MEASURE/measurement.json").length).toBeGreaterThan(0);
-    expect(screen.getByText("needs_doctor_review")).toBeInTheDocument();
-    expect(screen.getByText("thyroid.detect_nodules")).toBeInTheDocument();
+    expect(screen.getByText("需医生复核")).toBeInTheDocument();
+    expect(screen.getByText("甲状腺结节检测")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/detections.json")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/overlay.png")).toBeInTheDocument();
     expect(screen.getByText("artifact://model-output/S1/IMG1/MJ1/comparison.json")).toBeInTheDocument();
-    expect(screen.getByText("Detector Consensus")).toBeInTheDocument();
-    expect(screen.getAllByText("matched").length).toBeGreaterThan(0);
-    expect(screen.getByText("qwen3.6 · pending_llm · consistent")).toBeInTheDocument();
+    expect(screen.getByText("检测模型一致性")).toBeInTheDocument();
+    expect(screen.getAllByText("已匹配").length).toBeGreaterThan(0);
+    expect(screen.getByText("qwen3.6 · 等待大模型 · 一致")).toBeInTheDocument();
     expect(screen.getByText(/LLM must not create, delete, or move bbox coordinates/)).toBeInTheDocument();
-    expect(screen.getByAltText("overlay revision preview")).toHaveAttribute(
+    expect(screen.getByAltText("叠加图修订预览")).toHaveAttribute(
       "src",
       "/v1/web/medical/artifacts?uri=artifact%3A%2F%2Fmodel-output%2FS1%2FIMG1%2FMJ1%2Foverlay.png&token=test-token"
     );
-    expect(screen.getByAltText("detector overlay preview")).toHaveAttribute(
+    expect(screen.getByAltText("检测叠加图预览")).toHaveAttribute(
       "src",
       "/v1/web/medical/artifacts?uri=artifact%3A%2F%2Fmodel-output%2FS1%2FIMG1%2FMJ1%2Foverlay.png&token=test-token"
     );
@@ -918,6 +1560,64 @@ describe("MedicalPanel", () => {
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
   });
 
+  it("shows heuristic TI-RADS prefill awaiting doctor confirmation", async () => {
+    vi.mocked(getMedicalStudy).mockResolvedValueOnce({
+      bundle: {
+        ...studyBundle,
+        tiradsFeatures: [
+          {
+            id: "TF1",
+            noduleId: "N1",
+            systemName: "ACR_TI_RADS",
+            features: {
+              composition: "solid",
+              echogenicity: "isoechoic",
+              shape: "wider_than_tall",
+              margin: "ill_defined",
+              echogenic_foci: ["none"],
+            },
+            confidence: {
+              composition: 0.24,
+              echogenicity: 0.18,
+              shape: 0.6,
+            },
+            sourceModel: "tirads-prefill-heuristic-v2",
+            requiresReview: true,
+            createdAt: 1778245600000,
+          },
+        ],
+        tiradsResults: [],
+        agentTasks: [
+          {
+            id: "AT-TIRADS",
+            analysisSessionId: "AS-TIRADS",
+            parentTaskId: null,
+            agentName: "TiradsRuleAgent",
+            taskType: "calculate_tirads",
+            status: "queued",
+            input: {},
+            output: null,
+            error: null,
+            startedAt: null,
+            completedAt: null,
+            createdAt: 1778245600000,
+            updatedAt: 1778245600000,
+          },
+        ],
+      },
+    });
+
+    render(<MedicalPanel onError={() => undefined} />);
+
+    expect(await screen.findByText("ACC-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
+
+    expect(await screen.findByText("已自动预填 TI-RADS 候选，请医生确认后保存。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认并保存 TI-RADS 特征" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("实性")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("等回声")).toBeInTheDocument();
+  });
+
   it("confirms a report draft from study detail", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 
@@ -926,6 +1626,10 @@ describe("MedicalPanel", () => {
 
     await waitFor(() => expect(screen.getAllByText(/甲状腺超声AI辅助报告/).length).toBeGreaterThan(0));
     expect(screen.getByText("结构化段落编辑")).toBeInTheDocument();
+    expect(screen.getByText("报告版本 v1")).toBeInTheDocument();
+    expect(screen.getByText("可编辑待审核")).toBeInTheDocument();
+    expect(screen.getByText("证据指纹")).toBeInTheDocument();
+    expect(screen.getByText("保存报告修订")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("段落内容 1"), {
       target: { value: "医生修订后的甲状腺超声报告" },
     });
@@ -941,16 +1645,35 @@ describe("MedicalPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认报告" }));
 
     await waitFor(() =>
-      expect(reviewMedicalReport).toHaveBeenCalledWith("R1", {
-        action: "approve",
-        finalText: "医生修订后的甲状腺超声报告",
-        comment: "医生已核对图像与证据",
-      })
+      expect(reviewMedicalReport).toHaveBeenCalledWith(
+        "R1",
+        expect.objectContaining({
+          action: "approve",
+          finalText: "医生修订后的甲状腺超声报告",
+          comment: "医生已核对图像与证据",
+          structured: expect.objectContaining({
+            editor: expect.objectContaining({
+              evidence_locked: true,
+              evidence_count: 5,
+              evidence_fingerprint: expect.stringMatching(/^ev-/),
+            }),
+            sections: [
+              expect.objectContaining({
+                id: "line-1",
+                text: "医生修订后的甲状腺超声报告",
+                includeTitle: false,
+              }),
+            ],
+          }),
+        })
+      )
     );
-    expect(await screen.findByText("confirmed")).toBeInTheDocument();
-    expect(screen.getByText("approve")).toBeInTheDocument();
+    expect(await screen.findByText("已确认")).toBeInTheDocument();
+    expect(screen.getAllByText("确认").length).toBeGreaterThan(0);
+    expect(screen.getByText("审核历史")).toBeInTheDocument();
     expect(screen.getByText("证据快照")).toBeInTheDocument();
     expect(screen.getByText("审核归档")).toBeInTheDocument();
+    expect(screen.getByText("待归档只读")).toBeInTheDocument();
     expect(screen.getAllByText("修改痕迹").length).toBeGreaterThan(0);
     expect(screen.getAllByText("医生修订后的甲状腺超声报告").length).toBeGreaterThan(0);
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
@@ -959,6 +1682,7 @@ describe("MedicalPanel", () => {
       report: {
         ...studyBundle.reports[0],
         status: "archived",
+        draftText: "医生修订后的甲状腺超声报告",
         finalText: "医生修订后的甲状腺超声报告",
         confirmedBy: "web-test",
         confirmedAt: 1778245300000,
@@ -1016,14 +1740,18 @@ describe("MedicalPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "审核归档" }));
 
     await waitFor(() =>
-      expect(reviewMedicalReport).toHaveBeenLastCalledWith("R1", {
-        action: "archive",
-        finalText: "医生修订后的甲状腺超声报告",
-        comment: "归档",
-      })
+      expect(reviewMedicalReport).toHaveBeenLastCalledWith(
+        "R1",
+        expect.objectContaining({
+          action: "archive",
+          finalText: "医生修订后的甲状腺超声报告",
+          comment: "归档",
+        })
+      )
     );
-    expect(await screen.findByText("archived")).toBeInTheDocument();
-    expect(screen.getByText("archive")).toBeInTheDocument();
+    expect(await screen.findByText("已归档")).toBeInTheDocument();
+    expect(screen.getByText("只读归档")).toBeInTheDocument();
+    expect(screen.getAllByText("归档").length).toBeGreaterThan(0);
   });
 
   it("draws a bbox on the overlay preview and saves the selected nodule revision", async () => {
@@ -1052,7 +1780,7 @@ describe("MedicalPanel", () => {
     fireEvent.mouseUp(canvas, { clientX: 32, clientY: 42 });
     expect(screen.getByText("12, 22, 32, 42")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "保存 overlay 修订" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存叠加图修订" }));
 
     await waitFor(() =>
       expect(reviseMedicalNodule).toHaveBeenCalledWith("N1", {
@@ -1060,8 +1788,8 @@ describe("MedicalPanel", () => {
         status: "doctor_revised",
       })
     );
-    expect(await screen.findByText("doctor_revised")).toBeInTheDocument();
-    expect(screen.getByText("bbox 10, 20, 30, 40 -> 12, 22, 32, 42")).toBeInTheDocument();
+    expect(await screen.findByText("医生已修订")).toBeInTheDocument();
+    expect(screen.getByText("检测框 10, 20, 30, 40 → 12, 22, 32, 42")).toBeInTheDocument();
   });
 
   it("blocks zero-area overlay bbox revisions before calling the API", async () => {
@@ -1088,9 +1816,9 @@ describe("MedicalPanel", () => {
     fireEvent.mouseDown(canvas, { clientX: 12, clientY: 22 });
     fireEvent.mouseUp(canvas, { clientX: 12, clientY: 22 });
 
-    fireEvent.click(screen.getByRole("button", { name: "保存 overlay 修订" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存叠加图修订" }));
 
-    expect(await screen.findByText("bbox 宽度和高度至少需要 1 像素，请重新拖拽框选。")).toBeInTheDocument();
+    expect(await screen.findByText("检测框宽度和高度至少需要 1 像素，请重新拖拽框选。")).toBeInTheDocument();
     expect(reviseMedicalNodule).not.toHaveBeenCalled();
   });
 
@@ -1100,8 +1828,8 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("ACC-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
-    await waitFor(() => expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0));
-    fireEvent.change(screen.getByLabelText("bbox xyxy"), { target: { value: "12, 22, 32, 42" } });
+    await waitFor(() => expect(screen.getAllByText("结节 1").length).toBeGreaterThan(0));
+    fireEvent.change(screen.getByLabelText("检测框坐标 xyxy"), { target: { value: "12, 22, 32, 42" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
 
     await waitFor(() =>
@@ -1110,11 +1838,11 @@ describe("MedicalPanel", () => {
         status: "doctor_revised",
       })
     );
-    expect(await screen.findByText("doctor_revised")).toBeInTheDocument();
-    expect(screen.getAllByText("medical.nodule.revise").length).toBeGreaterThan(0);
-    expect(screen.getByText("bbox 10, 20, 30, 40 -> 12, 22, 32, 42")).toBeInTheDocument();
-    expect(screen.getByText("Revision Evidence Diff")).toBeInTheDocument();
-    expect(screen.getAllByText("pending refresh").length).toBeGreaterThan(0);
+    expect(await screen.findByText("医生已修订")).toBeInTheDocument();
+    expect(screen.getAllByText("医生修订结节检测框").length).toBeGreaterThan(0);
+    expect(screen.getByText("检测框 10, 20, 30, 40 → 12, 22, 32, 42")).toBeInTheDocument();
+    expect(screen.getByText("修订后依据变化")).toBeInTheDocument();
+    expect(screen.getAllByText("等待刷新").length).toBeGreaterThan(0);
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
   });
 
@@ -1263,10 +1991,10 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("ACC-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
-    expect(await screen.findByText("Revision Evidence Diff")).toBeInTheDocument();
-    expect(screen.getByText("refreshed")).toBeInTheDocument();
+    expect(await screen.findByText("修订后依据变化")).toBeInTheDocument();
+    expect(screen.getByText("已刷新")).toBeInTheDocument();
     expect(screen.getByText("5.00 mm x 5.00 mm")).toBeInTheDocument();
-    expect(screen.getAllByText("tirads_result, segmentation_result, measurement_result").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("TI-RADS 结果, 分割结果, 测量结果").length).toBeGreaterThan(0);
     expect(screen.getAllByText(refreshedMaskUri).length).toBeGreaterThan(0);
     expect(screen.getAllByText("R-REV").length).toBeGreaterThan(0);
   });
@@ -1343,9 +2071,9 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("ACC-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
-    expect(await screen.findByText("Revision Evidence Diff")).toBeInTheDocument();
-    expect(screen.getByText("invalid revision bbox")).toBeInTheDocument();
-    expect(screen.getAllByText("pending refresh").length).toBeGreaterThan(0);
+    expect(await screen.findByText("修订后依据变化")).toBeInTheDocument();
+    expect(screen.getByText("无效修订框")).toBeInTheDocument();
+    expect(screen.getAllByText("等待刷新").length).toBeGreaterThan(0);
   });
 
   it("prefers server revision evidence when the bundle provides task-chain attribution", async () => {
@@ -1399,8 +2127,8 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("ACC-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
-    expect(await screen.findByText("Revision Evidence Diff")).toBeInTheDocument();
-    expect(screen.getByText("refreshed")).toBeInTheDocument();
+    expect(await screen.findByText("修订后依据变化")).toBeInTheDocument();
+    expect(screen.getByText("已刷新")).toBeInTheDocument();
     expect(screen.getByText("7.00 mm x 4.00 mm")).toBeInTheDocument();
     expect(screen.getByText("server_segmentation, server_measurement")).toBeInTheDocument();
     expect(screen.getAllByText(serverMaskUri).length).toBeGreaterThan(0);
@@ -1413,18 +2141,18 @@ describe("MedicalPanel", () => {
     expect(await screen.findByText("ACC-1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /ACC-1/ }));
 
-    await waitFor(() => expect(screen.getAllByText("Nodule 1").length).toBeGreaterThan(0));
-    fireEvent.change(screen.getByLabelText("bbox xyxy"), { target: { value: "12, 22, 12, 42" } });
+    await waitFor(() => expect(screen.getAllByText("结节 1").length).toBeGreaterThan(0));
+    fireEvent.change(screen.getByLabelText("检测框坐标 xyxy"), { target: { value: "12, 22, 12, 42" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
 
-    expect(await screen.findByText("bbox 宽度和高度至少需要 1 像素，请重新拖拽框选。")).toBeInTheDocument();
+    expect(await screen.findByText("检测框宽度和高度至少需要 1 像素，请重新拖拽框选。")).toBeInTheDocument();
     expect(reviseMedicalNodule).not.toHaveBeenCalled();
   });
 
   it("registers a manual patient, study, and image then refreshes", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 
-    expect(await screen.findByText("Manual Case")).toBeInTheDocument();
+    expect(await screen.findByText("手工登记病例")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("患者编号"), { target: { value: "EXT-P2" } });
     fireEvent.change(screen.getByLabelText("检查号"), { target: { value: "ACC-2" } });
     fireEvent.change(screen.getByLabelText("图像 URI"), {
@@ -1435,7 +2163,7 @@ describe("MedicalPanel", () => {
     fireEvent.change(screen.getByLabelText("高度"), { target: { value: "480" } });
     fireEvent.change(screen.getByLabelText("临床信息"), { target: { value: "manual validation" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "登记" }));
+    fireEvent.click(screen.getByRole("button", { name: "登记并启动分析" }));
 
     await waitFor(() => expect(createMedicalPatient).toHaveBeenCalled());
     expect(createMedicalPatient).toHaveBeenCalledWith({
@@ -1457,7 +2185,11 @@ describe("MedicalPanel", () => {
       width: 640,
       height: 480,
     });
-    expect(await screen.findByText("已登记 ACC-2")).toBeInTheDocument();
+    await waitFor(() => expect(startMedicalAnalysis).toHaveBeenCalledWith("S2", {
+      imageId: "IMG2",
+      triggerSource: "web_manual_case_auto",
+    }));
+    expect(await screen.findByText("已登记并启动分析 ACC-2")).toBeInTheDocument();
     expect(getMedicalSummary).toHaveBeenCalledTimes(2);
     expect(getMedicalStudy).toHaveBeenCalledWith("S2");
   });
@@ -1468,16 +2200,17 @@ describe("MedicalPanel", () => {
 
     render(<MedicalPanel onError={onError} />);
 
-    expect(await screen.findByText("Manual Case")).toBeInTheDocument();
+    expect(await screen.findByText("手工登记病例")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("患者编号"), { target: { value: "EXT-P2" } });
     fireEvent.change(screen.getByLabelText("检查号"), { target: { value: "ACC-2" } });
     fireEvent.change(screen.getByLabelText("图像 URI"), {
       target: { value: "artifact://raw/ACC-2/IMG1.png" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "登记" }));
+    fireEvent.click(screen.getByRole("button", { name: "登记并启动分析" }));
 
-    expect(await screen.findByText("Medical 登记失败：duplicate-medical-record")).toBeInTheDocument();
-    expect(onError).toHaveBeenCalledWith("Medical 登记失败：duplicate-medical-record");
+    expect(await screen.findByText("医疗病例登记失败：duplicate-medical-record")).toBeInTheDocument();
+    expect(onError).toHaveBeenCalledWith("医疗病例登记失败：duplicate-medical-record");
+    expect(startMedicalAnalysis).not.toHaveBeenCalled();
   });
 
   it("shows disabled medical storage state", async () => {
@@ -1501,7 +2234,7 @@ describe("MedicalPanel", () => {
 
     render(<MedicalPanel onError={() => undefined} />);
 
-    expect(await screen.findByText("medical storage disabled (no data.db)")).toBeInTheDocument();
+    expect(await screen.findByText("医疗数据存储未启用（缺少 data.db）")).toBeInTheDocument();
   });
 
   it("shows retryable error when summary loading fails", async () => {
@@ -1510,8 +2243,8 @@ describe("MedicalPanel", () => {
 
     render(<MedicalPanel onError={onError} />);
 
-    expect(await screen.findByText("Medical 加载失败：offline")).toBeInTheDocument();
+    expect(await screen.findByText("医疗工作台加载失败：offline")).toBeInTheDocument();
     expect(screen.getByText("重试加载")).toBeInTheDocument();
-    expect(onError).toHaveBeenCalledWith("Medical 加载失败：offline");
+    expect(onError).toHaveBeenCalledWith("医疗工作台加载失败：offline");
   });
 });

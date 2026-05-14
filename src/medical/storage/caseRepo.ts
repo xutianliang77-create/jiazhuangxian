@@ -449,6 +449,7 @@ export interface ReportReviewInput {
   action: ReportReviewAction;
   comment?: string | null;
   finalText?: string | null;
+  structured?: JsonObject | null;
   now?: number;
 }
 
@@ -461,6 +462,133 @@ export interface DoctorReviewRecord {
   before: JsonObject | null;
   after: JsonObject | null;
   createdAt: number;
+}
+
+export interface FinalValidationRunInput {
+  id?: string;
+  datasetId: string;
+  datasetRoot?: string | null;
+  datasetManifestUri?: string | null;
+  caseId?: string | null;
+  pipelineMode: string;
+  status?: string;
+  remoteModelGatewayUrl?: string | null;
+  dataDbPath?: string | null;
+  ragDbPath?: string | null;
+  reportJsonUri?: string | null;
+  reportMarkdownUri?: string | null;
+  summary?: JsonObject;
+  createdBy?: string | null;
+  startedAt?: number | null;
+  completedAt?: number | null;
+  now?: number;
+}
+
+export interface FinalValidationRunUpdateInput {
+  status?: string;
+  reportJsonUri?: string | null;
+  reportMarkdownUri?: string | null;
+  summary?: JsonObject;
+  completedAt?: number | null;
+  now?: number;
+}
+
+export interface FinalValidationRunRecord {
+  id: string;
+  datasetId: string;
+  datasetRoot: string | null;
+  datasetManifestUri: string | null;
+  caseId: string | null;
+  pipelineMode: string;
+  status: string;
+  remoteModelGatewayUrl: string | null;
+  dataDbPath: string | null;
+  ragDbPath: string | null;
+  reportJsonUri: string | null;
+  reportMarkdownUri: string | null;
+  summary: JsonObject;
+  createdBy: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FinalValidationImageResultInput {
+  id?: string;
+  runId: string;
+  studyId?: string | null;
+  imageId?: string | null;
+  analysisSessionId?: string | null;
+  datasetImageId: string;
+  datasetLabel?: string | null;
+  sourceRelativePath?: string | null;
+  artifactUri: string;
+  localStagedPath?: string | null;
+  remoteUpload?: JsonObject;
+  expected?: JsonObject;
+  detection?: JsonObject;
+  measurement?: JsonObject;
+  tirads?: JsonObject;
+  report?: JsonObject;
+  safetyReview?: JsonObject;
+  modelArtifacts?: unknown[];
+  taskEvents?: unknown[];
+  note?: string | null;
+  status?: string;
+  error?: JsonObject | null;
+  reviewStatus?: string;
+  reviewComment?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: number | null;
+  completedAt?: number | null;
+  now?: number;
+}
+
+export interface FinalValidationImageResultListOptions {
+  reviewStatus?: string;
+  status?: string;
+  limit?: number;
+}
+
+export interface FinalValidationImageReviewInput {
+  resultId: string;
+  reviewStatus: string;
+  reviewComment?: string | null;
+  reviewedBy?: string | null;
+  now?: number;
+}
+
+export interface FinalValidationImageResultRecord {
+  id: string;
+  runId: string;
+  studyId: string | null;
+  imageId: string | null;
+  analysisSessionId: string | null;
+  datasetImageId: string;
+  datasetLabel: string | null;
+  sourceRelativePath: string | null;
+  artifactUri: string;
+  localStagedPath: string | null;
+  remoteUpload: JsonObject;
+  expected: JsonObject;
+  detection: JsonObject;
+  measurement: JsonObject;
+  tirads: JsonObject;
+  report: JsonObject;
+  safetyReview: JsonObject;
+  modelArtifacts: unknown[];
+  taskEvents: unknown[];
+  note: string | null;
+  status: string;
+  error: JsonObject | null;
+  reviewStatus: string;
+  reviewComment: string | null;
+  reviewedBy: string | null;
+  reviewedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
 }
 
 export interface StudyBundle {
@@ -708,6 +836,59 @@ interface DoctorReviewRow {
   created_at: number;
 }
 
+interface FinalValidationRunRow {
+  id: string;
+  dataset_id: string;
+  dataset_root: string | null;
+  dataset_manifest_uri: string | null;
+  case_id: string | null;
+  pipeline_mode: string;
+  status: string;
+  remote_model_gateway_url: string | null;
+  data_db_path: string | null;
+  rag_db_path: string | null;
+  report_json_uri: string | null;
+  report_markdown_uri: string | null;
+  summary_json: string;
+  created_by: string | null;
+  started_at: number | null;
+  completed_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface FinalValidationImageResultRow {
+  id: string;
+  run_id: string;
+  study_id: string | null;
+  image_id: string | null;
+  analysis_session_id: string | null;
+  dataset_image_id: string;
+  dataset_label: string | null;
+  source_relative_path: string | null;
+  artifact_uri: string;
+  local_staged_path: string | null;
+  remote_upload_json: string;
+  expected_json: string;
+  detection_json: string;
+  measurement_json: string;
+  tirads_json: string;
+  report_json: string;
+  safety_review_json: string;
+  model_artifacts_json: string;
+  task_events_json: string;
+  note: string | null;
+  status: string;
+  error_json: string | null;
+  review_status: string;
+  review_comment: string | null;
+  reviewed_by: string | null;
+  reviewed_at: number | null;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
+}
+
 export class MedicalCaseRepo {
   constructor(private readonly db: Database.Database) {}
 
@@ -859,6 +1040,45 @@ export class MedicalCaseRepo {
         now
       );
     return this.getAgentTask(id)!;
+  }
+
+  cancelAgentTasks(taskIds: string[], reason: JsonObject, now = Date.now()): AgentTaskRecord[] {
+    const uniqueIds = Array.from(new Set(taskIds)).filter(Boolean);
+    if (uniqueIds.length === 0) return [];
+    const sessionIds = new Set<string>();
+    const cancelled: AgentTaskRecord[] = [];
+    const errorJson = stringifyJson(reason);
+
+    for (const taskId of uniqueIds) {
+      const row = this.db
+        .prepare<[string], { analysis_session_id: string }>(
+          "SELECT analysis_session_id FROM agent_task WHERE id = ?"
+        )
+        .get(taskId);
+      const updated = this.db
+        .prepare<[string, number, number, string]>(
+          `UPDATE agent_task
+           SET status = 'cancelled', error_json = ?, completed_at = ?, updated_at = ?
+           WHERE id = ? AND status IN ('queued', 'running', 'waiting_model')`
+        )
+        .run(errorJson, now, now, taskId);
+      if (updated.changes !== 1) continue;
+      if (row) sessionIds.add(row.analysis_session_id);
+      this.db
+        .prepare<[string, number, number, string]>(
+          `UPDATE model_job
+           SET status = 'cancelled', error_json = ?, completed_at = COALESCE(completed_at, ?), updated_at = ?
+           WHERE agent_task_id = ? AND status IN ('queued', 'running')`
+        )
+        .run(errorJson, now, now, taskId);
+      const task = this.getAgentTask(taskId);
+      if (task) cancelled.push(task);
+    }
+
+    for (const sessionId of sessionIds) {
+      this.refreshAnalysisSessionStatus(sessionId, now);
+    }
+    return cancelled;
   }
 
   createModelJob(input: ModelJobInput): ModelJobRecord {
@@ -1157,9 +1377,231 @@ export class MedicalCaseRepo {
         input.targetId ?? null,
         stringifyJson(input.detail ?? {}),
         input.traceId ?? null,
+      now
+    );
+    return this.getAuditLog(id)!;
+  }
+
+  createFinalValidationRun(input: FinalValidationRunInput): FinalValidationRunRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO final_validation_run(
+           id, dataset_id, dataset_root, dataset_manifest_uri, case_id, pipeline_mode,
+           status, remote_model_gateway_url, data_db_path, rag_db_path,
+           report_json_uri, report_markdown_uri, summary_json, created_by,
+           started_at, completed_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.datasetId,
+        input.datasetRoot ?? null,
+        input.datasetManifestUri ?? null,
+        input.caseId ?? null,
+        input.pipelineMode,
+        input.status ?? "running",
+        input.remoteModelGatewayUrl ?? null,
+        input.dataDbPath ?? null,
+        input.ragDbPath ?? null,
+        input.reportJsonUri ?? null,
+        input.reportMarkdownUri ?? null,
+        stringifyJson(input.summary ?? {}),
+        input.createdBy ?? null,
+        input.startedAt ?? now,
+        input.completedAt ?? null,
+        now,
         now
       );
-    return this.getAuditLog(id)!;
+    return this.getFinalValidationRun(id)!;
+  }
+
+  updateFinalValidationRun(id: string, input: FinalValidationRunUpdateInput): FinalValidationRunRecord {
+    const current = this.getFinalValidationRun(id);
+    if (!current) throw new Error(`final validation run not found: ${id}`);
+    const now = input.now ?? Date.now();
+    this.db
+      .prepare(
+        `UPDATE final_validation_run
+         SET status = ?,
+             report_json_uri = ?,
+             report_markdown_uri = ?,
+             summary_json = ?,
+             completed_at = ?,
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.status ?? current.status,
+        input.reportJsonUri === undefined ? current.reportJsonUri : input.reportJsonUri,
+        input.reportMarkdownUri === undefined ? current.reportMarkdownUri : input.reportMarkdownUri,
+        input.summary === undefined ? stringifyJson(current.summary) : stringifyJson(input.summary),
+        input.completedAt === undefined ? current.completedAt : input.completedAt,
+        now,
+        id
+      );
+    return this.getFinalValidationRun(id)!;
+  }
+
+  getFinalValidationRun(id: string): FinalValidationRunRecord | null {
+    const row = this.db
+      .prepare<[string], FinalValidationRunRow>("SELECT * FROM final_validation_run WHERE id = ?")
+      .get(id);
+    return row ? mapFinalValidationRun(row) : null;
+  }
+
+  listFinalValidationRuns(limit = 50): FinalValidationRunRecord[] {
+    return this.db
+      .prepare<[number], FinalValidationRunRow>(
+        "SELECT * FROM final_validation_run ORDER BY created_at DESC, id DESC LIMIT ?"
+      )
+      .all(limit)
+      .map(mapFinalValidationRun);
+  }
+
+  upsertFinalValidationImageResult(input: FinalValidationImageResultInput): FinalValidationImageResultRecord {
+    const now = input.now ?? Date.now();
+    const id = input.id ?? ulid();
+    this.db
+      .prepare(
+        `INSERT INTO final_validation_image_result(
+           id, run_id, study_id, image_id, analysis_session_id, dataset_image_id,
+           dataset_label, source_relative_path, artifact_uri, local_staged_path,
+           remote_upload_json, expected_json, detection_json, measurement_json,
+           tirads_json, report_json, safety_review_json, model_artifacts_json,
+           task_events_json, note, status, error_json, review_status,
+           review_comment, reviewed_by, reviewed_at, created_at, updated_at, completed_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(run_id, dataset_image_id) DO UPDATE SET
+           study_id = excluded.study_id,
+           image_id = excluded.image_id,
+           analysis_session_id = excluded.analysis_session_id,
+           dataset_label = excluded.dataset_label,
+           source_relative_path = excluded.source_relative_path,
+           artifact_uri = excluded.artifact_uri,
+           local_staged_path = excluded.local_staged_path,
+           remote_upload_json = excluded.remote_upload_json,
+           expected_json = excluded.expected_json,
+           detection_json = excluded.detection_json,
+           measurement_json = excluded.measurement_json,
+           tirads_json = excluded.tirads_json,
+           report_json = excluded.report_json,
+           safety_review_json = excluded.safety_review_json,
+           model_artifacts_json = excluded.model_artifacts_json,
+           task_events_json = excluded.task_events_json,
+           note = excluded.note,
+           status = excluded.status,
+           error_json = excluded.error_json,
+           review_status = excluded.review_status,
+           review_comment = excluded.review_comment,
+           reviewed_by = excluded.reviewed_by,
+           reviewed_at = excluded.reviewed_at,
+           updated_at = excluded.updated_at,
+           completed_at = excluded.completed_at`
+      )
+      .run(
+        id,
+        input.runId,
+        input.studyId ?? null,
+        input.imageId ?? null,
+        input.analysisSessionId ?? null,
+        input.datasetImageId,
+        input.datasetLabel ?? null,
+        input.sourceRelativePath ?? null,
+        input.artifactUri,
+        input.localStagedPath ?? null,
+        stringifyJson(input.remoteUpload ?? {}),
+        stringifyJson(input.expected ?? {}),
+        stringifyJson(input.detection ?? {}),
+        stringifyJson(input.measurement ?? {}),
+        stringifyJson(input.tirads ?? {}),
+        stringifyJson(input.report ?? {}),
+        stringifyJson(input.safetyReview ?? {}),
+        stringifyJsonValue(input.modelArtifacts ?? []),
+        stringifyJsonValue(input.taskEvents ?? []),
+        input.note ?? null,
+        input.status ?? "succeeded",
+        input.error === null ? null : input.error ? stringifyJson(input.error) : null,
+        input.reviewStatus ?? "unreviewed",
+        input.reviewComment ?? null,
+        input.reviewedBy ?? null,
+        input.reviewedAt ?? null,
+        now,
+        now,
+        input.completedAt ?? now
+      );
+    const result = this.getFinalValidationImageResult(input.runId, input.datasetImageId);
+    if (!result) throw new Error(`final validation image result not found after insert: ${input.datasetImageId}`);
+    return result;
+  }
+
+  getFinalValidationImageResult(runId: string, datasetImageId: string): FinalValidationImageResultRecord | null {
+    const row = this.db
+      .prepare<[string, string], FinalValidationImageResultRow>(
+        "SELECT * FROM final_validation_image_result WHERE run_id = ? AND dataset_image_id = ?"
+      )
+      .get(runId, datasetImageId);
+    return row ? mapFinalValidationImageResult(row) : null;
+  }
+
+  getFinalValidationImageResultById(id: string): FinalValidationImageResultRecord | null {
+    const row = this.db
+      .prepare<[string], FinalValidationImageResultRow>("SELECT * FROM final_validation_image_result WHERE id = ?")
+      .get(id);
+    return row ? mapFinalValidationImageResult(row) : null;
+  }
+
+  listFinalValidationImageResults(
+    runId: string,
+    options: FinalValidationImageResultListOptions = {}
+  ): FinalValidationImageResultRecord[] {
+    const clauses = ["run_id = ?"];
+    const params: Array<string | number> = [runId];
+    if (options.reviewStatus) {
+      clauses.push("review_status = ?");
+      params.push(options.reviewStatus);
+    }
+    if (options.status) {
+      clauses.push("status = ?");
+      params.push(options.status);
+    }
+    const limit = options.limit && options.limit > 0 ? Math.min(options.limit, 500) : 200;
+    params.push(limit);
+    return this.db
+      .prepare(
+        `SELECT * FROM final_validation_image_result
+         WHERE ${clauses.join(" AND ")}
+         ORDER BY created_at ASC, id ASC
+         LIMIT ?`
+      )
+      .all(...params)
+      .map((row) => mapFinalValidationImageResult(row as FinalValidationImageResultRow));
+  }
+
+  reviewFinalValidationImageResult(input: FinalValidationImageReviewInput): FinalValidationImageResultRecord {
+    const current = this.getFinalValidationImageResultById(input.resultId);
+    if (!current) throw new Error(`final validation image result not found: ${input.resultId}`);
+    const now = input.now ?? Date.now();
+    this.db
+      .prepare<[string, string | null, string | null, number, number, string]>(
+        `UPDATE final_validation_image_result
+         SET review_status = ?,
+             review_comment = ?,
+             reviewed_by = ?,
+             reviewed_at = ?,
+             updated_at = ?
+         WHERE id = ?`
+      )
+      .run(
+        input.reviewStatus,
+        input.reviewComment ?? null,
+        input.reviewedBy ?? null,
+        now,
+        now,
+        input.resultId
+      );
+    return this.getFinalValidationImageResultById(input.resultId)!;
   }
 
   reviewReport(input: ReportReviewInput): { report: ReportRecord; doctorReview: DoctorReviewRecord } {
@@ -1169,27 +1611,44 @@ export class MedicalCaseRepo {
     try {
       const before = this.getReport(input.reportId);
       if (!before) throw new Error(`Report not found: ${input.reportId}`);
+      assertReportReviewActionAllowed(before, input.action);
       const nextStatus = reportStatusForReviewAction(input.action);
-      const nextFinalText = input.action === "reject"
-        ? before.finalText
-        : input.finalText ?? before.finalText ?? before.draftText;
-      const confirmedBy = input.action === "reject"
-        ? null
+      const editedText = input.finalText ?? before.finalText ?? before.draftText;
+      const nextDraftText = input.action === "reject"
+        ? before.draftText
+        : editedText ?? before.draftText;
+      const nextFinalText = input.action === "approve"
+        ? editedText ?? before.finalText ?? before.draftText
+        : input.action === "archive"
+          ? before.finalText ?? before.draftText
+          : before.finalText;
+      const nextStructured = input.structured ?? before.structured;
+      const confirmedBy = input.action === "approve"
+        ? input.reviewerName
         : input.action === "archive"
           ? before.confirmedBy ?? input.reviewerName
-          : input.reviewerName;
-      const confirmedAt = input.action === "reject"
-        ? null
+          : null;
+      const confirmedAt = input.action === "approve"
+        ? now
         : input.action === "archive"
           ? before.confirmedAt ?? now
-          : now;
+          : null;
       this.db
-        .prepare<[string, string | null, string | null, number | null, number, string]>(
+        .prepare<[string, string | null, string | null, string, string | null, number | null, number, string]>(
           `UPDATE report
-           SET status = ?, final_text = ?, confirmed_by = ?, confirmed_at = ?, updated_at = ?
+           SET status = ?, draft_text = ?, final_text = ?, structured_json = ?, confirmed_by = ?, confirmed_at = ?, updated_at = ?
            WHERE id = ?`
         )
-        .run(nextStatus, nextFinalText ?? null, confirmedBy, confirmedAt, now, input.reportId);
+        .run(
+          nextStatus,
+          nextDraftText ?? null,
+          nextFinalText ?? null,
+          stringifyJson(nextStructured),
+          confirmedBy,
+          confirmedAt,
+          now,
+          input.reportId
+        );
       const after = this.getReport(input.reportId)!;
       this.db
         .prepare(
@@ -1541,6 +2000,24 @@ export class MedicalCaseRepo {
       .prepare<[string, number, string]>(
         `UPDATE agent_task
          SET status = 'waiting_model', output_json = ?, error_json = NULL, updated_at = ?
+         WHERE id = ? AND status = 'running'`
+      )
+      .run(stringifyJson(output), now, taskId);
+    if (updated.changes !== 1) return null;
+    if (row) this.markSessionRunning(row.analysis_session_id, now);
+    return this.getAgentTask(taskId);
+  }
+
+  requeueAgentTask(taskId: string, output: JsonObject, now = Date.now()): AgentTaskRecord | null {
+    const row = this.db
+      .prepare<[string], { analysis_session_id: string }>(
+        "SELECT analysis_session_id FROM agent_task WHERE id = ?"
+      )
+      .get(taskId);
+    const updated = this.db
+      .prepare<[string, number, string]>(
+        `UPDATE agent_task
+         SET status = 'queued', output_json = ?, error_json = NULL, updated_at = ?
          WHERE id = ? AND status = 'running'`
       )
       .run(stringifyJson(output), now, taskId);
@@ -1970,6 +2447,63 @@ function mapDoctorReview(row: DoctorReviewRow): DoctorReviewRecord {
   };
 }
 
+function mapFinalValidationRun(row: FinalValidationRunRow): FinalValidationRunRecord {
+  return {
+    id: row.id,
+    datasetId: row.dataset_id,
+    datasetRoot: row.dataset_root,
+    datasetManifestUri: row.dataset_manifest_uri,
+    caseId: row.case_id,
+    pipelineMode: row.pipeline_mode,
+    status: row.status,
+    remoteModelGatewayUrl: row.remote_model_gateway_url,
+    dataDbPath: row.data_db_path,
+    ragDbPath: row.rag_db_path,
+    reportJsonUri: row.report_json_uri,
+    reportMarkdownUri: row.report_markdown_uri,
+    summary: parseJson(row.summary_json, {}),
+    createdBy: row.created_by,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapFinalValidationImageResult(row: FinalValidationImageResultRow): FinalValidationImageResultRecord {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    studyId: row.study_id,
+    imageId: row.image_id,
+    analysisSessionId: row.analysis_session_id,
+    datasetImageId: row.dataset_image_id,
+    datasetLabel: row.dataset_label,
+    sourceRelativePath: row.source_relative_path,
+    artifactUri: row.artifact_uri,
+    localStagedPath: row.local_staged_path,
+    remoteUpload: parseJson(row.remote_upload_json, {}),
+    expected: parseJson(row.expected_json, {}),
+    detection: parseJson(row.detection_json, {}),
+    measurement: parseJson(row.measurement_json, {}),
+    tirads: parseJson(row.tirads_json, {}),
+    report: parseJson(row.report_json, {}),
+    safetyReview: parseJson(row.safety_review_json, {}),
+    modelArtifacts: parseJsonArray(row.model_artifacts_json),
+    taskEvents: parseJsonArray(row.task_events_json),
+    note: row.note,
+    status: row.status,
+    error: row.error_json ? parseJson(row.error_json, {}) : null,
+    reviewStatus: row.review_status,
+    reviewComment: row.review_comment,
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at,
+  };
+}
+
 function reportReviewSnapshot(report: ReportRecord): JsonObject {
   return {
     id: report.id,
@@ -1993,6 +2527,16 @@ function reportStatusForReviewAction(action: ReportReviewAction): string {
   if (action === "revise") return "pending_review";
   if (action === "archive") return "archived";
   return "confirmed";
+}
+
+function assertReportReviewActionAllowed(report: ReportRecord, action: ReportReviewAction): void {
+  if (action === "archive") {
+    if (report.status !== "confirmed") throw new Error("only confirmed reports can be archived");
+    return;
+  }
+  if (report.status !== "draft" && report.status !== "pending_review") {
+    throw new Error("only draft or pending_review reports can be reviewed");
+  }
 }
 
 function reportStructuredSections(report: ReportRecord): unknown[] {

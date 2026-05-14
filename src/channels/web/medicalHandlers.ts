@@ -19,8 +19,12 @@ import {
   type StudyBundle,
   type StudyInput,
   type TiradsFeatureInput,
+  type TiradsFeatureRecord,
 } from "../../medical/storage/caseRepo";
+import { runMedicalAgentWorkerOnceAsync } from "../../medical/agentWorker";
 import { searchMedicalKnowledge } from "../../medical/knowledge/search";
+import { loadRuntimeSelection } from "../../provider/registry";
+import type { ProviderStatus } from "../../provider/types";
 import { authenticate, jsonResponse, readJsonBody, type HandlerDeps } from "./handlers";
 
 type JsonObject = Record<string, unknown>;
@@ -51,6 +55,17 @@ interface RecentStudyRow {
   nodule_count: number;
   latest_analysis_status: string | null;
   latest_report_status: string | null;
+}
+
+interface StudyOpenTaskRow {
+  task_type: string;
+  status: string;
+}
+
+interface StudyQueueState {
+  queueStage: string;
+  queueReason: string;
+  queuePriority: number;
 }
 
 const MEDICAL_ANALYSIS_TASKS = [
@@ -102,6 +117,13 @@ const TIRADS_FEATURE_ENUMS: Record<string, Set<string>> = {
 
 const MEDICAL_ARTIFACT_MAX_BYTES = 32 * 1024 * 1024;
 const REMOTE_MEDICAL_ARTIFACT_TIMEOUT_MS = 5000;
+const MEDICAL_WEB_AUTO_RUN_MAX_STEPS = 600;
+const MEDICAL_WEB_AUTO_RUN_INTERVAL_MS = 2000;
+const MEDICAL_WEB_AUTO_RUN_WORKER_ID = "medical-web-auto-runner";
+const MEDICAL_QWEN_PROVIDER_ID = "lmstudio:qwen35-9b";
+const MEDICAL_QWEN_MODEL = "qwen/qwen3.5-9b";
+const REQUIRED_TIRADS_FEATURE_KEYS = ["composition", "echogenicity", "shape", "margin", "echogenic_foci"] as const;
+const activeMedicalAutoRuns = new Set<string>();
 const MEDICAL_ARTIFACT_MIME: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
@@ -248,6 +270,102 @@ export async function handleMedicalKnowledgeSearch(
   }
 }
 
+export async function handleListMedicalFinalValidationRuns(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  url: URL
+): Promise<void> {
+  const ctx = authenticateMedicalStorage(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const repo = new MedicalCaseRepo(ctx.db);
+    const runs = repo.listFinalValidationRuns(queryLimit(url, 20, 100));
+    jsonResponse(res, 200, {
+      runs,
+      reviewQueues: readFinalValidationReviewQueues(ctx.db),
+    });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
+export async function handleListMedicalFinalValidationResults(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  url: URL,
+  runId: string
+): Promise<void> {
+  const ctx = authenticateMedicalStorage(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const repo = new MedicalCaseRepo(ctx.db);
+    const run = repo.getFinalValidationRun(runId);
+    if (!run) throw new MedicalRequestError(404, "final-validation-run-not-found", `final validation run not found: ${runId}`);
+    const reviewStatus = finalValidationReviewStatus(url.searchParams.get("reviewStatus") ?? url.searchParams.get("review_status"), {
+      optional: true,
+    });
+    const status = url.searchParams.get("status")?.trim() || undefined;
+    const results = repo.listFinalValidationImageResults(runId, {
+      reviewStatus,
+      status,
+      limit: queryLimit(url, 100, 500),
+    });
+    jsonResponse(res, 200, {
+      run,
+      results,
+      reviewCounts: countFinalValidationReviewStatus(ctx.db, runId),
+      statusCounts: countFinalValidationResultStatus(ctx.db, runId),
+    });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
+export async function handleReviewMedicalFinalValidationResult(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: HandlerDeps,
+  resultId: string
+): Promise<void> {
+  const ctx = authenticateMedicalWrite(req, res, deps);
+  if (!ctx) return;
+
+  try {
+    const body = requireBodyObject(await readJsonBody(req));
+    const reviewStatus = finalValidationReviewStatus(requiredString(body, "reviewStatus", "review_status"));
+    const repo = new MedicalCaseRepo(ctx.db);
+    const result = repo.reviewFinalValidationImageResult({
+      resultId,
+      reviewStatus,
+      reviewComment: stringField(body, "comment", "review_comment") ?? null,
+      reviewedBy: stringField(body, "reviewedBy", "reviewed_by") ?? ctx.userId,
+    });
+    const auditLog = repo.createAuditLog({
+      studyId: result.studyId,
+      actorType: "doctor",
+      actorId: result.reviewedBy ?? ctx.userId,
+      action: "medical.final_validation.review",
+      targetType: "final_validation_image_result",
+      targetId: result.id,
+      detail: {
+        run_id: result.runId,
+        dataset_image_id: result.datasetImageId,
+        dataset_label: result.datasetLabel,
+        review_status: result.reviewStatus,
+        review_comment: result.reviewComment,
+      },
+      traceId: result.id,
+    });
+    jsonResponse(res, 200, { result, auditLog });
+  } catch (err) {
+    medicalWriteError(res, err);
+  }
+}
+
 export async function handleReadMedicalArtifact(
   req: IncomingMessage,
   res: ServerResponse,
@@ -303,6 +421,9 @@ export async function handleReadMedicalStudy(
     const bundle = readMedicalStudyBundle(repo, studyId);
     if (!bundle) {
       throw new MedicalRequestError(404, "study-not-found", `study not found: ${studyId}`);
+    }
+    if (hasAutoRunnableMedicalWork(ctx.db, studyId)) {
+      scheduleMedicalWebAutoRun(deps, studyId, "study_read_resume");
     }
     jsonResponse(res, 200, { bundle });
   } catch (err) {
@@ -430,9 +551,11 @@ export async function handleStartMedicalAnalysis(
       return created;
     });
 
+    const autoRun = scheduleMedicalWebAutoRun(deps, studyId, "analysis_started");
     jsonResponse(res, 201, {
       analysisSession,
       agentTasks,
+      autoRun,
       bundle: readMedicalStudyBundle(repo, studyId),
     });
   } catch (err) {
@@ -460,8 +583,12 @@ export async function handleReviewMedicalReport(
     const reviewerName = stringField(body, "reviewerName", "reviewer_name") ?? ctx.userId;
     const comment = stringField(body, "comment");
     const finalText = stringField(body, "finalText", "final_text");
-    if (action === "archive" && report.status !== "confirmed" && report.status !== "archived") {
+    const structured = objectField(body, "structured") ?? undefined;
+    if (action === "archive" && report.status !== "confirmed") {
       throw new MedicalRequestError(400, "invalid-request", "only confirmed reports can be archived");
+    }
+    if (action !== "archive" && report.status !== "draft" && report.status !== "pending_review") {
+      throw new MedicalRequestError(400, "invalid-request", "only draft or pending_review reports can be reviewed");
     }
     const now = Date.now();
     const reviewed = repo.reviewReport({
@@ -470,8 +597,12 @@ export async function handleReviewMedicalReport(
       action,
       comment,
       finalText,
+      structured,
       now,
     });
+    const structuredSections = Array.isArray(reviewed.report.structured.sections)
+      ? reviewed.report.structured.sections.length
+      : 0;
     const auditLog = repo.createAuditLog({
       studyId: reviewed.report.studyId,
       actorType: "doctor",
@@ -484,6 +615,8 @@ export async function handleReviewMedicalReport(
         report_status: reviewed.report.status,
         evidence_count: reviewed.report.evidence.length,
         evidence_sources: reportEvidenceSources(reviewed.report),
+        structured_section_count: structuredSections,
+        report_text_length: (reviewed.report.finalText ?? reviewed.report.draftText ?? "").length,
         comment: comment ?? null,
       },
       traceId: reviewed.doctorReview.id,
@@ -525,8 +658,37 @@ export async function handleReviseMedicalNodule(
     const location = stringField(body, "location");
     const status = stringField(body, "status") ?? "doctor_revised";
     const comment = stringField(body, "comment");
+    if (isNoopNoduleRevision(existingNodule, bbox, location)) {
+      const auditLog = repo.createAuditLog({
+        studyId: existingNodule.studyId,
+        actorType: "doctor",
+        actorId: ctx.userId,
+        action: "medical.nodule.revise.noop",
+        targetType: "nodule",
+        targetId: noduleId,
+        detail: {
+          reason: "unchanged_bbox_location",
+          bbox,
+          location: location ?? existingNodule.location,
+          status: existingNodule.status,
+          comment: comment ?? null,
+        },
+        traceId: noduleId,
+        now: Date.now(),
+      });
+      jsonResponse(res, 200, {
+        nodule: existingNodule,
+        analysisSession: null,
+        agentTasks: [],
+        auditLog,
+        dedupe: { skipped: true, reason: "unchanged_bbox_location" },
+        bundle: readMedicalStudyBundle(repo, existingNodule.studyId),
+      });
+      return;
+    }
     const now = Date.now();
     const { revised, analysisSession, agentTasks, auditLog } = ctx.db.transaction(() => {
+      const cancelledTaskIds = cancelSupersededMedicalRerunTasks(repo, existingNodule.studyId, noduleId, ["doctor_bbox_revision"], now);
       const revised = repo.reviseNodule({
         noduleId,
         bbox,
@@ -546,6 +708,7 @@ export async function handleReviseMedicalNodule(
           before: noduleAuditSnapshot(revised.before),
           after: noduleAuditSnapshot(revised.nodule),
           comment: comment ?? null,
+          cancelled_superseded_task_ids: cancelledTaskIds,
           rerun_analysis_session_id: analysisSession.id,
           rerun_agent_task_ids: agentTasks.map((task) => task.id),
           rerun_task_types: agentTasks.map((task) => task.taskType),
@@ -584,8 +747,41 @@ export async function handleSubmitMedicalTiradsFeatures(
       throw new MedicalRequestError(404, "nodule-not-found", `nodule not found: ${noduleId}`);
     }
     const now = Date.now();
+    const featureInput = manualTiradsFeatureInput(repo, nodule, body, now);
+    const featureSystemName = featureInput.systemName ?? "ACR_TI_RADS";
+    const latestFeature = latestTiradsFeatureForNodule(repo, nodule.studyId, nodule.id, featureSystemName);
+    if (latestFeature && isSameTiradsFeature(latestFeature, featureInput)) {
+      const auditLog = repo.createAuditLog({
+        studyId: nodule.studyId,
+        actorType: "doctor",
+        actorId: ctx.userId,
+        action: "medical.tirads_feature.noop",
+        targetType: "nodule",
+        targetId: noduleId,
+        detail: {
+          reason: "unchanged_tirads_features",
+          tirads_feature_id: latestFeature.id,
+          features: latestFeature.features,
+          confidence: latestFeature.confidence,
+          source_model: latestFeature.sourceModel,
+          requires_review: latestFeature.requiresReview,
+          comment: stringField(body, "comment") ?? null,
+        },
+        traceId: latestFeature.id,
+        now,
+      });
+      jsonResponse(res, 200, {
+        tiradsFeature: latestFeature,
+        analysisSession: null,
+        agentTasks: [],
+        auditLog,
+        dedupe: { skipped: true, reason: "unchanged_tirads_features" },
+        bundle: readMedicalStudyBundle(repo, nodule.studyId),
+      });
+      return;
+    }
     const { tiradsFeature, analysisSession, agentTasks, auditLog } = ctx.db.transaction(() => {
-      const featureInput = manualTiradsFeatureInput(repo, nodule, body, now);
+      const cancelledTaskIds = cancelSupersededMedicalRerunTasks(repo, nodule.studyId, nodule.id, ["doctor_tirads_feature_input"], now);
       const tiradsFeature = repo.createTiradsFeature(featureInput);
       const { analysisSession, agentTasks } = createDoctorTiradsFeatureRerun(repo, nodule, tiradsFeature.id, ctx.userId, now + 1);
       const auditLog = repo.createAuditLog({
@@ -601,6 +797,7 @@ export async function handleSubmitMedicalTiradsFeatures(
           confidence: tiradsFeature.confidence,
           source_model: tiradsFeature.sourceModel,
           requires_review: tiradsFeature.requiresReview,
+          cancelled_superseded_task_ids: cancelledTaskIds,
           rerun_analysis_session_id: analysisSession.id,
           rerun_agent_task_ids: agentTasks.map((task) => task.id),
           rerun_task_types: agentTasks.map((task) => task.taskType),
@@ -611,16 +808,423 @@ export async function handleSubmitMedicalTiradsFeatures(
       });
       return { tiradsFeature, analysisSession, agentTasks, auditLog };
     })();
+    const autoRun = scheduleMedicalWebAutoRun(deps, nodule.studyId, "tirads_features_submitted");
     jsonResponse(res, 200, {
       tiradsFeature,
       analysisSession,
       agentTasks,
       auditLog,
+      autoRun,
       bundle: readMedicalStudyBundle(repo, nodule.studyId),
     });
   } catch (err) {
     medicalWriteError(res, err);
   }
+}
+
+function scheduleMedicalWebAutoRun(
+  deps: HandlerDeps,
+  studyId: string,
+  reason: string
+): { scheduled: boolean; reason: string; workerId: string } {
+  if (!medicalWebAutoRunEnabled()) {
+    return { scheduled: false, reason: "medical_web_auto_run_disabled", workerId: MEDICAL_WEB_AUTO_RUN_WORKER_ID };
+  }
+  if (!deps.dataDb) {
+    return { scheduled: false, reason: "medical_storage_unavailable", workerId: MEDICAL_WEB_AUTO_RUN_WORKER_ID };
+  }
+  if (activeMedicalAutoRuns.has(studyId)) {
+    return { scheduled: false, reason: "medical_web_auto_run_already_active", workerId: MEDICAL_WEB_AUTO_RUN_WORKER_ID };
+  }
+
+  activeMedicalAutoRuns.add(studyId);
+  setTimeout(() => {
+    void runMedicalWebAutoRun(deps, studyId, reason).finally(() => {
+      activeMedicalAutoRuns.delete(studyId);
+    });
+  }, 0);
+  return { scheduled: true, reason, workerId: MEDICAL_WEB_AUTO_RUN_WORKER_ID };
+}
+
+async function runMedicalWebAutoRun(deps: HandlerDeps, studyId: string, reason: string): Promise<void> {
+  if (!deps.dataDb) return;
+  const repo = new MedicalCaseRepo(deps.dataDb);
+  let qwenProvider: ProviderStatus | null = null;
+
+  for (let step = 0; step < MEDICAL_WEB_AUTO_RUN_MAX_STEPS; step += 1) {
+    const gate = await medicalAutoRunGate(deps, studyId, qwenProvider);
+    if (gate.stop) {
+      if (gate.status === "waiting_qwen_model") {
+        await sleep(MEDICAL_WEB_AUTO_RUN_INTERVAL_MS);
+        continue;
+      }
+      await writeMedicalAutoRunAudit(repo, studyId, reason, gate, step);
+      return;
+    }
+    qwenProvider = gate.qwenProvider ?? qwenProvider;
+
+    const result = await runMedicalAgentWorkerOnceAsync(repo, {
+      workerId: MEDICAL_WEB_AUTO_RUN_WORKER_ID,
+      remoteModelGatewayUrl: medicalRemoteModelGatewayUrl(),
+      dataDbPath: deps.dataDbPath,
+      ragDbPath: process.env.JZX_RAG_DB,
+      workspace: deps.workspace ?? process.cwd(),
+      knowledgeTopK: positiveIntEnv("JZX_MEDICAL_KNOWLEDGE_TOP_K", 3),
+      llmProvider: qwenProvider,
+    });
+
+    if (result.status === "failed") {
+      await writeMedicalAutoRunAudit(repo, studyId, reason, {
+        status: "failed",
+        detail: { result },
+      }, step + 1);
+      return;
+    }
+    if (result.status === "waiting_doctor_input") {
+      await writeMedicalAutoRunAudit(repo, studyId, reason, {
+        status: "waiting_doctor_tirads_features",
+        detail: { result },
+      }, step + 1);
+      return;
+    }
+    if (result.status === "idle" && countWaitingModelTasks(deps.dataDb) === 0) {
+      await writeMedicalAutoRunAudit(repo, studyId, reason, {
+        status: "idle",
+        detail: { result },
+      }, step + 1);
+      return;
+    }
+    if (result.status === "waiting_model" || result.status === "idle") {
+      await sleep(MEDICAL_WEB_AUTO_RUN_INTERVAL_MS);
+    }
+  }
+
+  await writeMedicalAutoRunAudit(repo, studyId, reason, {
+    status: "max_steps_reached",
+    detail: { max_steps: MEDICAL_WEB_AUTO_RUN_MAX_STEPS },
+  }, MEDICAL_WEB_AUTO_RUN_MAX_STEPS);
+}
+
+async function medicalAutoRunGate(
+  deps: HandlerDeps,
+  studyId: string,
+  qwenProvider: ProviderStatus | null
+): Promise<{ stop: boolean; status: string; detail: JsonObject; qwenProvider?: ProviderStatus | null }> {
+  if (!deps.dataDb) return { stop: true, status: "medical_storage_unavailable", detail: {} };
+  if (countWaitingModelTasks(deps.dataDb) > 0) return { stop: false, status: "waiting_model_poll", detail: {} };
+
+  const next = nextRunnableMedicalTask(deps.dataDb);
+  if (!next) return { stop: false, status: "no_runnable_task", detail: {} };
+  if (next.studyId && next.studyId !== studyId) {
+    return { stop: false, status: "other_study_runnable", detail: { task_id: next.id, study_id: next.studyId } };
+  }
+
+  if (next.taskType === "calculate_tirads" && !hasConfirmedTiradsFeatures(deps.dataDb, studyId)) {
+    return {
+      stop: true,
+      status: "waiting_doctor_tirads_features",
+      detail: {
+        task_id: next.id,
+        study_id: studyId,
+        message: "TI-RADS auto-prefill is waiting for doctor confirmation.",
+      },
+    };
+  }
+
+  if (next.taskType === "draft_report") {
+    const provider = qwenProvider ?? await resolveMedicalQwenProvider();
+    const readiness = provider ? await checkMedicalQwenReadiness(provider) : null;
+    if (!provider || !readiness?.ready) {
+      return {
+        stop: true,
+        status: "waiting_qwen_model",
+        detail: {
+          task_id: next.id,
+          study_id: studyId,
+          provider: provider ? providerSnapshot(provider) : null,
+          readiness,
+          message: `Load ${MEDICAL_QWEN_MODEL} on the 5090 before report generation.`,
+        },
+      };
+    }
+    return { stop: false, status: "qwen_ready", detail: { readiness }, qwenProvider: provider };
+  }
+
+  return { stop: false, status: "ready", detail: { task_id: next.id, task_type: next.taskType } };
+}
+
+function medicalWebAutoRunEnabled(): boolean {
+  if (process.env.JZX_MEDICAL_WEB_AUTO_RUN === "0") return false;
+  if (process.env.JZX_MEDICAL_WEB_AUTO_RUN === "1") return true;
+  return Boolean(medicalRemoteModelGatewayUrl());
+}
+
+function hasAutoRunnableMedicalWork(db: Database.Database, studyId: string): boolean {
+  if (countWaitingModelTasks(db) > 0) return true;
+  const next = nextRunnableMedicalTask(db);
+  if (!next || next.studyId !== studyId) return false;
+  if (next.taskType === "calculate_tirads" && !hasConfirmedTiradsFeatures(db, studyId)) return false;
+  return true;
+}
+
+function medicalRemoteModelGatewayUrl(): string | undefined {
+  const raw = process.env.JZX_REMOTE_MODEL_GATEWAY_URL?.trim() || process.env.JZX_MODEL_GATEWAY_URL?.trim();
+  return raw ? raw.replace(/\/+$/, "") : undefined;
+}
+
+function nextRunnableMedicalTask(db: Database.Database): { id: string; taskType: string; studyId?: string } | null {
+  const row = db
+    .prepare<[], { id: string; task_type: string; input_json: string }>(
+      `SELECT t.id, t.task_type, t.input_json
+       FROM agent_task t
+       LEFT JOIN agent_task parent ON parent.id = t.parent_task_id
+       WHERE t.status = 'queued'
+         AND (t.parent_task_id IS NULL OR parent.status = 'succeeded')
+       ORDER BY t.created_at ASC, t.id ASC
+       LIMIT 1`
+    )
+    .get();
+  if (!row) return null;
+  const input = parseJsonObject(row.input_json);
+  return { id: row.id, taskType: row.task_type, studyId: stringField(input, "study_id") };
+}
+
+function countWaitingModelTasks(db: Database.Database): number {
+  return db
+    .prepare<[], CountRow>("SELECT COUNT(*) AS count FROM agent_task WHERE status = 'waiting_model'")
+    .get()?.count ?? 0;
+}
+
+function hasConfirmedTiradsFeatures(db: Database.Database, studyId: string): boolean {
+  const repo = new MedicalCaseRepo(db);
+  const nodules = repo.listNodulesByStudy(studyId);
+  if (nodules.length === 0) return true;
+  const latestByNodule = new Map<string, TiradsFeatureRecord>();
+  for (const feature of repo.listTiradsFeaturesByStudy(studyId)) {
+    if (!latestByNodule.has(feature.noduleId)) latestByNodule.set(feature.noduleId, feature);
+  }
+  return nodules.every((nodule) => {
+    const feature = latestByNodule.get(nodule.id);
+    return Boolean(feature && !feature.requiresReview && isCompleteTiradsFeature(feature.features));
+  });
+}
+
+function isCompleteTiradsFeature(features: JsonObject): boolean {
+  return REQUIRED_TIRADS_FEATURE_KEYS.every((key) => {
+    const value = features[key];
+    return Array.isArray(value) ? value.length > 0 : typeof value === "string" && value.trim().length > 0;
+  });
+}
+
+async function resolveMedicalQwenProvider(): Promise<ProviderStatus | null> {
+  try {
+    const runtime = await loadRuntimeSelection();
+    const providerId = process.env.JZX_MEDICAL_LLM_PROVIDER?.trim() || MEDICAL_QWEN_PROVIDER_ID;
+    const provider = runtime.registry.get(providerId) ?? null;
+    return provider?.available ? medicalQwenProviderWithModelOverride(provider) : null;
+  } catch {
+    return null;
+  }
+}
+
+function medicalQwenProviderWithModelOverride(provider: ProviderStatus): ProviderStatus {
+  const model = process.env.JZX_MEDICAL_QWEN_MODEL?.trim();
+  return model ? { ...provider, model } : provider;
+}
+
+async function checkMedicalQwenReadiness(provider: ProviderStatus): Promise<JsonObject & { ready: boolean }> {
+  if (provider.type !== "lmstudio") {
+    return { ready: true, reason: "non_lmstudio_provider_available", model: provider.model };
+  }
+  const expectedModel = process.env.JZX_MEDICAL_QWEN_MODEL?.trim() || provider.model || MEDICAL_QWEN_MODEL;
+  const base = provider.baseUrl.replace(/\/+$/, "");
+  const urls = [base.replace(/\/v1$/i, "/api/v0/models"), `${base}/models`];
+  for (const url of urls) {
+    const result = await checkMedicalModelEndpoint(url, expectedModel);
+    if (result.ready || result.matched) return result;
+  }
+  return { ready: false, matched: false, model: expectedModel, reason: "model_not_listed" };
+}
+
+async function checkMedicalModelEndpoint(url: string, expectedModel: string): Promise<JsonObject & { ready: boolean; matched: boolean }> {
+  try {
+    const response = await fetch(url, { method: "GET", signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return { ready: false, matched: false, model: expectedModel, url, reason: `http_${response.status}` };
+    const body = await response.json() as unknown;
+    const model = modelRecords(body).find((item) => modelNameMatches(modelId(item), expectedModel));
+    if (!model) return { ready: false, matched: false, model: expectedModel, url, reason: "model_not_listed" };
+    const loaded = loadedModelFlag(model);
+    return {
+      ready: loaded ?? /\/v1\/models$/i.test(url),
+      matched: true,
+      model: expectedModel,
+      url,
+      reason: loaded === false ? "model_listed_but_not_loaded" : "model_ready",
+    };
+  } catch (err) {
+    return {
+      ready: false,
+      matched: false,
+      model: expectedModel,
+      url,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function modelRecords(value: unknown): JsonObject[] {
+  if (Array.isArray(value)) return value.filter(isJsonObject);
+  if (!isJsonObject(value)) return [];
+  const data = value.data ?? value.models;
+  return Array.isArray(data) ? data.filter(isJsonObject) : [];
+}
+
+function modelId(value: JsonObject): string | undefined {
+  return stringField(value, "id") ?? stringField(value, "model") ?? stringField(value, "name");
+}
+
+function modelNameMatches(actual: string | undefined, expected: string): boolean {
+  if (!actual) return false;
+  const left = actual.trim().toLowerCase();
+  const right = expected.trim().toLowerCase();
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+}
+
+function loadedModelFlag(value: JsonObject): boolean | undefined {
+  if (typeof value.loaded === "boolean") return value.loaded;
+  if (typeof value.is_loaded === "boolean") return value.is_loaded;
+  const state = stringField(value, "state") ?? stringField(value, "status");
+  if (!state) return undefined;
+  const normalized = state.toLowerCase();
+  if (normalized.includes("not") || normalized.includes("unload")) return false;
+  if (normalized.includes("load") || normalized === "ready" || normalized === "running") return true;
+  return undefined;
+}
+
+function providerSnapshot(provider: ProviderStatus): JsonObject {
+  return {
+    instance_id: provider.instanceId,
+    type: provider.type,
+    model: provider.model,
+    display_name: provider.displayName,
+  };
+}
+
+async function writeMedicalAutoRunAudit(
+  repo: MedicalCaseRepo,
+  studyId: string,
+  reason: string,
+  gate: { status: string; detail: JsonObject },
+  steps: number
+): Promise<void> {
+  try {
+    repo.createAuditLog({
+      studyId,
+      actorType: "agent",
+      actorId: MEDICAL_WEB_AUTO_RUN_WORKER_ID,
+      action: "medical.web_auto_run.stop",
+      targetType: "study",
+      targetId: studyId,
+      detail: {
+        trigger_reason: reason,
+        stop_status: gate.status,
+        steps,
+        ...gate.detail,
+      },
+      traceId: studyId,
+      now: Date.now(),
+    });
+  } catch {
+    // Best-effort audit only; never break the web request lifecycle.
+  }
+}
+
+function positiveIntEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isNoopNoduleRevision(nodule: NoduleRecord, bbox: number[], location: string | undefined): boolean {
+  const sameBbox = bboxStrictlyEqual(nodule.bbox, bbox);
+  const sameLocation = location === undefined || location === nodule.location;
+  return sameBbox && sameLocation;
+}
+
+function bboxStrictlyEqual(left: unknown, right: unknown): boolean {
+  const leftBbox = bboxTuple(left);
+  const rightBbox = bboxTuple(right);
+  if (!leftBbox || !rightBbox) return false;
+  return leftBbox.every((value, index) => Math.abs(value - rightBbox[index]) <= 0.01);
+}
+
+function latestTiradsFeatureForNodule(
+  repo: MedicalCaseRepo,
+  studyId: string,
+  noduleId: string,
+  systemName: string
+): TiradsFeatureRecord | null {
+  return repo.listTiradsFeaturesByStudy(studyId, systemName)
+    .filter((feature) => feature.noduleId === noduleId)
+    .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0] ?? null;
+}
+
+function isSameTiradsFeature(existing: TiradsFeatureRecord, input: TiradsFeatureInput): boolean {
+  return existing.systemName === input.systemName
+    && existing.sourceModel === (input.sourceModel ?? null)
+    && existing.requiresReview === Boolean(input.requiresReview)
+    && stableJson(existing.features) === stableJson(input.features)
+    && stableJson(existing.confidence) === stableJson(input.confidence ?? {});
+}
+
+function cancelSupersededMedicalRerunTasks(
+  repo: MedicalCaseRepo,
+  studyId: string,
+  noduleId: string,
+  sources: string[],
+  now: number
+): string[] {
+  const bundle = repo.getStudyBundle(studyId);
+  if (!bundle) return [];
+  const sourceSet = new Set(sources);
+  const taskIds = bundle.agentTasks
+    .filter((task) => isOpenMedicalTask(task.status))
+    .filter((task) => sourceSet.has(stringValue(task.input.source) ?? ""))
+    .filter((task) => medicalTaskTargetsNodule(task, noduleId))
+    .map((task) => task.id);
+  const cancelled = repo.cancelAgentTasks(taskIds, {
+    code: "superseded_medical_rerun",
+    message: "A newer doctor input superseded this medical rerun task.",
+    detail: { study_id: studyId, nodule_id: noduleId, sources },
+  }, now);
+  return cancelled.map((task) => task.id);
+}
+
+function isOpenMedicalTask(status: string): boolean {
+  return status === "queued" || status === "running" || status === "waiting_model";
+}
+
+function medicalTaskTargetsNodule(task: AgentTaskRecord, noduleId: string): boolean {
+  if (stringValue(task.input.nodule_id) === noduleId) return true;
+  const targetIds = task.input.target_nodule_ids;
+  return Array.isArray(targetIds) && targetIds.includes(noduleId);
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(canonicalJsonValue(value));
+}
+
+function canonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (!isJsonObject(value)) return value;
+  const sorted: JsonObject = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = canonicalJsonValue(value[key]);
+  }
+  return sorted;
 }
 
 function createDoctorBboxRevisionRerun(
@@ -1005,24 +1609,164 @@ function readRecentStudies(db: Database.Database, limit: number): Array<Record<s
        LIMIT ?`
     )
     .all(limit)
-    .map((row) => ({
-      id: row.id,
-      patientId: row.patient_id,
-      externalPatientId: row.external_patient_id,
-      accessionNo: row.accession_no,
-      modality: row.modality,
-      bodyPart: row.body_part,
-      studyTime: row.study_time,
-      status: row.status,
-      sourceType: row.source_type,
-      createdBy: row.created_by,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      imageCount: row.image_count,
-      noduleCount: row.nodule_count,
-      latestAnalysisStatus: row.latest_analysis_status,
-      latestReportStatus: row.latest_report_status,
-    }));
+    .map((row) => {
+      const queue = recentStudyQueueState(db, row);
+      return {
+        id: row.id,
+        patientId: row.patient_id,
+        externalPatientId: row.external_patient_id,
+        accessionNo: row.accession_no,
+        modality: row.modality,
+        bodyPart: row.body_part,
+        studyTime: row.study_time,
+        status: row.status,
+        sourceType: row.source_type,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        imageCount: row.image_count,
+        noduleCount: row.nodule_count,
+        latestAnalysisStatus: row.latest_analysis_status,
+        latestReportStatus: row.latest_report_status,
+        queueStage: queue.queueStage,
+        queueReason: queue.queueReason,
+        queuePriority: queue.queuePriority,
+      };
+    });
+}
+
+function recentStudyQueueState(db: Database.Database, row: RecentStudyRow): StudyQueueState {
+  const reportStatus = row.latest_report_status;
+  if (reportStatus === "rejected") {
+    return {
+      queueStage: "report_rejected",
+      queueReason: "报告已驳回，等待再次修订",
+      queuePriority: 5,
+    };
+  }
+  if (reportStatus === "draft" || reportStatus === "pending_review") {
+    return {
+      queueStage: "pending_report_review",
+      queueReason: reportStatus === "pending_review" ? "报告修订待复核" : "等待医生审核报告草稿",
+      queuePriority: 10,
+    };
+  }
+  if (reportStatus === "confirmed") {
+    return {
+      queueStage: "ready_archive",
+      queueReason: "报告已确认，等待归档",
+      queuePriority: 20,
+    };
+  }
+  if (needsDoctorTiradsConfirmation(db, row.id)) {
+    return {
+      queueStage: "waiting_tirads_confirmation",
+      queueReason: "等待医生确认 TI-RADS 结构化特征",
+      queuePriority: 30,
+    };
+  }
+  if (row.latest_analysis_status === "failed" || studyHasFailedTasks(db, row.id)) {
+    return {
+      queueStage: "analysis_failed",
+      queueReason: "AI 分析失败，等待复核或重跑",
+      queuePriority: 40,
+    };
+  }
+  const openTask = latestOpenStudyTask(db, row.id);
+  if (openTask) {
+    return {
+      queueStage: "analysis_in_progress",
+      queueReason: openTaskReason(openTask),
+      queuePriority: 50,
+    };
+  }
+  if (reportStatus === "archived") {
+    return {
+      queueStage: "archived",
+      queueReason: "病例已归档",
+      queuePriority: 90,
+    };
+  }
+  if (row.image_count === 0) {
+    return {
+      queueStage: "awaiting_image",
+      queueReason: "等待上传图像",
+      queuePriority: 70,
+    };
+  }
+  if (row.latest_analysis_status) {
+    return {
+      queueStage: "completed",
+      queueReason: "分析流程完成",
+      queuePriority: 80,
+    };
+  }
+  return {
+    queueStage: "ready_to_start",
+    queueReason: "可启动 AI 分析",
+    queuePriority: 60,
+  };
+}
+
+function needsDoctorTiradsConfirmation(db: Database.Database, studyId: string): boolean {
+  const queuedCalculate = db
+    .prepare<[string], { count: number }>(
+      `SELECT COUNT(*) AS count
+       FROM agent_task task
+       JOIN analysis_session session ON session.id = task.analysis_session_id
+       WHERE session.study_id = ?
+         AND task.task_type = 'calculate_tirads'
+         AND task.status = 'queued'`
+    )
+    .get(studyId)?.count ?? 0;
+  return queuedCalculate > 0 && !hasConfirmedTiradsFeatures(db, studyId);
+}
+
+function studyHasFailedTasks(db: Database.Database, studyId: string): boolean {
+  return (
+    db
+      .prepare<[string], { count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM agent_task task
+         JOIN analysis_session session ON session.id = task.analysis_session_id
+         WHERE session.study_id = ?
+           AND task.status IN ('failed', 'blocked')`
+      )
+      .get(studyId)?.count ?? 0
+  ) > 0;
+}
+
+function latestOpenStudyTask(db: Database.Database, studyId: string): StudyOpenTaskRow | null {
+  return db
+    .prepare<[string], StudyOpenTaskRow>(
+      `SELECT task.task_type, task.status
+       FROM agent_task task
+       JOIN analysis_session session ON session.id = task.analysis_session_id
+       WHERE session.study_id = ?
+         AND task.status IN ('queued', 'running', 'waiting_model')
+       ORDER BY task.updated_at DESC, task.created_at DESC, task.id DESC
+       LIMIT 1`
+    )
+    .get(studyId) ?? null;
+}
+
+function openTaskReason(task: StudyOpenTaskRow): string {
+  const stage = medicalTaskStageLabel(task.task_type);
+  if (task.status === "waiting_model") return `${stage}模型推理中`;
+  if (task.status === "running") return `${stage}执行中`;
+  return `${stage}排队中`;
+}
+
+function medicalTaskStageLabel(taskType: string): string {
+  if (taskType === "image_qc") return "图像质控";
+  if (taskType === "detect_nodules") return "结节检测";
+  if (taskType === "segment_nodules") return "结节分割";
+  if (taskType === "measure_nodules") return "结节测量";
+  if (taskType === "classify_tirads_features") return "TI-RADS 特征识别";
+  if (taskType === "calculate_tirads") return "TI-RADS 规则计算";
+  if (taskType === "draft_report") return "报告生成";
+  if (taskType === "safety_review") return "安全审核";
+  return taskType;
 }
 
 function count(db: Database.Database, table: string, where?: string): number {
@@ -1034,6 +1778,44 @@ function statusCounts(db: Database.Database, table: string): Record<string, numb
   const rows = db
     .prepare(`SELECT status, COUNT(*) AS count FROM ${table} GROUP BY status ORDER BY status ASC`)
     .all() as StatusCountRow[];
+  return Object.fromEntries(rows.map((row) => [row.status, row.count]));
+}
+
+function readFinalValidationReviewQueues(db: Database.Database): Record<string, number> {
+  const rows = db
+    .prepare(
+      `SELECT review_status AS status, COUNT(*) AS count
+       FROM final_validation_image_result
+       GROUP BY review_status
+       ORDER BY review_status ASC`
+    )
+    .all() as StatusCountRow[];
+  return Object.fromEntries(rows.map((row) => [row.status, row.count]));
+}
+
+function countFinalValidationReviewStatus(db: Database.Database, runId: string): Record<string, number> {
+  const rows = db
+    .prepare<[string], StatusCountRow>(
+      `SELECT review_status AS status, COUNT(*) AS count
+       FROM final_validation_image_result
+       WHERE run_id = ?
+       GROUP BY review_status
+       ORDER BY review_status ASC`
+    )
+    .all(runId);
+  return Object.fromEntries(rows.map((row) => [row.status, row.count]));
+}
+
+function countFinalValidationResultStatus(db: Database.Database, runId: string): Record<string, number> {
+  const rows = db
+    .prepare<[string], StatusCountRow>(
+      `SELECT status, COUNT(*) AS count
+       FROM final_validation_image_result
+       WHERE run_id = ?
+       GROUP BY status
+       ORDER BY status ASC`
+    )
+    .all(runId);
   return Object.fromEntries(rows.map((row) => [row.status, row.count]));
 }
 
@@ -1288,6 +2070,24 @@ function reviewAction(body: JsonObject): ReportReviewAction {
   throw new MedicalRequestError(400, "invalid-request", "action must be approve, revise, reject, or archive");
 }
 
+function finalValidationReviewStatus(value: string | null | undefined): string;
+function finalValidationReviewStatus(value: string | null | undefined, options: { optional: true }): string | undefined;
+function finalValidationReviewStatus(value: string | null | undefined, options: { optional?: boolean } = {}): string | undefined {
+  const status = value?.trim();
+  if (!status) {
+    if (options.optional) return undefined;
+    throw new MedicalRequestError(400, "invalid-request", "reviewStatus is required");
+  }
+  if (status === "unreviewed" || status === "accepted" || status === "rejected" || status === "needs_review") {
+    return status;
+  }
+  throw new MedicalRequestError(
+    400,
+    "invalid-request",
+    "reviewStatus must be unreviewed, accepted, rejected, or needs_review"
+  );
+}
+
 function requireBodyObject(body: unknown): JsonObject {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new MedicalRequestError(400, "invalid-request", "JSON body must be an object");
@@ -1410,6 +2210,15 @@ function noduleAuditSnapshot(nodule: {
 
 function isJsonObject(value: unknown): value is JsonObject {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseJsonObject(text: string): JsonObject {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function stringArray(value: unknown): string[] {

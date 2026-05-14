@@ -58,6 +58,8 @@ describe("medical validation schema", () => {
       "knowledge_ingestion_job",
       "case_knowledge",
       "audit_log",
+      "final_validation_run",
+      "final_validation_image_result",
     ]));
     expect(tables).not.toContain("app_user");
     expect(tables).not.toContain("role");
@@ -164,6 +166,92 @@ describe("MedicalCaseRepo", () => {
 
     expect(repo.listModelJobsByStudy(study.id)).toEqual([modelJob]);
     expect(repo.getStudyBundle(study.id)?.modelJobs).toEqual([modelJob]);
+  });
+
+  it("persists final validation run and per-image results for later review", () => {
+    const repo = new MedicalCaseRepo(db);
+    const run = repo.createFinalValidationRun({
+      datasetId: "fangdai-thyroid-ultrasound-images",
+      datasetRoot: "data/artifacts/datasets/fangdai-thyroid-ultrasound-images",
+      datasetManifestUri: "metadata/file_manifest.csv",
+      caseId: "fangdai-thyroid-ultrasound-images",
+      pipelineMode: "image_model_smoke",
+      status: "running",
+      remoteModelGatewayUrl: "http://100.110.127.117:8766",
+      dataDbPath: "data/artifacts/final-validation-fangdai/data.db",
+      summary: { total_images: 298 },
+      now: 1000,
+    });
+    const patient = repo.upsertPatient({ externalPatientId: "FV-FANGDAI", now: 1100 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "FANGDAI-001", now: 1200 });
+    const image = repo.addImage({
+      studyId: study.id,
+      fileUri: "artifact://model-ready/final-validation/fangdai/FTC-001.png",
+      fileType: "png",
+      now: 1300,
+    });
+    const result = repo.upsertFinalValidationImageResult({
+      runId: run.id,
+      studyId: study.id,
+      imageId: image.id,
+      datasetImageId: "FTC-001",
+      datasetLabel: "FTC",
+      sourceRelativePath: "Thyroid/FTC/FTC-001.png",
+      artifactUri: image.fileUri,
+      detection: { confidence: 0.77 },
+      measurement: { aspect_ratio: 1.2 },
+      modelArtifacts: [{ job_type: "thyroid.detect_nodules", artifact_uri: "artifact://model-output/detections.json" }],
+      taskEvents: [{ task_type: "detect_nodules", status: "succeeded" }],
+      status: "succeeded",
+      now: 1400,
+    });
+
+    const completed = repo.updateFinalValidationRun(run.id, {
+      status: "succeeded",
+      reportJsonUri: "artifact://reports/fangdai/summary.json",
+      reportMarkdownUri: "artifact://reports/fangdai/SUMMARY.md",
+      summary: { total_images: 298, succeeded: 1 },
+      completedAt: 1500,
+      now: 1500,
+    });
+
+    expect(completed).toMatchObject({
+      id: run.id,
+      status: "succeeded",
+      reportJsonUri: "artifact://reports/fangdai/summary.json",
+      summary: { total_images: 298, succeeded: 1 },
+    });
+    expect(repo.listFinalValidationRuns()).toEqual([completed]);
+    expect(repo.listFinalValidationImageResults(run.id)).toEqual([
+      expect.objectContaining({
+        id: result.id,
+        datasetImageId: "FTC-001",
+        datasetLabel: "FTC",
+        status: "succeeded",
+        reviewStatus: "unreviewed",
+        detection: { confidence: 0.77 },
+        measurement: { aspect_ratio: 1.2 },
+        taskEvents: [{ task_type: "detect_nodules", status: "succeeded" }],
+      }),
+    ]);
+    const reviewed = repo.reviewFinalValidationImageResult({
+      resultId: result.id,
+      reviewStatus: "accepted",
+      reviewComment: "looks consistent",
+      reviewedBy: "doctor-a",
+      now: 1600,
+    });
+
+    expect(reviewed).toMatchObject({
+      id: result.id,
+      reviewStatus: "accepted",
+      reviewComment: "looks consistent",
+      reviewedBy: "doctor-a",
+      reviewedAt: 1600,
+    });
+    expect(repo.listFinalValidationImageResults(run.id, { reviewStatus: "accepted" }).map((item) => item.id)).toEqual([
+      result.id,
+    ]);
   });
 
   it("upserts patient records by external patient id", () => {
@@ -482,16 +570,25 @@ describe("MedicalCaseRepo", () => {
       action: "approve",
       comment: "ok",
       finalText: "doctor confirmed report",
+      structured: {
+        sections: [
+          { id: "summary", title: "总结", text: "doctor confirmed report", includeTitle: true },
+        ],
+      },
       now: 1300,
     });
 
     expect(reviewed.report).toMatchObject({
       id: report.id,
       status: "confirmed",
+      draftText: "doctor confirmed report",
       finalText: "doctor confirmed report",
       confirmedBy: "doctor-a",
       confirmedAt: 1300,
       updatedAt: 1300,
+      structured: {
+        sections: [{ id: "summary", title: "总结", text: "doctor confirmed report", includeTitle: true }],
+      },
     });
     expect(reviewed.doctorReview).toMatchObject({
       reportId: report.id,
@@ -541,6 +638,68 @@ describe("MedicalCaseRepo", () => {
       createdAt: 1400,
     });
     expect(repo.listDoctorReviewsByStudy(study.id).map((item) => item.action)).toEqual(["approve", "archive"]);
+    expect(() =>
+      repo.reviewReport({
+        reportId: report.id,
+        reviewerName: "doctor-a",
+        action: "revise",
+        finalText: "should not change archived report",
+        now: 1500,
+      })
+    ).toThrow("only draft or pending_review reports can be reviewed");
+  });
+
+  it("stores revise edits as pending_review without confirming the report", () => {
+    const repo = new MedicalCaseRepo(db);
+    const patient = repo.upsertPatient({ externalPatientId: "P-REVISE", now: 1000 });
+    const study = repo.createStudy({ patientId: patient.id, accessionNo: "ACC-REVISE", now: 1100 });
+    const report = repo.createReport({
+      studyId: study.id,
+      draftText: "AI draft report",
+      status: "draft",
+      structured: { sections: [{ id: "findings", title: "所见", text: "AI draft report", includeTitle: true }] },
+      evidence: [{ source: "tirads_rule", rule_code: "ACR_2017_category_TR4" }],
+      now: 1200,
+    });
+
+    const revised = repo.reviewReport({
+      reportId: report.id,
+      reviewerName: "doctor-b",
+      action: "revise",
+      comment: "补充结节描述",
+      finalText: "AI draft report\n补充结节描述",
+      structured: {
+        sections: [
+          { id: "findings", title: "所见", text: "AI draft report", includeTitle: true },
+          { id: "addendum", title: "补充", text: "补充结节描述", includeTitle: true },
+        ],
+      },
+      now: 1300,
+    });
+
+    expect(revised.report).toMatchObject({
+      status: "pending_review",
+      draftText: "AI draft report\n补充结节描述",
+      finalText: null,
+      confirmedBy: null,
+      confirmedAt: null,
+      structured: {
+        sections: [
+          { id: "findings", title: "所见", text: "AI draft report", includeTitle: true },
+          { id: "addendum", title: "补充", text: "补充结节描述", includeTitle: true },
+        ],
+      },
+    });
+    expect(revised.doctorReview).toMatchObject({
+      action: "revise",
+      reviewerName: "doctor-b",
+      before: { status: "draft" },
+      after: {
+        status: "pending_review",
+        draft_text: "AI draft report\n补充结节描述",
+        final_text: null,
+      },
+    });
   });
 
   it("reads safety rules and persists audit logs", () => {

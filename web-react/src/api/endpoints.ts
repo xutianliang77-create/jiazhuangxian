@@ -258,6 +258,9 @@ export interface MedicalRecentStudy {
   noduleCount: number;
   latestAnalysisStatus: string | null;
   latestReportStatus: string | null;
+  queueStage?: string | null;
+  queueReason?: string | null;
+  queuePriority?: number | null;
 }
 
 export interface MedicalSummary {
@@ -435,6 +438,61 @@ export interface MedicalKnowledgeSearchResult {
   count: number;
   evidence: MedicalKnowledgeEvidence[];
   warnings: string[];
+}
+
+export type MedicalFinalValidationReviewStatus = "unreviewed" | "accepted" | "rejected" | "needs_review";
+
+export interface MedicalFinalValidationRun {
+  id: string;
+  datasetId: string;
+  datasetRoot: string | null;
+  datasetManifestUri: string | null;
+  caseId: string | null;
+  pipelineMode: string;
+  status: string;
+  remoteModelGatewayUrl: string | null;
+  dataDbPath: string | null;
+  ragDbPath: string | null;
+  reportJsonUri: string | null;
+  reportMarkdownUri: string | null;
+  summary: Record<string, unknown>;
+  createdBy: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MedicalFinalValidationImageResult {
+  id: string;
+  runId: string;
+  studyId: string | null;
+  imageId: string | null;
+  analysisSessionId: string | null;
+  datasetImageId: string;
+  datasetLabel: string | null;
+  sourceRelativePath: string | null;
+  artifactUri: string;
+  localStagedPath: string | null;
+  remoteUpload: Record<string, unknown>;
+  expected: Record<string, unknown>;
+  detection: Record<string, unknown>;
+  measurement: Record<string, unknown>;
+  tirads: Record<string, unknown>;
+  report: Record<string, unknown>;
+  safetyReview: Record<string, unknown>;
+  modelArtifacts: unknown[];
+  taskEvents: unknown[];
+  note: string | null;
+  status: string;
+  error: Record<string, unknown> | null;
+  reviewStatus: MedicalFinalValidationReviewStatus;
+  reviewComment: string | null;
+  reviewedBy: string | null;
+  reviewedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
 }
 
 export interface MedicalNodule {
@@ -733,6 +791,43 @@ export const searchMedicalKnowledge = (query: string, topK = 5) =>
     },
   });
 
+export const getMedicalFinalValidationRuns = (limit = 20) =>
+  api<{
+    runs: MedicalFinalValidationRun[];
+    reviewQueues: Record<string, number>;
+  }>("GET", `/v1/web/medical/final-validation/runs?limit=${encodeURIComponent(String(limit))}`);
+
+export const getMedicalFinalValidationResults = (
+  runId: string,
+  options: { reviewStatus?: MedicalFinalValidationReviewStatus | "all"; limit?: number } = {}
+) => {
+  const params = new URLSearchParams();
+  if (options.reviewStatus && options.reviewStatus !== "all") params.set("reviewStatus", options.reviewStatus);
+  if (options.limit) params.set("limit", String(options.limit));
+  const query = params.toString();
+  return api<{
+    run: MedicalFinalValidationRun;
+    results: MedicalFinalValidationImageResult[];
+    reviewCounts: Record<string, number>;
+    statusCounts: Record<string, number>;
+  }>(
+    "GET",
+    `/v1/web/medical/final-validation/runs/${encodeURIComponent(runId)}/results${query ? `?${query}` : ""}`
+  );
+};
+
+export const reviewMedicalFinalValidationResult = (
+  resultId: string,
+  input: {
+    reviewStatus: MedicalFinalValidationReviewStatus;
+    comment?: string;
+  }
+) =>
+  api<{
+    result: MedicalFinalValidationImageResult;
+    auditLog: MedicalAuditLog;
+  }>("POST", `/v1/web/medical/final-validation/results/${encodeURIComponent(resultId)}/review`, input);
+
 export const getMedicalStudy = (studyId: string) =>
   api<{ bundle: MedicalStudyBundle }>("GET", `/v1/web/medical/studies/${encodeURIComponent(studyId)}`);
 
@@ -764,6 +859,7 @@ export const startMedicalAnalysis = (studyId: string, input: { imageId?: string;
   api<{
     analysisSession: MedicalAnalysisSession;
     agentTasks: MedicalAgentTask[];
+    autoRun?: { scheduled: boolean; reason: string; workerId: string };
     bundle: MedicalStudyBundle;
   }>("POST", `/v1/web/medical/studies/${encodeURIComponent(studyId)}/analyze`, input);
 
@@ -774,6 +870,7 @@ export const reviewMedicalReport = (
     reviewerName?: string;
     comment?: string;
     finalText?: string;
+    structured?: Record<string, unknown>;
   }
 ) =>
   api<{
@@ -794,9 +891,10 @@ export const reviseMedicalNodule = (
 ) =>
   api<{
     nodule: MedicalNodule;
-    analysisSession: MedicalAnalysisSession;
+    analysisSession: MedicalAnalysisSession | null;
     agentTasks: MedicalAgentTask[];
     auditLog: MedicalAuditLog;
+    dedupe?: { skipped: boolean; reason: string };
     bundle: MedicalStudyBundle;
   }>("POST", `/v1/web/medical/nodules/${encodeURIComponent(noduleId)}/revise`, input);
 
@@ -823,9 +921,11 @@ export const submitMedicalTiradsFeatures = (
 ) =>
   api<{
     tiradsFeature: MedicalTiradsFeature;
-    analysisSession: MedicalAnalysisSession;
+    analysisSession: MedicalAnalysisSession | null;
     agentTasks: MedicalAgentTask[];
     auditLog: MedicalAuditLog;
+    dedupe?: { skipped: boolean; reason: string };
+    autoRun?: { scheduled: boolean; reason: string; workerId: string };
     bundle: MedicalStudyBundle;
   }>("POST", `/v1/web/medical/nodules/${encodeURIComponent(noduleId)}/tirads-features`, input);
 

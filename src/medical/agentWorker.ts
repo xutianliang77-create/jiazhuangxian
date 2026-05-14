@@ -2,6 +2,7 @@ import {
   MedicalCaseRepo,
   type AgentTaskRecord,
   type ImageRecord,
+  type MeasurementRecord,
   type ModelJobInput,
   type ModelJobRecord,
   type NoduleRecord,
@@ -37,7 +38,7 @@ export interface MedicalAgentWorkerOptions {
 }
 
 export interface MedicalAgentWorkerResult {
-  status: "idle" | "succeeded" | "waiting_model" | "failed";
+  status: "idle" | "succeeded" | "waiting_model" | "waiting_doctor_input" | "failed";
   claimed: boolean;
   workerId: string;
   taskId?: string;
@@ -58,9 +59,11 @@ const DEFAULT_SEGMENT_MODEL = "nnunet-tight-roi-segmenter";
 const DEFAULT_SEGMENT_MODEL_VERSION = "tn3k-tight-roi-5fold-best";
 const DEFAULT_MEASURE_MODEL = "mask-measurement-worker";
 const DEFAULT_MEASURE_MODEL_VERSION = "validation-measurement-v1";
+const HEURISTIC_TIRADS_PREFILL_SOURCE_MODEL = "tirads-prefill-heuristic-v2";
 const IMAGE_QC_PATH = "/image/v1/image-quality-check";
 const MODEL_GATEWAY_REMOTE_ENV = "JZX_REMOTE_MODEL_GATEWAY_URL";
 const THYROID_REPORT_TEMPLATE_ID = "tpl-thyroid-ultrasound-draft-v1";
+const REQUIRED_TIRADS_FEATURE_KEYS = ["composition", "echogenicity", "shape", "margin", "echogenic_foci"] as const;
 const THYROID_REPORT_TEMPLATE = `甲状腺超声AI辅助报告（草稿）
 
 检查所见：
@@ -320,6 +323,9 @@ function processClaimedTask(
     };
   }
 
+  const waitingDoctorInput = maybeWaitForDoctorTiradsInput(repo, task, workerId, now());
+  if (waitingDoctorInput) return waitingDoctorInput;
+
   const completedAt = now();
   const output = buildSynchronousTaskOutput(repo, task, workerId, completedAt, options);
   repo.completeAgentTask(task.id, output, completedAt);
@@ -345,6 +351,9 @@ async function processClaimedTaskAsync(
     if (remoteUrl) return processRemoteClaimedModelTask(repo, task, workerId, now, options, remoteUrl);
     return processClaimedTask(repo, task, workerId, now, options);
   }
+
+  const waitingDoctorInput = maybeWaitForDoctorTiradsInput(repo, task, workerId, now());
+  if (waitingDoctorInput) return waitingDoctorInput;
 
   const output =
     task.taskType === "image_qc"
@@ -474,6 +483,7 @@ function ensureMeasureModelJob(repo: MedicalCaseRepo, task: AgentTaskRecord, now
 function buildMeasureModelJobInput(repo: MedicalCaseRepo, task: AgentTaskRecord, now: number): ModelJobInput {
   const { studyId, imageId, image } = taskImage(repo, task);
   const nodules = selectTaskNodules(repo.listNodulesByStudy(studyId), task);
+  const segmentationByNoduleId = latestSegmentationOutputByNodule(repo, studyId, nodules);
   return {
     studyId,
     imageId,
@@ -493,6 +503,7 @@ function buildMeasureModelJobInput(repo: MedicalCaseRepo, task: AgentTaskRecord,
         nodule_index: nodule.noduleIndex,
         bbox: nodule.bbox,
         mask_uri: nodule.maskUri,
+        contour: segmentationByNoduleId.get(nodule.id)?.contour,
         confidence: nodule.detectionConfidence,
       })),
       pixel_spacing: image.pixelSpacing,
@@ -719,7 +730,7 @@ function modelPipelineMetadata(
       primary_model_version: DEFAULT_DETECTOR_MODEL_VERSION,
       comparator_model: DEFAULT_DETECTOR_COMPARATOR_MODEL,
       consensus_iou_threshold: 0.5,
-      llm_evaluator: "qwen3.6",
+      llm_evaluator: "qwen/qwen3.5-9b",
     },
     segmentation: {
       primary_model: DEFAULT_SEGMENT_MODEL,
@@ -963,6 +974,17 @@ interface ModelResultEvidenceContext {
   segmentationByNoduleId: Map<string, JsonObject>;
   measurementByNoduleId: Map<string, JsonObject>;
   evidence: JsonObject[];
+}
+
+interface TiradsPrefillCues {
+  composition: string;
+  echogenicity: string;
+  shape: string;
+  margin: string;
+  echogenicFoci: string[];
+  textureReady: boolean;
+  boundaryReady: boolean;
+  prefillEvidence: JsonObject;
 }
 
 interface ProviderDraftReport {
@@ -1372,7 +1394,7 @@ function medicalReviewMessages(
       text: [
         "你是医学复核辅助模型 MedGemma，用于复核甲状腺超声 AI 辅助报告草稿。",
         "你的任务是发现医学表达、安全风险、证据缺口和医生复核重点。",
-        "你不能替代 Qwen3.6 生成主报告，不能改写 bbox，不能给出最终诊断。",
+        "你不能替代 qwen/qwen3.5-9b 主报告模型生成主报告，不能改写 bbox，不能给出最终诊断。",
         "不要复述输入，不要输出 required_schema，不要输出 Markdown 代码块。",
         "只输出 JSON，不要输出 Markdown。",
       ].join("\n"),
@@ -1613,7 +1635,7 @@ function persistedReportReviewMessages(task: AgentTaskRecord, report: ReportReco
       text: [
         "你是医学复核辅助模型 MedGemma，用于复核甲状腺超声 AI 辅助报告草稿。",
         "你的任务是发现医学表达、安全风险、证据缺口和医生复核重点。",
-        "你不能替代 Qwen3.6 生成主报告，不能改写 bbox，不能给出最终诊断。",
+        "你不能替代 qwen/qwen3.5-9b 主报告模型生成主报告，不能改写 bbox，不能给出最终诊断。",
         "不要复述输入，不要输出 schema，不要输出 Markdown 代码块。",
         "只输出 JSON，不要输出 Markdown。",
       ].join("\n"),
@@ -2289,32 +2311,12 @@ function buildModelResultEvidence(
   studyId: string,
   nodules: NoduleRecord[]
 ): ModelResultEvidenceContext {
-  const noduleByIndex = new Map(nodules.map((nodule) => [nodule.noduleIndex, nodule]));
-  const segmentationByNoduleId = new Map<string, JsonObject>();
+  const segmentationByNoduleId = latestSegmentationOutputByNodule(repo, studyId, nodules);
   const measurementByNoduleId = new Map<string, JsonObject>();
   for (const modelJob of repo.listModelJobsByStudy(studyId)) {
     if (modelJob.status !== "succeeded") continue;
-    if (modelJob.jobType === SEGMENT_JOB_TYPE) {
-      for (const item of asRecordArray(modelJob.output?.segmentations)) {
-        const nodule = resolveNoduleFromOutput(repo, studyId, item, noduleByIndex, segmentationByNoduleId.size);
-        if (!nodule) continue;
-        segmentationByNoduleId.set(nodule.id, {
-          source: "segmentation_result",
-          nodule_id: nodule.id,
-          nodule_index: nodule.noduleIndex,
-          model_job_id: modelJob.id,
-          artifact_uri: modelJob.artifactUri,
-          model_name: optionalString(item.model_name) ?? modelJob.modelName,
-          model_version: optionalString(item.model_version) ?? modelJob.modelVersion,
-          segmentation_source: optionalString(item.segmentation_source) ?? "unknown",
-          mask_uri: optionalString(item.mask_uri) ?? nodule.maskUri,
-          confidence: optionalNumber(item.confidence),
-          requires_doctor_review: optionalBoolean(item.requires_doctor_review) ?? true,
-          metadata: asJsonObject(item.metadata) ?? {},
-        });
-      }
-    }
     if (modelJob.jobType === MEASURE_JOB_TYPE) {
+      const noduleByIndex = new Map(nodules.map((nodule) => [nodule.noduleIndex, nodule]));
       for (const item of asRecordArray(modelJob.output?.measurements)) {
         const nodule = resolveNoduleFromOutput(repo, studyId, item, noduleByIndex, measurementByNoduleId.size);
         if (!nodule) continue;
@@ -2333,6 +2335,7 @@ function buildModelResultEvidence(
           area_mm2: optionalNullableNumber(item.area_mm2),
           aspect_ratio: optionalNullableNumber(item.aspect_ratio),
           pixel_measurements: asJsonObject(item.pixel_measurements) ?? {},
+          tirads_prefill_metrics: asJsonObject(item.tirads_prefill_metrics) ?? {},
           confidence: optionalNullableNumber(item.confidence),
           requires_doctor_review: optionalBoolean(item.requires_doctor_review) ?? true,
         });
@@ -2344,6 +2347,39 @@ function buildModelResultEvidence(
     measurementByNoduleId,
     evidence: [...segmentationByNoduleId.values(), ...measurementByNoduleId.values()],
   };
+}
+
+function latestSegmentationOutputByNodule(
+  repo: MedicalCaseRepo,
+  studyId: string,
+  nodules: NoduleRecord[]
+): Map<string, JsonObject> {
+  const noduleByIndex = new Map(nodules.map((nodule) => [nodule.noduleIndex, nodule]));
+  const segmentationByNoduleId = new Map<string, JsonObject>();
+  for (const modelJob of repo.listModelJobsByStudy(studyId)) {
+    if (modelJob.status !== "succeeded" || modelJob.jobType !== SEGMENT_JOB_TYPE) continue;
+    for (const item of asRecordArray(modelJob.output?.segmentations)) {
+      const nodule = resolveNoduleFromOutput(repo, studyId, item, noduleByIndex, segmentationByNoduleId.size);
+      if (!nodule) continue;
+      segmentationByNoduleId.set(nodule.id, {
+        source: "segmentation_result",
+        nodule_id: nodule.id,
+        nodule_index: nodule.noduleIndex,
+        model_job_id: modelJob.id,
+        artifact_uri: modelJob.artifactUri,
+        model_name: optionalString(item.model_name) ?? modelJob.modelName,
+        model_version: optionalString(item.model_version) ?? modelJob.modelVersion,
+        segmentation_source: optionalString(item.segmentation_source) ?? "unknown",
+        bbox: optionalNumberArray(item.bbox) ?? nodule.bbox,
+        contour: normalizeContourValue(item.contour),
+        mask_uri: optionalString(item.mask_uri) ?? nodule.maskUri,
+        confidence: optionalNumber(item.confidence),
+        requires_doctor_review: optionalBoolean(item.requires_doctor_review) ?? true,
+        metadata: asJsonObject(item.metadata) ?? {},
+      });
+    }
+  }
+  return segmentationByNoduleId;
 }
 
 function providerStructuredPack(structured: JsonObject): JsonObject {
@@ -2743,7 +2779,8 @@ function buildCalculateTiradsTaskOutput(
   const studyId = requiredString(task.input.study_id, "study_id");
   const nodules = repo.listNodulesByStudy(studyId);
   const noduleById = new Map(nodules.map((nodule) => [nodule.id, nodule]));
-  const features = latestFeaturePerNodule(repo.listTiradsFeaturesByStudy(studyId));
+  const features = latestFeaturePerNodule(repo.listTiradsFeaturesByStudy(studyId))
+    .filter((feature) => !feature.requiresReview && isCompleteTiradsFeaturePayload(feature.features));
   if (features.length === 0) {
     return {
       ...base,
@@ -2806,7 +2843,10 @@ function buildClassifyTiradsFeaturesTaskOutput(
 ): JsonObject {
   const studyId = requiredString(task.input.study_id, "study_id");
   const nodules = repo.listNodulesByStudy(studyId);
-  const candidates = featureCandidatesFromTask(task);
+  const explicitCandidates = featureCandidatesFromTask(task);
+  const candidates = explicitCandidates.length > 0
+    ? explicitCandidates
+    : buildHeuristicTiradsFeatureCandidates(repo, studyId, nodules);
   if (candidates.length === 0) {
     return {
       ...base,
@@ -2823,6 +2863,7 @@ function buildClassifyTiradsFeaturesTaskOutput(
     };
   }
 
+  const heuristicPrefill = explicitCandidates.length === 0;
   const noduleById = new Map(nodules.map((nodule) => [nodule.id, nodule]));
   const noduleByIndex = new Map(nodules.map((nodule) => [nodule.noduleIndex, nodule]));
   const warnings: string[] = [];
@@ -2864,10 +2905,15 @@ function buildClassifyTiradsFeaturesTaskOutput(
     validation_mode: persisted.length === 0,
     result: {
       features: persisted,
-      feature_status: persisted.length > 0 ? "persisted" : "no_features_persisted",
-      source: "structured_validation_input",
+      feature_status:
+        persisted.length > 0
+          ? (heuristicPrefill ? "prefilled_requires_review" : "persisted")
+          : "no_features_persisted",
+      source: heuristicPrefill ? "heuristic_prefill_v2" : "structured_validation_input",
     },
-    warnings,
+    warnings: heuristicPrefill
+      ? uniqueStrings(["tirads_feature_prefill_requires_doctor_review", ...warnings])
+      : warnings,
   };
 }
 
@@ -2879,6 +2925,46 @@ function latestFeaturePerNodule(features: TiradsFeatureRecord[]): TiradsFeatureR
     seen.add(feature.noduleId);
     latest.push(feature);
   }
+  return latest;
+}
+
+function buildHeuristicTiradsFeatureCandidates(
+  repo: MedicalCaseRepo,
+  studyId: string,
+  nodules: NoduleRecord[]
+): JsonObject[] {
+  const measurementByNodule = latestMeasurementByNodule(repo.listMeasurementsByStudy(studyId));
+  const modelEvidence = buildModelResultEvidence(repo, studyId, nodules);
+  return nodules.map((nodule) => {
+    const measurement = measurementByNodule.get(nodule.id);
+    const sizeMm = measurement ? sizeMmFromMeasurement(measurement) : undefined;
+    const bboxSize = bboxDimensions(nodule.bbox);
+    const segmentation = modelEvidence.segmentationByNoduleId.get(nodule.id);
+    const measurementEvidence = modelEvidence.measurementByNoduleId.get(nodule.id);
+    const cues = buildTiradsPrefillCues(nodule, measurement, bboxSize, segmentation, measurementEvidence);
+    const features: JsonObject = {
+      composition: cues.composition,
+      echogenicity: cues.echogenicity,
+      shape: cues.shape,
+      margin: cues.margin,
+      echogenic_foci: cues.echogenicFoci,
+    };
+    if (sizeMm) features.size_mm = sizeMm;
+    features.prefill_evidence = cues.prefillEvidence;
+    return {
+      nodule_id: nodule.id,
+      nodule_index: nodule.noduleIndex,
+      features,
+      confidence: heuristicTiradsPrefillConfidence(nodule, measurement, bboxSize, cues),
+      source_model: HEURISTIC_TIRADS_PREFILL_SOURCE_MODEL,
+      requires_review: true,
+    };
+  });
+}
+
+function latestMeasurementByNodule(measurements: MeasurementRecord[]): Map<string, MeasurementRecord> {
+  const latest = new Map<string, MeasurementRecord>();
+  for (const measurement of measurements) latest.set(measurement.noduleId, measurement);
   return latest;
 }
 
@@ -2945,6 +3031,82 @@ function tiradsInputFromFeature(feature: TiradsFeatureRecord): TiradsInput {
   };
 }
 
+function maybeWaitForDoctorTiradsInput(
+  repo: MedicalCaseRepo,
+  task: AgentTaskRecord,
+  workerId: string,
+  now: number
+): MedicalAgentWorkerResult | null {
+  if (task.taskType !== "calculate_tirads") return null;
+  const studyId = optionalString(task.input.study_id);
+  if (!studyId) return null;
+  const gate = tiradsDoctorReviewGate(repo, studyId);
+  if (gate.ready) return null;
+  const output = {
+    status: "waiting_doctor_tirads_features",
+    worker_id: workerId,
+    study_id: studyId,
+    task_id: task.id,
+    task_type: task.taskType,
+    pending_nodule_ids: gate.pendingNoduleIds,
+    pending_feature_ids: gate.pendingFeatureIds,
+    confirmed_nodule_count: gate.confirmedNoduleCount,
+    total_nodule_count: gate.totalNoduleCount,
+    message: "TI-RADS auto-prefill requires doctor confirmation before rule calculation.",
+  };
+  repo.requeueAgentTask(task.id, output, now);
+  return {
+    status: "waiting_doctor_input",
+    claimed: true,
+    workerId,
+    taskId: task.id,
+    taskType: task.taskType,
+    output,
+  };
+}
+
+function tiradsDoctorReviewGate(
+  repo: MedicalCaseRepo,
+  studyId: string
+): {
+  ready: boolean;
+  totalNoduleCount: number;
+  confirmedNoduleCount: number;
+  pendingNoduleIds: string[];
+  pendingFeatureIds: string[];
+} {
+  const nodules = repo.listNodulesByStudy(studyId);
+  if (nodules.length === 0) {
+    return {
+      ready: true,
+      totalNoduleCount: 0,
+      confirmedNoduleCount: 0,
+      pendingNoduleIds: [],
+      pendingFeatureIds: [],
+    };
+  }
+  const latestByNodule = new Map(latestFeaturePerNodule(repo.listTiradsFeaturesByStudy(studyId)).map((feature) => [feature.noduleId, feature]));
+  const pendingNoduleIds: string[] = [];
+  const pendingFeatureIds: string[] = [];
+  let confirmedNoduleCount = 0;
+  for (const nodule of nodules) {
+    const feature = latestByNodule.get(nodule.id);
+    if (feature && !feature.requiresReview && isCompleteTiradsFeaturePayload(feature.features)) {
+      confirmedNoduleCount += 1;
+      continue;
+    }
+    pendingNoduleIds.push(nodule.id);
+    if (feature) pendingFeatureIds.push(feature.id);
+  }
+  return {
+    ready: pendingNoduleIds.length === 0,
+    totalNoduleCount: nodules.length,
+    confirmedNoduleCount,
+    pendingNoduleIds,
+    pendingFeatureIds,
+  };
+}
+
 function sizeMmFromValue(value: unknown): TiradsInput["size_mm"] | undefined {
   const record = asJsonObject(value);
   if (!record) return undefined;
@@ -2954,6 +3116,253 @@ function sizeMmFromValue(value: unknown): TiradsInput["size_mm"] | undefined {
     ap_axis: optionalNumber(record.ap_axis),
   };
   return size.long_axis || size.short_axis || size.ap_axis ? size : undefined;
+}
+
+function sizeMmFromMeasurement(measurement: MeasurementRecord): TiradsInput["size_mm"] | undefined {
+  const size = {
+    long_axis: measurement.longAxisMm ?? undefined,
+    short_axis: measurement.shortAxisMm ?? undefined,
+    ap_axis: measurement.apAxisMm ?? undefined,
+  };
+  return size.long_axis || size.short_axis || size.ap_axis ? size : undefined;
+}
+
+function buildTiradsPrefillCues(
+  nodule: NoduleRecord,
+  measurement: MeasurementRecord | undefined,
+  bboxSize: { widthPx?: number; heightPx?: number },
+  segmentation: JsonObject | undefined,
+  measurementEvidence: JsonObject | undefined
+): TiradsPrefillCues {
+  const prefillMetrics = asJsonObject(measurementEvidence?.tirads_prefill_metrics);
+  const texture = asJsonObject(prefillMetrics?.texture);
+  const boundary = asJsonObject(prefillMetrics?.boundary) ?? boundaryMetricsFromSegmentation(segmentation, bboxSize);
+  const pixelMeasurements = asJsonObject(measurementEvidence?.pixel_measurements);
+  const composition = inferHeuristicTiradsComposition(texture);
+  const echogenicity = inferHeuristicTiradsEchogenicity(texture);
+  const shape = inferHeuristicTiradsShape(measurement, bboxSize, pixelMeasurements);
+  const margin = inferHeuristicTiradsMargin(segmentation, boundary);
+  const echogenicFoci = inferHeuristicTiradsFoci(texture);
+  return {
+    composition,
+    echogenicity,
+    shape,
+    margin,
+    echogenicFoci,
+    textureReady: Boolean(texture),
+    boundaryReady: Boolean(boundary),
+    prefillEvidence: {
+      method: "mask_measurement_texture_boundary_v2",
+      doctor_confirmation_required: true,
+      inputs: {
+        detection_confidence: nodule.detectionConfidence,
+        bbox_size_px: bboxSize,
+        mask_uri: nodule.maskUri ?? optionalString(segmentation?.mask_uri),
+        segmentation_source: optionalString(segmentation?.segmentation_source),
+        measurement_source: measurement?.measurementSource ?? optionalString(measurementEvidence?.measurement_source),
+        pixel_measurements: pixelMeasurements ?? {},
+      },
+      texture: texture ?? {},
+      boundary: boundary ?? {},
+      limitations: [
+        "TI-RADS features are heuristic candidates, not final findings.",
+        "Composition and echogenicity depend on local grayscale cues and must be confirmed by a doctor.",
+      ],
+    },
+  };
+}
+
+function inferHeuristicTiradsComposition(texture: JsonObject | undefined): string {
+  const hinted = optionalString(texture?.composition_hint);
+  if (hinted) return hinted;
+  const anechoicRatio = optionalNumber(texture?.anechoic_fraction);
+  if (anechoicRatio !== undefined) {
+    if (anechoicRatio >= 0.75) return "cystic";
+    if (anechoicRatio >= 0.28) return "mixed_cystic_solid";
+  }
+  return "solid";
+}
+
+function inferHeuristicTiradsEchogenicity(texture: JsonObject | undefined): string {
+  const hinted = optionalString(texture?.echogenicity_hint);
+  if (hinted) return hinted;
+  const ratio = optionalNumber(texture?.mean_to_background_ratio);
+  if (ratio !== undefined) {
+    if (ratio <= 0.35) return "very_hypoechoic";
+    if (ratio <= 0.75) return "hypoechoic";
+    if (ratio <= 1.2) return "isoechoic";
+    return "hyperechoic";
+  }
+  return "isoechoic";
+}
+
+function inferHeuristicTiradsShape(
+  measurement: MeasurementRecord | undefined,
+  bboxSize: { widthPx?: number; heightPx?: number },
+  pixelMeasurements?: JsonObject
+): string {
+  if (
+    measurement?.apAxisMm !== null
+    && measurement?.apAxisMm !== undefined
+    && measurement.shortAxisMm !== null
+    && measurement.shortAxisMm !== undefined
+  ) {
+    return measurement.apAxisMm > measurement.shortAxisMm ? "taller_than_wide" : "wider_than_tall";
+  }
+  const widthPx = optionalNumber(pixelMeasurements?.width_px);
+  const heightPx = optionalNumber(pixelMeasurements?.height_px);
+  if (widthPx !== undefined && heightPx !== undefined && widthPx > 0 && heightPx > 0) {
+    return heightPx > widthPx * 1.05 ? "taller_than_wide" : "wider_than_tall";
+  }
+  if (
+    bboxSize.widthPx !== undefined
+    && bboxSize.heightPx !== undefined
+    && bboxSize.widthPx > 0
+    && bboxSize.heightPx > 0
+  ) {
+    return bboxSize.heightPx > bboxSize.widthPx * 1.05 ? "taller_than_wide" : "wider_than_tall";
+  }
+  return "wider_than_tall";
+}
+
+function inferHeuristicTiradsMargin(
+  segmentation: JsonObject | undefined,
+  boundary: JsonObject | undefined
+): string {
+  const hinted = optionalString(boundary?.margin_hint);
+  if (hinted) return hinted;
+  const source = optionalString(segmentation?.segmentation_source);
+  if (!boundary || source === "bbox_fallback") return "ill_defined";
+  const compactness = optionalNumber(boundary.compactness);
+  const fillRatio = optionalNumber(boundary.fill_ratio);
+  if (compactness !== undefined && compactness < 0.46) return "irregular";
+  if (fillRatio !== undefined && fillRatio < 0.68) return "lobulated";
+  return "smooth";
+}
+
+function inferHeuristicTiradsFoci(texture: JsonObject | undefined): string[] {
+  const hinted = optionalStringOrArray(texture?.echogenic_foci_hint);
+  if (Array.isArray(hinted)) return hinted;
+  if (hinted) return [hinted];
+  const brightFraction = optionalNumber(texture?.bright_foci_fraction);
+  if (brightFraction !== undefined && brightFraction >= 0.006) return ["punctate_echogenic_foci"];
+  return ["none"];
+}
+
+function heuristicTiradsPrefillConfidence(
+  nodule: NoduleRecord,
+  measurement: MeasurementRecord | undefined,
+  bboxSize: { widthPx?: number; heightPx?: number },
+  cues: TiradsPrefillCues
+): JsonObject {
+  const basis: JsonObject = {};
+  if (measurement) {
+    basis.measurement_source = measurement.measurementSource;
+    if (measurement.longAxisMm !== null || measurement.shortAxisMm !== null || measurement.apAxisMm !== null) {
+      basis.size_mm = {
+        long_axis: measurement.longAxisMm,
+        short_axis: measurement.shortAxisMm,
+        ap_axis: measurement.apAxisMm,
+      };
+    }
+  }
+  if (bboxSize.widthPx !== undefined && bboxSize.heightPx !== undefined) {
+    basis.bbox_size_px = {
+      width_px: bboxSize.widthPx,
+      height_px: bboxSize.heightPx,
+    };
+  }
+  if (nodule.detectionConfidence !== null && nodule.detectionConfidence !== undefined) {
+    basis.detection_confidence = nodule.detectionConfidence;
+  }
+  if (nodule.maskUri) basis.mask_ready = true;
+  return {
+    composition: cues.textureReady ? 0.42 : 0.24,
+    echogenicity: cues.textureReady ? 0.44 : 0.18,
+    shape: measurement ? 0.72 : bboxSize.widthPx !== undefined && bboxSize.heightPx !== undefined ? 0.6 : 0.42,
+    margin: cues.boundaryReady ? 0.48 : nodule.maskUri ? 0.28 : 0.2,
+    echogenic_foci: cues.textureReady ? 0.38 : 0.16,
+    heuristic: {
+      method: "mask_measurement_texture_boundary_v2",
+      doctor_confirmation_required: true,
+      basis,
+    },
+  };
+}
+
+function boundaryMetricsFromSegmentation(
+  segmentation: JsonObject | undefined,
+  fallbackBboxSize: { widthPx?: number; heightPx?: number }
+): JsonObject | undefined {
+  const contour = normalizeContourValue(segmentation?.contour);
+  const bbox = optionalNumberArray(segmentation?.bbox);
+  if (!contour || contour.length < 3) return undefined;
+  const area = polygonArea(contour);
+  const perimeter = polygonPerimeter(contour);
+  const dims = bbox && bbox.length >= 4
+    ? { widthPx: Math.max(0, bbox[2] - bbox[0]), heightPx: Math.max(0, bbox[3] - bbox[1]) }
+    : fallbackBboxSize;
+  const bboxArea = (dims.widthPx ?? 0) * (dims.heightPx ?? 0);
+  const compactness = perimeter > 0 ? (4 * Math.PI * area) / (perimeter * perimeter) : undefined;
+  const fillRatio = bboxArea > 0 ? area / bboxArea : undefined;
+  return {
+    area_px2: roundNumber(area, 4),
+    perimeter_px: roundNumber(perimeter, 4),
+    compactness: compactness === undefined ? undefined : roundNumber(compactness, 4),
+    fill_ratio: fillRatio === undefined ? undefined : roundNumber(fillRatio, 4),
+  };
+}
+
+function bboxDimensions(bbox: unknown): { widthPx?: number; heightPx?: number } {
+  const values = optionalNumberArray(bbox);
+  if (!values || values.length < 4) return {};
+  return {
+    widthPx: Math.max(0, values[2] - values[0]),
+    heightPx: Math.max(0, values[3] - values[1]),
+  };
+}
+
+function normalizeContourValue(value: unknown): number[][] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const points = value.flatMap((item) => {
+    if (!Array.isArray(item) || item.length < 2) return [];
+    const x = optionalNumber(item[0]);
+    const y = optionalNumber(item[1]);
+    return x === undefined || y === undefined ? [] : [[x, y]];
+  });
+  return points.length >= 3 ? points : undefined;
+}
+
+function polygonArea(points: number[][]): number {
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    sum += current[0] * next[1] - next[0] * current[1];
+  }
+  return Math.abs(sum) / 2;
+}
+
+function polygonPerimeter(points: number[][]): number {
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    sum += Math.hypot(next[0] - current[0], next[1] - current[1]);
+  }
+  return sum;
+}
+
+function roundNumber(value: number, digits: number): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function isCompleteTiradsFeaturePayload(features: JsonObject): boolean {
+  return REQUIRED_TIRADS_FEATURE_KEYS.every((key) => {
+    const value = features[key];
+    return Array.isArray(value) ? value.length > 0 : typeof value === "string" && value.trim().length > 0;
+  });
 }
 
 function persistDetectorNodules(repo: MedicalCaseRepo, modelJob: ModelJobRecord, now: number): JsonObject[] {

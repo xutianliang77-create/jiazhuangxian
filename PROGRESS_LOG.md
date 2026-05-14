@@ -6,6 +6,33 @@
 
 P0 medical validation foundation on top of CodeClaw: local SQLite storage, Python image-worker, model-gateway queue/worker skeleton with detector adapter boundaries, remote RTX 5090 GPU runtime setup scripts, config checks, artifact conventions and overlay generation, medical MCP wrappers, seeded medical knowledge, medical knowledge ingestion, first-version thyroid guideline knowledge base, approved medical RAG evidence search, public thyroid ultrasound dataset bootstrap, TN3K mask-to-bbox detection annotation conversion, cleaned official TN5000 detection conversion, YOLO11m strict detector training, RF-DETR-Medium主检测模型决策, local MCP configuration examples, the first medical Web/API + UI case workflow slice, and a validation medical agent worker with real image QC handoff, detector result persistence, TI-RADS feature persistence, TI-RADS rule calculation persistence, structured report draft persistence, deterministic safety-review audit persistence, study-detail result visualization, doctor review confirmation, model-gateway/artifact visibility plus overlay preview, doctor-side nodule bbox revision with numeric and overlay drag workflows, report text editing, and visible review/audit change traces in the doctor workstation.
 
+### Latest Update - 2026-05-13 TI-RADS Prefill v2
+
+- Upgraded heuristic TI-RADS auto-prefill from geometry defaults to `tirads-prefill-heuristic-v2`.
+- `measure_nodules` model jobs now carry the latest segmentation contour when available, so measurement output and downstream feature prefill can use mask/boundary context instead of only bbox geometry.
+- model-gateway static measurement now emits `tirads_prefill_metrics` with boundary compactness/fill-ratio and optional local grayscale texture cues from image + mask.
+- `classify_tirads_features` now builds low-confidence TI-RADS candidates from segmentation, measurement, texture, and boundary cues:
+  - composition from cystic/anechoic texture fraction when available, otherwise conservative solid default;
+  - echogenicity from local grayscale ratio when available;
+  - shape from mask/bbox measurement dimensions;
+  - margin from contour compactness/fill-ratio, while bbox fallback remains low-confidence;
+  - echogenic foci from bright-pixel fraction when available.
+- The safety boundary is unchanged: v2 prefill still persists `requiresReview=true`, writes `prefill_evidence`, and `calculate_tirads` remains gated until doctor confirmation.
+
+### Latest Update - 2026-05-13 Report Editor Productization
+
+- Strengthened the medical report editor product workflow:
+  - report row now displays report version, editable/read-only state, evidence fingerprint, evidence lock status, latest review action, and update time;
+  - evidence panel displays fixed evidence count, source labels, and fingerprint;
+  - saved structured editor metadata now records evidence lock, evidence count/sources/fingerprint, base report id, and base report update time;
+  - confirmed reports show a read-only pending-archive notice;
+  - archived reports are read-only in UI and protected by backend state guards.
+- Tightened report review state transitions:
+  - only `draft` and `pending_review` reports can be approved/revised/rejected;
+  - only `confirmed` reports can be archived;
+  - archived reports cannot be directly revised through the Web API or storage repository.
+- Updated `docs/TECHNICAL_DESIGN.md`, `docs/DEVELOPMENT_PLAN.md`, and `docs/UI_DESIGN.md` to match the implemented validation-version report editor workflow.
+
 ### Latest Update - 2026-05-11 GPU E2E
 
 - Completed one real RTX 5090 GPU E2E smoke on TN5000 image `000016`.
@@ -28,6 +55,51 @@ P0 medical validation foundation on top of CodeClaw: local SQLite storage, Pytho
 - Added a Medical Workstation real-demo notice in the Reports area and per template-generated report, explicitly telling the operator to manually load `qwen/qwen3.6-35b-a3b` on the 5090 before running `draft_report / safety_review`. The UI also makes clear that unloaded-Qwen mode still preserves rules, knowledge evidence, segmentation, measurement, and a structured template draft.
 - Compact provider prompt packaging was added for the future Qwen report stage: full evidence remains persisted in `report.evidence_json`, while the provider receives only the summarized facts and top guideline snippets needed to draft the report.
 - Current LM Studio check after operator unload: `qwen/qwen3.6-35b-a3b` state is `not-loaded`; keep it unloaded until the real-demo主报告阶段需要手动加载。
+
+### Latest Update - 2026-05-12 Doctor Workbench + Final Validation Dataset
+
+- Completed the first full doctor-workbench batch-processing lane in `web-react/src/components/panels/MedicalPanel.tsx`.
+- Medical queue now supports:
+  - queue stage classification from backend summary (`waiting_tirads_confirmation`, `pending_report_review`, `ready_archive`, `analysis_in_progress`, `analysis_failed`, `report_rejected`, `archived`);
+  - queue filtering in the workstation;
+  - auto-open first study when switching into a non-empty queue;
+  - next/previous queue navigation;
+  - auto-advance to the next case after TI-RADS confirmation, report confirmation, or archive when the current case leaves the active queue;
+  - keyboard shortcuts: `Alt+Up`, `Alt+Down`, `Alt+Enter`, `Alt+Shift+Enter`;
+  - top-level `Batch Queue` action bar;
+  - empty-queue state with a recommended next queue and one-click switch.
+- Report editor/product workflow was strengthened:
+  - structured sections now persist through report review actions;
+  - `revise` keeps report status at `pending_review` instead of incorrectly confirming;
+  - inline review history, fixed evidence notice, and clearer action affordances were added.
+- Added no-op / de-dup handling for repeated doctor bbox revision and repeated TI-RADS feature submission so the system does not keep creating duplicate rerun tasks or duplicate reports.
+- Added heuristic TI-RADS auto-prefill v1:
+  - `classify_tirads_features` can generate low-confidence structured candidates from existing bbox/measurement context;
+  - candidates persist as `requiresReview=true`;
+  - rule calculation is hard-gated until the doctor confirms the structured TI-RADS features.
+- Organized a local final-validation case sample under:
+  - `data/artifacts/datasets/final-validation-local-thyroid-case-001/`
+  - Includes static deidentified PNGs, review overlays, Labelme polygon JSON, static US DICOM, multi-frame US DICOM, SR DICOM, clinical DOCX evidence, and a structured `metadata/case.json`.
+- Current final-validation local case organization is intended for final validation only and should not be mixed into training or tuning splits without explicit review.
+- Added a static final-validation runner:
+  - `npm run medical:final-validation:static`
+  - Script: `scripts/medical-final-validation-static.ts`
+  - It reads `metadata/case.json`, stages deidentified static images into `artifact://model-ready/final-validation/...`, can optionally upload them to the remote 5090 `model-gateway`, creates the fixed validation analysis chain, and writes `summary.json` plus `SUMMARY.md` under `data/artifacts/reports/<case_id>/static-e2e-<timestamp>/`.
+- Added remote artifact upload support on the 5090 `model-gateway`:
+  - `POST /model/v1/artifacts/upload?uri=artifact://...`
+  - This lets the Mac-side final-validation runner push local final-validation static images into the remote artifact root before GPU inference.
+- Verified the new static final-validation runner in `--prepare-only` mode against `final-validation-local-thyroid-case-001`; report skeleton output was written successfully.
+- Corrected the final-validation dataset target to `data/artifacts/datasets/fangdai-thyroid-ultrasound-images/`.
+  - Local locked snapshot currently contains 298 images, even though the upstream dataset card describes 900 images; this mismatch is already documented in `metadata/download_summary.json`.
+  - Class counts are FTC=100, MTC=99, PTC=99.
+  - The dataset has class-folder labels but no bbox/mask annotations, so it is suitable for external static image robustness/subtype-classification validation, not detection/segmentation/TI-RADS metric validation.
+  - `npm run medical:final-validation:static -- --dataset-root data/artifacts/datasets/fangdai-thyroid-ultrasound-images --prepare-only` now stages all 298 images under `artifact://model-ready/final-validation/fangdai-thyroid-ultrasound-images/...` and writes per-image class labels plus source paths into the generated summary.
+- Added persistent final-validation result storage for later review:
+  - Migration `009_final_validation_results.sql` creates `final_validation_run` and `final_validation_image_result`.
+  - Each validation run now stores dataset id/root, pipeline mode, remote gateway URL, report artifact URIs, summary JSON, and status.
+  - Each image result stores dataset image id, class label, source path, staged artifact, detection/measurement/TI-RADS/report/safety JSON, model artifact URIs, task events, status, and `review_status`.
+  - The static final-validation runner writes both file reports and DB rows.
+  - Verified a 5090 FangDai per-class smoke run: validation run `01KREJTHRDYFVW0283WD16BAAZ`, 3/3 images succeeded, DB rows are `review_status=unreviewed` for later review.
 
 ### Completed
 
@@ -2970,3 +3042,338 @@ npm run medical-demo:run -- --help
 npm run typecheck
 git diff --check
 ```
+
+## 2026-05-13 01:55 CST - Final Validation Review Persistence
+
+- 完成最终验证数据集结果的持久化与 Review 闭环：
+  - 新增 `final_validation_run`、`final_validation_image_result` 数据表，用于保存 FangDai 等最终验证批次、单图检测/分割/测量/报告结果、模型 artifact、任务事件与医生复核状态。
+  - `scripts/medical-final-validation-static.ts` 在静态图 E2E 跑完后写入数据库，后续可按 run/result 追踪和复查。
+  - 后端新增最终验证 API：列出验证批次、按复核状态列出结果、提交医生复核结论，并写入 `audit_log`。
+  - 医生工作台新增 `Final Validation Review` 面板，可查看最终验证批次、待复核队列、原图/overlay、bbox、检测置信度、测量来源、artifact JSON，并标记“接受 / 需再看 / 退回”。
+- 已在 5090 真实链路上完成 FangDai per-class smoke：FTC/MTC/PTC 各 1 例，RF-DETR + YOLO 对照、分割、测量链路成功落库，run id 为 `01KREJTHRDYFVW0283WD16BAAZ`。
+
+### Validation
+
+- `npm run typecheck` -> OK.
+- `npm --prefix web-react run typecheck` -> OK.
+- `npm test -- --run test/unit/medical/caseRepo.test.ts` -> 15 tests OK.
+- `npm test -- --run test/unit/channels/web/server.test.ts` -> 51 tests OK.
+- `npm --prefix web-react test -- --run src/components/panels/MedicalPanel.test.tsx` -> 28 tests OK.
+- `git diff --check` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: Final Validation Review Closed Loop Implemented
+
+- 最终验证结果已能从脚本写入 SQLite，并通过医生工作台进行人工复核。
+- Review API 会持久化医生结论和备注，并写审计日志，后续可用于 review/误差分析/模型再训练样本筛选。
+- 当前工作区仍包含本轮及前序开发的未提交变更；`tmp-phase1.txt`、`示例/`、`示例.zip` 仍是未跟踪文件，未处理。
+
+### Background Tasks
+
+- 本轮没有留下 dev server、model-worker、训练任务、GPU 推理任务或浏览器自动化进程。
+
+### Next Session Priorities
+
+1. 做最终验证 Review 面板的真实浏览器 smoke，确认 artifact 图片、overlay 和 JSON 链接在 Mac UI 能正常打开。
+2. 增加最终验证结果导出/筛选能力，方便按 `accepted / rejected / needs_review` 形成再训练清单。
+3. 继续稳固真实 GPU E2E：静态图批量验证、视频 E2E、MedSAM2/SAM2 分割质量复核。
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+git status --short --branch
+npm run typecheck
+npm test -- --run test/unit/channels/web/server.test.ts test/unit/medical/caseRepo.test.ts
+npm --prefix web-react test -- --run src/components/panels/MedicalPanel.test.tsx
+git diff --check
+```
+
+## 2026-05-13 03:10 CST - Doctor Workstation Chinese UI Pass
+
+- 将医生工作台主界面中文化，覆盖左侧统计、病例队列、模型/智能体任务、模型网关、手工登记、知识证据、最终验证复核、病例详情、overlay 修订、模型依据、结节结果、报告编辑/审核、审计与修订依据面板。
+- 增加统一中文映射函数，集中处理状态、来源、任务类型、模型任务类型、知识检索模式、审核动作、审计动作和存储禁用提示，减少界面直接暴露 `pending / unknown / draft / bbox / medical.nodule.revise` 等英文内部字段。
+- 同步更新 `MedicalPanel.test.tsx` 中医生工作台相关断言，保持 UI 文案变更后回归测试仍覆盖主要工作流。
+
+### Validation
+
+- `npm --prefix web-react run typecheck` -> OK.
+- `npm --prefix web-react test -- --run src/components/panels/MedicalPanel.test.tsx` -> 28 tests OK.
+- `git diff --check -- web-react/src/components/panels/MedicalPanel.tsx web-react/src/components/panels/MedicalPanel.test.tsx` -> OK.
+
+## 📌 SESSION HANDOFF STATUS
+
+### Current Work: Doctor Workstation Chinese UI Pass Completed
+
+- 当前完成范围是医生工作台/医疗面板主链路的中文化；模型名称、artifact URI、医学缩写、DICOM/JSON/AI/TI-RADS 等必要技术名词保留。
+- 本轮没有处理全站非医疗页面，也没有启动真实 GPU 推理或 dev server。
+- 当前工作区仍包含前序开发遗留的未提交变更和未跟踪示例文件，未在本轮清理。
+
+### Background Tasks
+
+- 无后台进程需要接管。
+
+### Next Session Priorities
+
+1. 做一次浏览器 smoke，确认医生工作台中文文案在真实布局中不溢出，尤其是最终验证复核、报告编辑器和 overlay 修订区。
+2. 继续排查其他医疗相关页面或弹窗是否还暴露英文内部状态。
+3. 如要上线演示，再跑 `npm run build:web` 做完整前端构建验证。
+
+### Resume Checklist
+
+```bash
+cd /Users/xutianliang/Downloads/jiazhuangxian
+git status --short --branch
+npm --prefix web-react run typecheck
+npm --prefix web-react test -- --run src/components/panels/MedicalPanel.test.tsx
+git diff --check
+```
+
+## 2026-05-13 03:18 CST - Full Build Validation
+
+- 按用户要求执行完整编译：`npm run build`。
+- 构建结果成功：
+  - `web-react` 通过 `vite build` 生成生产包；
+  - 根目录 build 脚本生成 `dist/cli.js`，复制 migrations，并输出 `dist/public/` 与 `dist/public-react/`。
+- Vite 输出大 chunk 体积 warning，属于构建体积提示，不影响本次编译通过。
+
+### Validation
+
+- `npm run build` -> OK.
+
+## 2026-05-13 03:55 CST - Video SAM2 Smoke Before Training
+
+- 按“训练视频”方向先完成视频训练前置验证：
+  - 将本地两个 DICOM 视频 `Q4DDKKO8 / Q4DDKKOA` 同步到 5090：
+    `/home/beelink/jiazhuangxian/data/artifacts/datasets/final-validation-local-thyroid-case-001/dicom/video/`
+  - 在 5090 `.venv-model-gateway-gpu` 安装 `pydicom==3.0.2`，用于 DICOM 多帧视频拆帧。
+  - 确认 5090 SAM2 video adapter 可用：`ready_video_segmenters = ['sam2-video']`，GPU 为 RTX 5090 32GB。
+  - 新增 `scripts/medical-video-sam2-smoke.py`，可将 DICOM 视频拆成帧目录，并调用 model-gateway 的 `thyroid.segment_video_nodule` / `thyroid.measure_video_nodule` 真实 SAM2 视频分割和测量链路。
+- 修复 `services/model-gateway/app/segmentation.py` 的 SAM2 视频传播方向：
+  - 原实现只从 prompt frame 向后传播；
+  - 现改为向后 + 向前双向传播，并按 `frame_index` 排序，避免中帧 prompt 导致前半段视频缺失分割。
+- 在 5090 上完成真实 SAM2 视频 smoke：
+  - `Q4DDKKO8`：114 帧，prompt frame 57，分割 94 帧，测量产物生成；因缺 PixelSpacing，仅输出像素测量，毫米为空。
+  - `Q4DDKKOA`：102 帧，prompt frame 51，分割 53 帧，测量产物生成；因缺 PixelSpacing，仅输出像素测量，毫米为空。
+  - 汇总文件：`data/artifacts/reports/video-sam2-smoke-case001-bidirectional/summary.json`。
+- 新增 `scripts/medical-video-smoke-import.ts` 和 `npm run medical:video-smoke:import`，用于把 5090 生成的视频 smoke `summary.json` 写入本地 `final_validation_run / final_validation_image_result`，后续可在医生工作台最终验证复核面板 review。
+- 已将本次 2 条视频结果写入 `data/artifacts/live-demo-002/data.db`：
+  - run_id：`01KRFCEPBS9FVNQEMR8WWCEZ2B`
+  - result_id：`01KRFCEPBV0AGBQSWYP588QNMZ`、`01KRFCEPBV7D7ND6EHS79KTR52`
+- 结论：
+  - 当前具备“视频推理验证”能力；
+  - 还不具备监督训练视频权重的条件，因为只有 2 条视频样本，且没有逐帧或关键帧 mask 真值标注。
+  - 下一步训练视频权重前，必须让医生提供关键帧/逐帧标注，至少包括 prompt frame bbox/mask、结节轨迹确认和像素标定。
+
+### Validation
+
+- Remote 5090 SAM2 smoke -> OK.
+- `python3 -m py_compile scripts/medical-video-sam2-smoke.py` -> OK.
+- `python3 -m py_compile services/model-gateway/app/segmentation.py` -> OK.
+- `python3 -m unittest services/model-gateway/tests/test_gateway.py` -> 31 tests OK.
+- `npm run medical:video-smoke:import -- --data-db data/artifacts/live-demo-002/data.db --summary-json data/artifacts/reports/video-sam2-smoke-case001-bidirectional/summary.json --artifact-root data/artifacts --remote-model-gateway-url http://100.110.127.117:8766` -> OK.
+- `git diff --check -- services/model-gateway/app/segmentation.py scripts/medical-video-sam2-smoke.py data/artifacts/reports/video-sam2-smoke-case001-bidirectional/summary.json` -> OK.
+
+## 2026-05-13 09:06 CST - Standalone Dataset Builder Tool
+
+- 按用户要求将“硬盘资料整理工具”设计为独立工具，不依赖 CodeClaw、数据库、前端或模型服务。
+- 新增 `dataset-tool/thyroid_dataset_builder.py`：
+  - 递归扫描 JPG/JPEG/PNG、LabelMe JSON、DOCX/PDF/TXT/MD/RTF/HTML 报告、普通视频和 DICOM 文件；
+  - 支持 `--case-mode auto|first-folder|parent-folder|flat` 与 `--case-regex` 病例分组；
+  - 支持 `--copy-mode symlink|copy|hardlink|manifest-only`；
+  - 自动从 LabelMe polygon/rectangle 生成 bbox，并输出 `metadata/detection_manifest.jsonl`；
+  - 当 LabelMe JSON 含 `imageData` 且源图缺失时，可抽取嵌入图像；
+  - 将 `_marked/勾画/overlay` 图标记为 `review_overlay`，只用于医生复核，不作为模型训练输入；
+  - 如安装 `pydicom`，可读取 DICOM 元数据；未安装时仍生成基础 manifest，并在 warnings 中标记。
+- 新增 `dataset-tool/README.md` 和 `dataset-tool/requirements-optional.txt`。
+- 新增单元测试 `dataset-tool/tests/test_thyroid_dataset_builder.py`。
+- 用当前 `示例/` 目录完成 smoke：
+  - 输出目录：`data/artifacts/datasets/standalone-tool-demo`
+  - 识别 2 个 LabelMe 标注、7 个 DICOM、8 张图、1 个 DOCX 报告；
+  - 生成 2 条 detection manifest 训练/验证清单；
+  - 本机未安装 `pydicom`，DICOM 暂标记为 metadata unavailable。
+
+### Validation
+
+- `python3 -m py_compile dataset-tool/thyroid_dataset_builder.py dataset-tool/tests/test_thyroid_dataset_builder.py` -> OK.
+- `python3 -m unittest discover -s dataset-tool/tests` -> 2 tests OK.
+- `python3 dataset-tool/thyroid_dataset_builder.py --source-root 示例 --output-dir data/artifacts/datasets/standalone-tool-demo --dataset-id standalone-tool-demo --case-mode flat --copy-mode symlink --overwrite` -> OK.
+
+## 2026-05-13 09:32 CST - Dataset Tool De-identification
+
+- 按用户要求在独立数据集工具中加入默认基础脱敏，源文件保持只读不修改。
+- `dataset-tool/thyroid_dataset_builder.py` 新增：
+  - `--deidentify basic|off`，默认 `basic`；
+  - `--redact-region x1,y1,x2,y2`，支持自定义图片/视频遮盖区域，默认遮盖顶部 16% 和底部 12%；
+  - `--sensitive-term` 与 `--sensitive-terms-file`，用于精确替换姓名、身份证号等敏感词；
+  - JPG/PNG 使用 Pillow 遮盖区域并保存为脱敏副本；
+  - 普通视频使用 ffmpeg 遮盖区域、移除音频和 metadata；
+  - TXT/MD/HTML/RTF/JSON 报告做正则脱敏；
+  - DOCX 处理 `word/` 和 `docProps/` XML 文本；
+  - LabelMe JSON 输出时移除 `imageData`，避免 JSON 中携带原始像素；
+  - DICOM 若安装 pydicom 则替换常见患者 tag；像素烧录文字仍标记需进一步处理；
+  - 脱敏失败时不再把未脱敏原件复制进数据集目录，只在 manifest/warnings 中记录。
+- Manifest 新增 `target_bytes`、`target_sha256`、`deidentified`、`deidentification_status` 字段。
+- 更新 `dataset-tool/README.md` 和 `requirements-optional.txt`。
+- 用 `示例/` smoke 后，11 个文件成功生成脱敏副本，7 个 DICOM 因本机无 pydicom 标记 `failed_not_materialized`，未复制原始 DICOM 到输出数据集。
+
+### Validation
+
+- `python3 -m py_compile dataset-tool/thyroid_dataset_builder.py dataset-tool/tests/test_thyroid_dataset_builder.py` -> OK.
+- `python3 -m unittest discover -s dataset-tool/tests` -> 2 tests OK.
+- `python3 dataset-tool/thyroid_dataset_builder.py --source-root 示例 --output-dir data/artifacts/datasets/standalone-tool-demo --dataset-id standalone-tool-demo --case-mode flat --copy-mode symlink --overwrite --sensitive-term 张三` -> OK.
+- `git diff --check -- dataset-tool/thyroid_dataset_builder.py dataset-tool/README.md dataset-tool/requirements-optional.txt dataset-tool/tests/test_thyroid_dataset_builder.py PROGRESS_LOG.md` -> OK.
+
+## 2026-05-13 09:58 CST - Dataset Tool Source-Safe Case Linkage
+
+- 按用户澄清，明确数据集工具边界：医院硬盘原始文件只读，不移动、不覆盖、不改名；脱敏后的副本、训练 manifest、病例 manifest 写入新的 `--output-dir` 数据集目录。
+- `dataset-tool/thyroid_dataset_builder.py` 新增病例关联能力：
+  - `--linkage-mode auto|path|identity`；
+  - `--linkage-salt`、`--linkage-salt-file`，也可读取 `THYROID_DATASET_LINKAGE_SALT`；
+  - `--include-source-paths`，默认关闭，避免把含姓名/病历号的原始路径写入输出数据集。
+- 关联逻辑：
+  - 从报告文本、DOCX、DICOM tag、路径日期中提取姓名、病历号、检查号、检查日期、StudyInstanceUID 等字段；
+  - 原始身份字段只在内存里用于关联；
+  - 从报告/DICOM 提取到的姓名、病历号、检查号等字段会自动作为当前文件的脱敏词，补充手工 `--sensitive-term`；
+  - 输出仅写不可逆哈希后的 `patient_key`、`study_key`、`case_id`、`linkage_confidence`、`linkage_evidence`；
+  - 缺身份字段时退回目录分组，并写入 warning。
+- 新增医学标签清单：
+  - `metadata/clinical_labels.jsonl`；
+  - `metadata/report_pair_manifest.jsonl`；
+  - `metadata/tirads_manifest.jsonl`；
+  - `metadata/classification_manifest.jsonl`。
+- 收紧脱敏模式：
+  - 默认脱敏模式下，不支持安全脱敏的未知格式不再复制或软链进输出数据集；
+  - 如果 `--output-dir` 位于 `--source-root` 内部，扫描阶段会跳过输出目录，避免把派生数据再次扫入源数据。
+
+### Validation
+
+- `python3 -m py_compile dataset-tool/thyroid_dataset_builder.py dataset-tool/tests/test_thyroid_dataset_builder.py` -> OK.
+- `python3 -m unittest discover -s dataset-tool/tests` -> 3 tests OK.
+- `python3 dataset-tool/thyroid_dataset_builder.py --source-root 示例 --output-dir data/artifacts/datasets/standalone-tool-demo --dataset-id standalone-tool-demo --case-mode flat --copy-mode symlink --overwrite --linkage-salt demo-secret` -> OK.
+- `rg -n "示例|原始|脱敏|勾画|Q4DD|Q5CJ|张三|姓名" data/artifacts/datasets/standalone-tool-demo/metadata data/artifacts/datasets/standalone-tool-demo/cases || true` -> no hits.
+- `git diff --check -- dataset-tool/thyroid_dataset_builder.py dataset-tool/README.md dataset-tool/requirements-optional.txt dataset-tool/tests/test_thyroid_dataset_builder.py PROGRESS_LOG.md` -> OK.
+
+## 2026-05-13 10:34 CST - Dataset Tool GUI and Windows EXE Packaging
+
+- 按用户“没有电脑知识、希望可执行文件自动执行”的要求，新增独立图形界面入口 `dataset-tool/thyroid_dataset_gui.py`：
+  - 双击/运行后选择“原始资料文件夹”和“脱敏数据集保存目录”；
+  - 默认启用基础脱敏和病例身份关联；
+  - 自动在用户配置目录生成 linkage salt，不要求用户手工管理；
+  - 默认 `copy_mode=copy`，避免 Windows 软链接权限问题；
+  - 运行完成后可一键打开保存目录；
+  - 关闭脱敏时会弹窗二次确认。
+- 新增 Windows 打包脚本：
+  - `dataset-tool/build_windows_exe.ps1`；
+  - `dataset-tool/build_windows_exe.bat`；
+  - 生成目标为 `dataset-tool/dist/ThyroidDatasetTool.exe`。
+- 新增自动运行配置样例 `dataset-tool/dataset_tool_auto_run.example.json`：
+  - 复制为 `dataset_tool_auto_run.json` 并放在 EXE 同目录后，可预设源目录、输出目录、数据集名称；
+  - `auto_start=true` 时双击 EXE 后自动开始整理。
+- 新增 `dataset-tool/README_EXECUTABLE.md`，用非技术人员能照着操作的方式说明 EXE 使用、打包和自动启动配置。
+
+### Validation
+
+- `python3 -m py_compile dataset-tool/thyroid_dataset_builder.py dataset-tool/thyroid_dataset_gui.py dataset-tool/tests/test_thyroid_dataset_builder.py` -> OK.
+- `python3 -m unittest discover -s dataset-tool/tests` -> 3 tests OK.
+- `git diff --check -- dataset-tool PROGRESS_LOG.md` -> OK.
+
+## 2026-05-13 11:46 CST - Windows Dataset Tool ZIP Package
+
+- 按用户要求生成 Windows 使用压缩包：
+  - `data/artifacts/releases/thyroid-dataset-tool-windows.zip`
+  - 解压后的目录名：`thyroid-dataset-tool-windows/`
+- 压缩包包含：
+  - `run_gui_windows.bat`：Windows 双击运行图形界面，自动创建本地 Python 环境并安装依赖；
+  - `build_windows_exe.bat` / `build_windows_exe.ps1`：在 Windows 上生成 `dist/ThyroidDatasetTool.exe`；
+  - `thyroid_dataset_gui.py`、`thyroid_dataset_builder.py`；
+  - `requirements-optional.txt`；
+  - `dataset_tool_auto_run.example.json`；
+  - `README.md`、`README_EXECUTABLE.md`、`WINDOWS_QUICK_START.txt`。
+- 为避免 Windows/终端文件名乱码，压缩包内快速说明文件使用英文文件名 `WINDOWS_QUICK_START.txt`。
+
+### Validation
+
+- `python3 -m py_compile dataset-tool/thyroid_dataset_builder.py dataset-tool/thyroid_dataset_gui.py` -> OK.
+- `git diff --check -- dataset-tool PROGRESS_LOG.md` -> OK.
+- `unzip -l data/artifacts/releases/thyroid-dataset-tool-windows.zip` -> OK, 10 files.
+
+## 2026-05-13 12:56 CST - Windows Packaging Dependency Fix
+
+- 用户在 Windows 截图反馈 `build_windows_exe.bat` 失败：
+  - 当前 Windows Python 是 3.9；
+  - 原 `requirements-optional.txt` 使用 `pydicom>=3.0.0`，该版本不支持 Python 3.9；
+  - pip 安装中断后 PyInstaller 未安装，因此后续报 `No module named PyInstaller`。
+- 修复：
+  - `requirements-optional.txt` 改为按 Python 版本选择：
+    - Python < 3.10 使用 `pydicom>=2.4.4,<3.0.0`；
+    - Python >= 3.10 使用 `pydicom>=3.0.0`。
+  - Windows 脚本和说明从“Python 3.11+”改为“Python 3.9+”。
+  - `build_windows_exe.ps1` 增加 Python 版本输出，方便远程排错。
+  - 重新生成 `data/artifacts/releases/thyroid-dataset-tool-windows.zip`。
+
+### Validation
+
+- `python3 -m py_compile dataset-tool/thyroid_dataset_builder.py dataset-tool/thyroid_dataset_gui.py dataset-tool/tests/test_thyroid_dataset_builder.py` -> OK.
+- `python3 -m unittest discover -s dataset-tool/tests` -> 3 tests OK.
+- `git diff --check -- dataset-tool PROGRESS_LOG.md` -> OK.
+- `unzip -l data/artifacts/releases/thyroid-dataset-tool-windows.zip` -> OK, 10 files.
+
+## 2026-05-13 22:02 CST - Compile and Real Static GPU Smoke
+
+- 编译主项目成功：
+  - `npm run build` -> OK；
+  - Vite 仅提示前端 chunk 偏大，未阻断构建。
+- 确认 5090 model-gateway 可用：
+  - `GET /health` -> ready；
+  - `GET /model/v1/config/check` -> RF-DETR、YOLOv11、RT-DETR 检测 ready；SAM2 static、nnU-Net tight ROI 分割 ready；SAM2 video ready。
+- 新建真实测试库：
+  - `data/artifacts/compile-realtest-20260513-215539/data.db`；
+  - `data/artifacts/compile-realtest-20260513-215539/rag.db`；
+  - migration version: 9，样例知识库 ingest OK。
+- 使用 FangDai 最终验证集跑 1 张静态图真实链路：
+  - dataset root: `data/artifacts/datasets/fangdai-thyroid-ultrasound-images`；
+  - RF-DETR 检测、nnU-Net tight ROI 分割、mask measurement 测量均 succeeded；
+  - DB 落库：study 1、image 1、nodule 1、measurement 1、model_job 3、agent_task 4；
+  - report 未生成，原因是本次为 image model smoke，不包含医生 TI-RADS 确认和 LLM 报告阶段。
+- 远程 artifact 下载校验通过：
+  - `overlay.png` HTTP 200，已保存为 `data/artifacts/reports/fangdai-thyroid-ultrasound-images/static-e2e-2026-05-13-135650/overlay-check.png`；
+  - `segmentation.json` HTTP 200，已保存为 `data/artifacts/reports/fangdai-thyroid-ultrasound-images/static-e2e-2026-05-13-135650/segmentation-check.json`。
+
+### Validation
+
+- `npm run build` -> OK.
+- `npm run medical:init-db -- --data-db data/artifacts/compile-realtest-20260513-215539/data.db --rag-db data/artifacts/compile-realtest-20260513-215539/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --ingest-sample-knowledge` -> OK.
+- `JZX_MEDICAL_REAL_INFERENCE=1 npm run medical:final-validation:static -- --data-db data/artifacts/compile-realtest-20260513-215539/data.db --rag-db data/artifacts/compile-realtest-20260513-215539/rag.db --workspace /Users/xutianliang/Downloads/jiazhuangxian --dataset-root data/artifacts/datasets/fangdai-thyroid-ultrasound-images --artifact-root data/artifacts --remote-model-gateway-url http://100.110.127.117:8766 --max-images 1 --max-steps 80` -> OK.
+
+## 2026-05-13 22:28 CST - Main LLM Switch to qwen/qwen3.5-9b
+
+- 按用户要求，将验证版主报告大模型默认从 Qwen3.6 系列切到 `qwen/qwen3.5-9b`：
+  - Web 自动运行默认 provider：`lmstudio:qwen35-9b`；
+  - 自动演示 Runner 默认 provider：`lmstudio:qwen35-9b`；
+  - 默认模型检查目标：`qwen/qwen3.5-9b`；
+  - 医生工作台真实演示提示同步改为要求加载 `qwen/qwen3.5-9b`。
+- 本机 CodeClaw provider 配置已更新：
+  - `lmstudio:default` 指向 `http://100.110.127.117:1234/v1` + `qwen/qwen3.5-9b`；
+  - 新增 `lmstudio:qwen35-9b`，用于医疗演示默认 provider。
+- 文档同步：
+  - `docs/TECHNICAL_DESIGN.md`；
+  - `docs/MEDICAL_MCP_SETUP.md`；
+  - `docs/LLM_PROVIDER_SETUP_5090.md`；
+  - `docs/UI_SMOKE_5090_REMOTE_ARTIFACT_20260511.md`；
+  - `docs/MODEL_ARTIFACT_CONVENTIONS.md`。
+- 5090 LM Studio 当前状态：
+  - `/api/v0/models` 可见 `qwen/qwen3.5-9b`；
+  - `state=loaded`；
+  - 小 token 预算下该模型会把较多内容写入 `reasoning_content`，正式 JSON 可能被挤掉；provider 配置保持 `maxTokens=10000`，真实报告链路需继续保留较大输出预算。
+
+### Validation
+
+- `npm run typecheck` -> OK.
+- `npm run test -- test/unit/medical/agentWorker.test.ts test/unit/channels/web/server.test.ts` -> OK, 71 tests.
+- `cd web-react && npm run typecheck` -> OK.
+- `cd web-react && npm run test -- src/components/panels/MedicalPanel.test.tsx` -> OK, 28 tests.
+- `npm run build` -> OK.
+- `curl http://100.110.127.117:1234/api/v0/models` -> `qwen/qwen3.5-9b` loaded.
+- `curl http://100.110.127.117:1234/v1/chat/completions` with `model=qwen/qwen3.5-9b`, `max_tokens=1000` -> returned final JSON content.

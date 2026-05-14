@@ -683,6 +683,62 @@ describe("Web server · medical API", () => {
         noduleCount: 1,
         latestAnalysisStatus: "running",
         latestReportStatus: "draft",
+        queueStage: "pending_report_review",
+        queueReason: "等待医生审核报告草稿",
+      });
+    } finally {
+      await medicalHandle?.close();
+      closeDataDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("GET /v1/web/medical/summary marks waiting TI-RADS confirmation in queue stage", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-queue-stage-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const db = new Database(dbPath);
+      try {
+        const now = Date.now();
+        db.exec(`
+          INSERT INTO patient(id, external_patient_id, deidentified, meta_json, created_at, updated_at)
+          VALUES ('P1', 'EXT-P1', 1, '{}', ${now}, ${now});
+          INSERT INTO study(id, patient_id, modality, body_part, status, source_type, created_at, updated_at)
+          VALUES ('S1', 'P1', 'US', 'thyroid', 'created', 'manual', ${now}, ${now});
+          INSERT INTO image(id, study_id, file_uri, file_type, dicom_metadata, processing_status, created_at, updated_at)
+          VALUES ('IMG1', 'S1', 'artifact://raw/S1/IMG1.png', 'png', '{}', 'uploaded', ${now}, ${now});
+          INSERT INTO nodule(id, study_id, image_id, nodule_index, source, created_at, updated_at)
+          VALUES ('N1', 'S1', 'IMG1', 1, 'ai', ${now}, ${now});
+          INSERT INTO analysis_session(id, study_id, status, trigger_source, summary_json, created_at, updated_at)
+          VALUES ('AS1', 'S1', 'queued', 'manual', '{}', ${now}, ${now});
+          INSERT INTO agent_task(id, analysis_session_id, agent_name, task_type, status, input_json, created_at, updated_at)
+          VALUES ('AT1', 'AS1', 'TiradsRuleAgent', 'calculate_tirads', 'queued', '{}', ${now}, ${now});
+        `);
+      } finally {
+        db.close();
+      }
+
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const response = await fetch(`${medicalBaseUrl}/v1/web/medical/summary`, { headers: authHeaders() });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        recentStudies: Array<Record<string, unknown>>;
+      };
+      expect(body.recentStudies[0]).toMatchObject({
+        queueStage: "waiting_tirads_confirmation",
+        queueReason: "等待医生确认 TI-RADS 结构化特征",
       });
     } finally {
       await medicalHandle?.close();
@@ -899,6 +955,141 @@ describe("Web server · medical API", () => {
       }
       await medicalHandle?.close();
       await new Promise<void>((resolve, reject) => remoteGateway.close((err) => err ? reject(err) : resolve()));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("GET/POST medical final validation review persists doctor decisions", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "codeclaw-web-medical-final-review-"));
+    const dbPath = path.join(dir, "data.db");
+    let medicalHandle: WebServerHandle | null = null;
+    let localDb: Database.Database | null = null;
+    try {
+      medicalHandle = await startWebServer({
+        port: 0,
+        auth: { bearerToken: TOKEN },
+        engineDefaults: {
+          currentProvider: null,
+          fallbackProvider: null,
+          permissionMode: "plan",
+          workspace: process.cwd(),
+          dataDbPath: dbPath,
+        },
+      });
+      const medicalBaseUrl = `http://${medicalHandle.host}:${medicalHandle.port}`;
+      const now = Date.now();
+      localDb = new Database(dbPath);
+      const repo = new MedicalCaseRepo(localDb);
+      const run = repo.createFinalValidationRun({
+        datasetId: "fangdai-thyroid-ultrasound-images",
+        datasetRoot: "data/artifacts/datasets/fangdai-thyroid-ultrasound-images",
+        caseId: "PTC",
+        pipelineMode: "static_e2e",
+        status: "completed",
+        reportMarkdownUri: "artifact://reports/fangdai/SUMMARY.md",
+        summary: { total: 1, succeeded: 1 },
+        createdBy: "vitest",
+        now,
+      });
+      const result = repo.upsertFinalValidationImageResult({
+        runId: run.id,
+        datasetImageId: "PTC/PTC_001.png",
+        datasetLabel: "PTC",
+        sourceRelativePath: "PTC/PTC_001.png",
+        artifactUri: "artifact://model-ready/final-validation/PTC/PTC_001.png",
+        detection: { confidence: 0.91, bbox: [12, 16, 48, 54] },
+        measurement: { measurementSource: "mask", longAxisMm: 8.2 },
+        modelArtifacts: [
+          {
+            jobType: "thyroid.detect_nodules",
+            artifactUri: "artifact://model-output/fangdai/PTC_001/detections.json",
+            nestedArtifacts: {
+              overlay_image: "artifact://model-output/fangdai/PTC_001/overlay.png",
+            },
+          },
+        ],
+        status: "succeeded",
+        now: now + 1,
+      });
+      localDb.close();
+      localDb = null;
+
+      const runsResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/final-validation/runs`, {
+        headers: authHeaders(),
+      });
+      expect(runsResponse.status).toBe(200);
+      const runsBody = (await runsResponse.json()) as {
+        runs: Array<{ id: string; datasetId: string; status: string }>;
+        reviewQueues: Record<string, number>;
+      };
+      expect(runsBody.runs[0]).toMatchObject({
+        id: run.id,
+        datasetId: "fangdai-thyroid-ultrasound-images",
+        status: "completed",
+      });
+      expect(runsBody.reviewQueues.unreviewed).toBe(1);
+
+      const resultsResponse = await fetch(
+        `${medicalBaseUrl}/v1/web/medical/final-validation/runs/${encodeURIComponent(run.id)}/results?reviewStatus=unreviewed`,
+        { headers: authHeaders() }
+      );
+      expect(resultsResponse.status).toBe(200);
+      const resultsBody = (await resultsResponse.json()) as {
+        results: Array<{ id: string; reviewStatus: string; detection: Record<string, unknown>; modelArtifacts: unknown[] }>;
+        reviewCounts: Record<string, number>;
+        statusCounts: Record<string, number>;
+      };
+      expect(resultsBody.results).toHaveLength(1);
+      expect(resultsBody.results[0]).toMatchObject({
+        id: result.id,
+        reviewStatus: "unreviewed",
+        detection: { confidence: 0.91, bbox: [12, 16, 48, 54] },
+      });
+      expect(resultsBody.reviewCounts.unreviewed).toBe(1);
+      expect(resultsBody.statusCounts.succeeded).toBe(1);
+
+      const reviewResponse = await fetch(
+        `${medicalBaseUrl}/v1/web/medical/final-validation/results/${encodeURIComponent(result.id)}/review`,
+        {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ reviewStatus: "accepted", comment: "医生确认可进入验证集" }),
+        }
+      );
+      expect(reviewResponse.status).toBe(200);
+      const reviewBody = (await reviewResponse.json()) as {
+        result: { id: string; reviewStatus: string; reviewComment: string; reviewedBy: string };
+        auditLog: { action: string; actorType: string; targetId: string; detail: Record<string, unknown> };
+      };
+      expect(reviewBody.result).toMatchObject({
+        id: result.id,
+        reviewStatus: "accepted",
+        reviewComment: "医生确认可进入验证集",
+        reviewedBy: "web-test-tok",
+      });
+      expect(reviewBody.auditLog).toMatchObject({
+        action: "medical.final_validation.review",
+        actorType: "doctor",
+        targetId: result.id,
+        detail: {
+          run_id: run.id,
+          dataset_image_id: "PTC/PTC_001.png",
+          review_status: "accepted",
+        },
+      });
+
+      const acceptedResponse = await fetch(
+        `${medicalBaseUrl}/v1/web/medical/final-validation/runs/${encodeURIComponent(run.id)}/results?reviewStatus=accepted`,
+        { headers: authHeaders() }
+      );
+      const acceptedBody = (await acceptedResponse.json()) as { results: Array<{ id: string; reviewStatus: string }> };
+      expect(acceptedBody.results.map((item) => ({ id: item.id, reviewStatus: item.reviewStatus }))).toEqual([
+        { id: result.id, reviewStatus: "accepted" },
+      ]);
+    } finally {
+      localDb?.close();
+      await medicalHandle?.close();
+      closeDataDb();
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -1188,19 +1379,32 @@ describe("Web server · medical API", () => {
       const reviewResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/reports/R-WEB-REVIEW/review`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ action: "approve", finalText: "doctor final report", comment: "ok" }),
+        body: JSON.stringify({
+          action: "approve",
+          finalText: "doctor final report",
+          comment: "ok",
+          structured: {
+            sections: [
+              { id: "summary", title: "总结", text: "doctor final report", includeTitle: true },
+            ],
+          },
+        }),
       });
       expect(reviewResponse.status).toBe(200);
       const reviewBody = (await reviewResponse.json()) as {
-        report: { status: string; finalText: string; confirmedBy: string };
+        report: { status: string; draftText: string; finalText: string; confirmedBy: string; structured: Record<string, unknown> };
         doctorReview: { action: string; reviewerName: string; comment: string };
-        auditLog: { action: string; actorType: string; targetId: string };
+        auditLog: { action: string; actorType: string; targetId: string; detail: Record<string, unknown> };
         bundle: { reports: Array<{ status: string }>; doctorReviews: Array<{ action: string }> };
       };
       expect(reviewBody.report).toMatchObject({
         status: "confirmed",
+        draftText: "doctor final report",
         finalText: "doctor final report",
         confirmedBy: "web-test-tok",
+        structured: {
+          sections: [{ id: "summary", title: "总结", text: "doctor final report", includeTitle: true }],
+        },
       });
       expect(reviewBody.doctorReview).toMatchObject({
         action: "approve",
@@ -1211,6 +1415,9 @@ describe("Web server · medical API", () => {
         action: "medical.report.approve",
         actorType: "doctor",
         targetId: "R-WEB-REVIEW",
+        detail: {
+          structured_section_count: 1,
+        },
       });
       expect(reviewBody.bundle.reports[0].status).toBe("confirmed");
       expect(reviewBody.bundle.doctorReviews[0].action).toBe("approve");
@@ -1243,6 +1450,18 @@ describe("Web server · medical API", () => {
       });
       expect(archiveBody.bundle.reports[0].status).toBe("archived");
       expect(archiveBody.bundle.doctorReviews.map((review) => review.action)).toEqual(["approve", "archive"]);
+
+      const reviseArchivedResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/reports/R-WEB-REVIEW/review`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ action: "revise", finalText: "should be rejected" }),
+      });
+      expect(reviseArchivedResponse.status).toBe(400);
+      const reviseArchivedBody = (await reviseArchivedResponse.json()) as { error: { code: string; message: string } };
+      expect(reviseArchivedBody.error).toMatchObject({
+        code: "invalid-request",
+        message: "only draft or pending_review reports can be reviewed",
+      });
     } finally {
       localDb?.close();
       await medicalHandle?.close();
@@ -1406,6 +1625,43 @@ describe("Web server · medical API", () => {
       });
       expect(featureBody.bundle.tiradsFeatures).toHaveLength(1);
       expect(featureBody.bundle.tiradsResults).toHaveLength(0);
+
+      const duplicateFeatureResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/nodules/N-WEB-TIRADS/tirads-features`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          features: {
+            composition: "solid",
+            echogenicity: "hypoechoic",
+            shape: "wider_than_tall",
+            margin: "smooth",
+            echogenic_foci: ["none"],
+          },
+          comment: "same structured TI-RADS input",
+        }),
+      });
+      expect(duplicateFeatureResponse.status).toBe(200);
+      const duplicateFeatureBody = (await duplicateFeatureResponse.json()) as {
+        tiradsFeature: { id: string };
+        analysisSession: null;
+        agentTasks: unknown[];
+        auditLog: { action: string; detail: Record<string, unknown> };
+        dedupe: { skipped: boolean; reason: string };
+        bundle: {
+          tiradsFeatures: Array<{ id: string }>;
+          agentTasks: Array<{ taskType: string }>;
+        };
+      };
+      expect(duplicateFeatureBody.tiradsFeature.id).toBe(featureBody.tiradsFeature.id);
+      expect(duplicateFeatureBody.analysisSession).toBeNull();
+      expect(duplicateFeatureBody.agentTasks).toEqual([]);
+      expect(duplicateFeatureBody.auditLog).toMatchObject({
+        action: "medical.tirads_feature.noop",
+        detail: { reason: "unchanged_tirads_features", tirads_feature_id: featureBody.tiradsFeature.id },
+      });
+      expect(duplicateFeatureBody.dedupe).toEqual({ skipped: true, reason: "unchanged_tirads_features" });
+      expect(duplicateFeatureBody.bundle.tiradsFeatures).toHaveLength(1);
+      expect(duplicateFeatureBody.bundle.agentTasks).toHaveLength(3);
 
       localDb = new Database(dbPath);
       const repo = new MedicalCaseRepo(localDb);
@@ -1628,6 +1884,32 @@ describe("Web server · medical API", () => {
         "draft_report",
       ]);
 
+      const noopReviseResponse = await fetch(`${medicalBaseUrl}/v1/web/medical/nodules/N-WEB-REVISE/revise`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ bbox: [12, 22, 32, 42], comment: "same bbox again" }),
+      });
+      expect(noopReviseResponse.status).toBe(200);
+      const noopReviseBody = (await noopReviseResponse.json()) as {
+        analysisSession: null;
+        agentTasks: unknown[];
+        auditLog: { action: string; detail: Record<string, unknown> };
+        dedupe: { skipped: boolean; reason: string };
+        bundle: {
+          analysisSessions: unknown[];
+          agentTasks: Array<{ taskType: string }>;
+        };
+      };
+      expect(noopReviseBody.analysisSession).toBeNull();
+      expect(noopReviseBody.agentTasks).toEqual([]);
+      expect(noopReviseBody.auditLog).toMatchObject({
+        action: "medical.nodule.revise.noop",
+        detail: { reason: "unchanged_bbox_location" },
+      });
+      expect(noopReviseBody.dedupe).toEqual({ skipped: true, reason: "unchanged_bbox_location" });
+      expect(noopReviseBody.bundle.analysisSessions).toHaveLength(1);
+      expect(noopReviseBody.bundle.agentTasks).toHaveLength(3);
+
       localDb = new Database(dbPath);
       const repo = new MedicalCaseRepo(localDb);
       repo.createTiradsResult({
@@ -1792,7 +2074,8 @@ describe("Web server · medical API", () => {
           auditLogs: Array<{ action: string; detail: { revision_evidence?: Record<string, unknown> } }>;
         };
       };
-      expect(finalStudyBody.bundle.auditLogs[0].detail.revision_evidence).toMatchObject({
+      const finalRevisionAudit = finalStudyBody.bundle.auditLogs.find((audit) => audit.action === "medical.nodule.revise");
+      expect(finalRevisionAudit?.detail.revision_evidence).toMatchObject({
         source: "server_revision_task_chain",
         status: "refreshed",
         analysis_session_id: reviseBody.analysisSession.id,

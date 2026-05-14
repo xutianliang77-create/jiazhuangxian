@@ -416,6 +416,14 @@ N1 TI-RADS 分级
 - 缺少证据的建议不允许提交签署。
 - 已归档报告只能创建修订版。
 
+### 验证版落地状态
+
+- 报告编辑器以结构化段落为主，支持逐段编辑、正文预览、重置修改。
+- 页面显示报告版本、证据指纹、证据锁定、最近审核动作和更新时间。
+- 报告依据面板固定展示 `tirads_result`、`tirads_rule`、`medical_guideline`、`segmentation_result`、`measurement_result`。
+- 保存修订后报告保持 `pending_review`，确认后进入 `confirmed`，再由医生填写归档说明进入 `archived`。
+- `archived` 报告在当前版本只读展示，不提供直接覆盖入口。
+
 ## 5.10 知识证据面板
 
 ### 页面目标

@@ -105,6 +105,40 @@ class ModelGatewayTest(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=5)
 
+    def test_artifact_upload_endpoint_writes_files_inside_artifact_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "artifacts"
+            server = create_server(port=0, db_path=Path(tmp) / "model.db")
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                host, port = server.server_address
+                with patch.dict(os.environ, {"JZX_ARTIFACT_ROOT": str(root)}, clear=False):
+                    payload = post_bytes(
+                        f"http://{host}:{port}/model/v1/artifacts/upload?uri={quote('artifact://model-ready/S1/IMG1.png')}",
+                        b"image-bytes",
+                    )
+                    self.assertEqual(payload["status"], "ok")
+                    self.assertEqual(payload["result"]["artifact_uri"], "artifact://model-ready/S1/IMG1.png")
+                    self.assertEqual(payload["result"]["size_bytes"], 11)
+                    stored_path = root / "model-ready" / "S1" / "IMG1.png"
+                    self.assertTrue(stored_path.is_file())
+                    self.assertEqual(stored_path.read_bytes(), b"image-bytes")
+
+                    with self.assertRaises(urllib.error.HTTPError) as raised:
+                        request = urllib.request.Request(
+                            f"http://{host}:{port}/model/v1/artifacts/upload?uri={quote('artifact://../escape.bin')}",
+                            data=b"bad",
+                            method="POST",
+                        )
+                        urllib.request.urlopen(request, timeout=5)
+                    self.assertEqual(raised.exception.code, 400)
+                    raised.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
     def test_config_report_validates_weight_environment_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             weights = Path(tmp) / "yolov11.pt"
@@ -479,6 +513,7 @@ class ModelGatewayTest(unittest.TestCase):
                 MeasureNoduleRequest(
                     study_id="S1",
                     image_id="IMG1",
+                    image_uri="artifact://model-ready/S1/IMG1.png",
                     nodule_id="N1",
                     mask_uri=mask_uri,
                     pixel_spacing={"row_spacing_mm": 0.1, "col_spacing_mm": 0.2},
@@ -497,6 +532,8 @@ class ModelGatewayTest(unittest.TestCase):
             self.assertEqual(measurement["nodule_id"], "N1")
             self.assertGreater(measurement["long_axis_mm"], 0)
             self.assertEqual(measurement["measurement_source"], "mask")
+            self.assertEqual(measurement["tirads_prefill_metrics"]["texture"]["echogenicity_hint"], "isoechoic")
+            self.assertEqual(measurement["tirads_prefill_metrics"]["texture"]["composition_hint"], "solid")
             self.assertEqual(measure_artifact["pixel_spacing"], {"row_mm": 0.1, "column_mm": 0.2})
             self.assertEqual(measure_artifact["evaluation"]["protocol"], "thyroid.measurement.evaluation.v1")
             self.assertEqual(measure_artifact["evaluation"]["status"], "mm_measurement_available")
@@ -969,6 +1006,15 @@ def get_json(url: str) -> dict[str, object]:
 def post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers={"content-type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return json.loads(exc.read().decode("utf-8"))
+
+
+def post_bytes(url: str, payload: bytes) -> dict[str, object]:
+    request = urllib.request.Request(url, data=payload, headers={"content-type": "application/octet-stream"}, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
             return json.loads(response.read().decode("utf-8"))
