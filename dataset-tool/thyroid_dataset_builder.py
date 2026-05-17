@@ -24,7 +24,7 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".mpeg", ".mpg", ".m
 REPORT_EXTENSIONS = {".docx", ".pdf", ".txt", ".md", ".rtf", ".html", ".htm"}
 DICOM_EXTENSIONS = {".dcm", ".dicom", ".ima"}
 SKIP_NAMES = {".DS_Store", "Thumbs.db"}
-DEFAULT_REDACT_REGIONS = [(0.0, 0.0, 1.0, 0.16), (0.0, 0.88, 1.0, 1.0)]
+DEFAULT_REDACT_REGIONS = [(0.0, 0.0, 1.0, 0.20)]
 TEXT_REDACTION_PATTERNS = [
     re.compile(r"((?:患者)?姓名|病人姓名|姓名)\s*[:：]?\s*[\u4e00-\u9fffA-Za-z·]{1,20}"),
     re.compile(r"((?:住院|门诊|病案|检查|登记|影像|超声)号)\s*[:：]?\s*[A-Za-z0-9_.\-]{3,40}"),
@@ -157,7 +157,7 @@ def parse_args(argv: list[str]) -> BuildOptions:
         "--redact-region",
         action="append",
         default=[],
-        help="Normalized image/video redaction box x1,y1,x2,y2. Can be repeated. Default redacts top 16%% and bottom 12%%.",
+        help="Normalized image/video redaction box x1,y1,x2,y2. Can be repeated. Default redacts the top 20%% privacy header.",
     )
     parser.add_argument(
         "--sensitive-term",
@@ -208,6 +208,7 @@ def parse_args(argv: list[str]) -> BuildOptions:
 
 
 def build_dataset(options: BuildOptions) -> dict[str, Any]:
+    validate_output_safety(options)
     if options.output_dir.exists() and options.overwrite:
         shutil.rmtree(options.output_dir)
     options.output_dir.mkdir(parents=True, exist_ok=True)
@@ -422,6 +423,7 @@ def apply_case_linkage(options: BuildOptions, records: list[FileRecord]) -> None
     group_identity = unique_group_fields(records, field_name="_identity_fields")
     group_study = unique_group_fields(records, field_name="_study_fields")
     for record in records:
+        record.case_id = source_case_output_id(options, record.source_case_id)
         identity = {**group_identity.get(record.source_case_id, {}), **record._identity_fields}
         study = {**group_study.get(record.source_case_id, {}), **record._study_fields}
         if not patient_identity_basis(identity):
@@ -429,7 +431,6 @@ def apply_case_linkage(options: BuildOptions, records: list[FileRecord]) -> None
             fallback = short_hash(f"{options.linkage_salt}:path:{record.source_case_id}", "path")
             record.patient_key = f"pt-path-{fallback}"
             record.study_key = f"st-path-{fallback}"
-            record.case_id = safe_id(record.study_key)
             record.linkage_confidence = 0.35
             record.linkage_evidence = ["path_fallback_after_missing_identity"]
             continue
@@ -438,7 +439,6 @@ def apply_case_linkage(options: BuildOptions, records: list[FileRecord]) -> None
         study_basis = study_identity_basis(study, record.source_case_id)
         record.patient_key = f"pt-{short_hash(options.linkage_salt + ':patient:' + patient_basis, 'patient')}"
         record.study_key = f"st-{short_hash(options.linkage_salt + ':study:' + record.patient_key + ':' + study_basis, 'study')}"
-        record.case_id = safe_id(record.study_key)
         record.linkage_confidence = linkage_confidence(identity, study)
         record.linkage_evidence = linkage_evidence(identity, study, inherited=not bool(record._identity_fields))
 
@@ -677,10 +677,9 @@ def deidentify_record(options: BuildOptions, record: FileRecord, target: Path) -
             record.deidentified = True
             record.deidentification_status = "json_text_redacted"
         elif record.kind == "dicom":
-            deidentify_dicom_file(record.source_path, target)
+            deidentify_dicom_file(record.source_path, target, options.redact_regions)
             record.deidentified = True
-            record.deidentification_status = "dicom_tags_redacted"
-            record.warnings.append("dicom_pixel_burned_in_text_not_redacted_by_basic_mode")
+            record.deidentification_status = "dicom_tags_and_pixel_regions_redacted"
         else:
             record.warnings.append("unsupported_file_not_materialized_in_deidentified_dataset")
             record.deidentification_status = "unsupported_not_materialized"
@@ -818,7 +817,6 @@ def deidentify_report_file(source: Path, target: Path, sensitive_terms: list[str
         text = read_text_best_effort(source)
         target.write_text(redact_text(text, sensitive_terms), encoding="utf-8")
     elif ext == ".pdf":
-        shutil.copy2(source, target)
         raise RuntimeError("PDF text redaction is not supported by this standalone tool")
     else:
         text = read_text_best_effort(source)
@@ -860,7 +858,7 @@ def deidentify_json_text_file(source: Path, target: Path, sensitive_terms: list[
     write_json(target, redact_json_value(value, sensitive_terms))
 
 
-def deidentify_dicom_file(source: Path, target: Path) -> None:
+def deidentify_dicom_file(source: Path, target: Path, regions: list[tuple[float, float, float, float]]) -> None:
     try:
         import pydicom  # type: ignore
     except Exception as exc:
@@ -875,15 +873,70 @@ def deidentify_dicom_file(source: Path, target: Path) -> None:
         "PatientTelephoneNumbers",
         "OtherPatientIDs",
         "OtherPatientNames",
+        "InstitutionName",
         "InstitutionAddress",
+        "InstitutionDepartmentName",
+        "StationName",
+        "DeviceSerialNumber",
         "ReferringPhysicianName",
         "PerformingPhysicianName",
         "OperatorsName",
         "AccessionNumber",
+        "PatientComments",
+        "StudyComments",
     ]:
         if hasattr(ds, attr):
             setattr(ds, attr, "ANONYMIZED")
+    if hasattr(ds, "PixelData"):
+        redact_dicom_pixel_data(ds, regions)
+        ds.BurnedInAnnotation = "NO"
+    method = "Basic tag redaction"
+    if regions:
+        method += "; top privacy header pixel redaction"
+    ds.DeidentificationMethod = method
     ds.save_as(str(target))
+
+
+def redact_dicom_pixel_data(ds: Any, regions: list[tuple[float, float, float, float]]) -> None:
+    if not regions:
+        return
+    try:
+        import numpy as np  # type: ignore
+        from pydicom.uid import ExplicitVRLittleEndian  # type: ignore
+    except Exception as exc:
+        raise RuntimeError("numpy and pydicom are required for DICOM pixel de-identification") from exc
+
+    transfer_syntax = getattr(getattr(ds, "file_meta", None), "TransferSyntaxUID", None)
+    if transfer_syntax is not None and getattr(transfer_syntax, "is_compressed", False):
+        ds.decompress()
+        ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+
+    pixels = ds.pixel_array.copy()
+    samples_per_pixel = int(getattr(ds, "SamplesPerPixel", 1) or 1)
+    rows = int(getattr(ds, "Rows", 0) or 0)
+    columns = int(getattr(ds, "Columns", 0) or 0)
+    if rows <= 0 or columns <= 0:
+        raise RuntimeError("DICOM Rows/Columns are missing; cannot redact pixel data")
+
+    fill_value = np.array(0, dtype=pixels.dtype)
+    for region in regions:
+        x1, y1, x2, y2 = normalized_region_to_pixels(region, columns, rows)
+        if x2 <= x1 or y2 <= y1:
+            continue
+        if pixels.ndim == 2:
+            pixels[y1:y2, x1:x2] = fill_value
+        elif pixels.ndim == 3 and samples_per_pixel == 1:
+            pixels[:, y1:y2, x1:x2] = fill_value
+        elif pixels.ndim == 3:
+            pixels[y1:y2, x1:x2, :] = fill_value
+        elif pixels.ndim == 4:
+            pixels[:, y1:y2, x1:x2, :] = fill_value
+        else:
+            raise RuntimeError(f"unsupported DICOM pixel array shape: {pixels.shape}")
+
+    if not pixels.flags.c_contiguous:
+        pixels = np.ascontiguousarray(pixels)
+    ds.PixelData = pixels.tobytes()
 
 
 def redact_json_value(value: Any, sensitive_terms: list[str]) -> Any:
@@ -1437,7 +1490,7 @@ def record_to_manifest_row(options: BuildOptions, record: FileRecord) -> dict[st
         "bboxes_xyxy": record.bboxes_xyxy,
         "clinical_doc_type": record.clinical_doc_type,
         "clinical_labels": record.clinical_labels,
-        "metadata": record.metadata,
+        "metadata": manifest_safe_metadata(record),
         "warnings": sorted(set(record.warnings)),
     }
 
@@ -1600,6 +1653,53 @@ def safe_source_reference(options: BuildOptions, record: FileRecord) -> str:
 def source_reference_hash(options: BuildOptions, record: FileRecord) -> str:
     salt = options.linkage_salt or options.dataset_id
     return short_hash(f"{salt}:source:{record.source_relative_path}:{record.sha256}", "source")
+
+
+def validate_output_safety(options: BuildOptions) -> None:
+    source = options.source_root.resolve()
+    output = options.output_dir.resolve()
+    if source == output:
+        raise ValueError("output directory must not be the same as source root")
+    if is_relative_to(source, output):
+        raise ValueError("output directory must not contain the source root")
+
+
+def source_case_output_id(options: BuildOptions, source_case_id: str) -> str:
+    salt = options.linkage_salt or options.dataset_id
+    return f"case-{short_hash(f'{salt}:source_case:{source_case_id}', 'case')}"
+
+
+def manifest_safe_metadata(record: FileRecord) -> dict[str, Any]:
+    safe_keys = {
+        "annotation_format",
+        "image_width",
+        "image_height",
+        "shape_count",
+        "labels",
+        "primary_label",
+        "bboxes_xyxy",
+        "has_image_data",
+        "json_top_level",
+        "modality",
+        "rows",
+        "columns",
+        "number_of_frames",
+        "cine_rate_fps",
+        "frame_time_ms",
+        "pixel_spacing",
+        "sop_class_uid",
+        "clinical_doc_type",
+        "clinical_labels",
+        "linkage_field_presence",
+        "embedded_from_annotation_id",
+    }
+    output: dict[str, Any] = {}
+    for key, value in record.metadata.items():
+        if key in safe_keys:
+            output[key] = value
+        elif key == "image_path":
+            output["image_path"] = "[redacted]"
+    return output
 
 
 def is_relative_to(path: Path, parent: Path) -> bool:

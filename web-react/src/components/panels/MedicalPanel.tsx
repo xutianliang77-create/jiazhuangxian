@@ -57,6 +57,15 @@ type MedicalReportReviewAction = "approve" | "revise" | "reject" | "archive";
 type StudyQueueFilter = "all" | "tirads" | "review" | "archive" | "progress" | "exception";
 type ValidationReviewFilter = MedicalFinalValidationReviewStatus | "all";
 type TiradsFeatureFormKey = "composition" | "echogenicity" | "shape" | "margin" | "echogenicFoci";
+type MedicalPage = "workbench" | "register" | "evidence" | "validation" | "status";
+
+const MEDICAL_PAGES: Array<{ id: MedicalPage; label: string; description: string }> = [
+  { id: "workbench", label: "病例工作台", description: "队列、图像、AI 结果和报告审核" },
+  { id: "register", label: "病例登记", description: "手工录入患者、检查和图像" },
+  { id: "evidence", label: "证据检索", description: "医学知识库和指南依据" },
+  { id: "validation", label: "最终验证", description: "验证集结果复核" },
+  { id: "status", label: "运行状态", description: "模型网关和任务队列" },
+];
 
 type BatchQueueAction =
   | { kind: "confirm_tirads"; label: string; reason: string | null; noduleId: string | null }
@@ -157,6 +166,7 @@ export default function MedicalPanel({ onError }: Props) {
   const [reviewBusyReportId, setReviewBusyReportId] = useState<string | null>(null);
   const [noduleBusyId, setNoduleBusyId] = useState<string | null>(null);
   const [tiradsFeatureBusyNoduleId, setTiradsFeatureBusyNoduleId] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState<MedicalPage>("workbench");
   const [queueFilter, setQueueFilter] = useState<StudyQueueFilter>("all");
   const [knowledgeQuery, setKnowledgeQuery] = useState("TI-RADS TR4");
   const [knowledgeResult, setKnowledgeResult] = useState<MedicalKnowledgeSearchResult | null>(null);
@@ -627,133 +637,227 @@ export default function MedicalPanel({ onError }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] min-h-0 h-full">
-      <aside className="border-b lg:border-b-0 lg:border-r border-border p-4 overflow-y-auto space-y-4">
-        <div className="flex items-center justify-between">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold">医生工作台</h2>
-            <p className="text-xs text-muted">最近检查 {summary.recentStudies.length} 例</p>
+            <p className="mt-1 text-xs text-muted">
+              最近检查 {summary.recentStudies.length} 例 · 当前页：{medicalPageLabel(activePage)}
+            </p>
           </div>
           <button onClick={refresh} disabled={busy} className="btn-secondary text-sm">
             {busy ? "刷新中..." : "刷新"}
           </button>
         </div>
+        <MedicalPageTabs active={activePage} onChange={setActivePage} />
+      </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          {COUNT_LABELS.map(([key, label]) => (
-            <div key={key} className="border border-border rounded p-2">
-              <div className="text-[11px] text-muted uppercase">{label}</div>
-              <div className="text-xl font-semibold mt-1">{summary.counts[key]}</div>
-            </div>
-          ))}
-        </div>
+      <section className="min-h-0 flex-1 overflow-y-auto p-4">
+        {activePage === "workbench" && (
+          <div className="space-y-4">
+            <SummaryStrip summary={summary} />
 
-        <QueueBlock title="模型任务" values={summary.queues.modelJobs} />
-        <QueueBlock title="智能体任务" values={summary.queues.agentTasks} />
-        <ModelGatewayStatus check={gatewayCheck} />
-      </aside>
+            {queueFilter !== "all" && (
+              workQueueStudies.length > 0 ? (
+                <BatchQueueModeBar
+                  filter={queueFilter}
+                  study={currentQueueStudy}
+                  position={currentQueueIndex >= 0 ? currentQueueIndex + 1 : 0}
+                  total={workQueueStudies.length}
+                  action={batchQueueAction}
+                  busy={detailBusy || reviewBusyReportId !== null || tiradsFeatureBusyNoduleId !== null}
+                  onSelectPrev={() => void selectAdjacentQueuedStudy(-1)}
+                  onSelectNext={() => void selectAdjacentQueuedStudy(1)}
+                  onTriggerAction={() => triggerBatchQueueAction(batchQueueAction)}
+                />
+              ) : (
+                <EmptyQueueStateBar
+                  filter={queueFilter}
+                  recommendedFilter={nextQueueFilter}
+                  onSelectRecommended={(next) => setQueueFilter(next)}
+                />
+              )
+            )}
 
-      <section className="p-4 overflow-y-auto space-y-4">
-        <ManualCaseForm
-          value={manualCase}
-          busy={submitting}
-          error={formError}
-          message={formMessage}
-          onChange={setManualCase}
-          onSubmit={registerManualCase}
-        />
-
-        <KnowledgeEvidencePanel
-          query={knowledgeQuery}
-          busy={knowledgeBusy}
-          error={knowledgeError}
-          result={knowledgeResult}
-          onQueryChange={setKnowledgeQuery}
-          onSubmit={searchKnowledgeEvidence}
-        />
-
-        <FinalValidationReviewPanel
-          runs={validationRuns}
-          reviewQueues={validationReviewQueues}
-          selectedRunId={selectedValidationRunId}
-          results={validationResults}
-          reviewCounts={validationReviewCounts}
-          reviewFilter={validationReviewFilter}
-          busy={validationBusy}
-          error={validationError}
-          reviewingResultId={validationReviewBusyId}
-          onRefresh={loadFinalValidationRuns}
-          onSelectRun={(runId) => void loadFinalValidationResults(runId)}
-          onFilterChange={(next) => void changeValidationReviewFilter(next)}
-          onReview={(result, status, comment) => void reviewValidationResult(result, status, comment)}
-        />
-
-        {queueFilter !== "all" && (
-          workQueueStudies.length > 0 ? (
-            <BatchQueueModeBar
-              filter={queueFilter}
-              study={currentQueueStudy}
-              position={currentQueueIndex >= 0 ? currentQueueIndex + 1 : 0}
-              total={workQueueStudies.length}
-              action={batchQueueAction}
-              busy={detailBusy || reviewBusyReportId !== null || tiradsFeatureBusyNoduleId !== null}
-              onSelectPrev={() => void selectAdjacentQueuedStudy(-1)}
-              onSelectNext={() => void selectAdjacentQueuedStudy(1)}
-              onTriggerAction={() => triggerBatchQueueAction(batchQueueAction)}
+            <StudyDetail
+              bundle={studyBundle}
+              busy={detailBusy}
+              error={detailError}
+              analyzingImageId={analysisBusyImageId}
+              reviewingReportId={reviewBusyReportId}
+              revisingNoduleId={noduleBusyId}
+              tiradsFeatureBusyNoduleId={tiradsFeatureBusyNoduleId}
+              onStartAnalysis={launchAnalysis}
+              onReviewReport={reviewReport}
+              onReviseNodule={reviseNodule}
+              onSubmitTiradsFeatures={submitTiradsFeatureInput}
             />
-          ) : (
-            <EmptyQueueStateBar
-              filter={queueFilter}
-              recommendedFilter={nextQueueFilter}
-              onSelectRecommended={(next) => setQueueFilter(next)}
+
+            <WorkQueuePanel
+              summary={summary}
+              studies={workQueueStudies}
+              selectedStudyId={selectedStudyId}
+              queueFilter={queueFilter}
+              queueCounts={queueCounts}
+              onQueueFilterChange={setQueueFilter}
+              onSelectStudy={(studyId) => void selectStudy(studyId)}
             />
-          )
+          </div>
         )}
 
-        <StudyDetail
-          bundle={studyBundle}
-          busy={detailBusy}
-          error={detailError}
-          analyzingImageId={analysisBusyImageId}
-          reviewingReportId={reviewBusyReportId}
-          revisingNoduleId={noduleBusyId}
-          tiradsFeatureBusyNoduleId={tiradsFeatureBusyNoduleId}
-          onStartAnalysis={launchAnalysis}
-          onReviewReport={reviewReport}
-          onReviseNodule={reviseNodule}
-          onSubmitTiradsFeatures={submitTiradsFeatureInput}
-        />
+        {activePage === "register" && (
+          <ManualCaseForm
+            value={manualCase}
+            busy={submitting}
+            error={formError}
+            message={formMessage}
+            onChange={setManualCase}
+            onSubmit={registerManualCase}
+          />
+        )}
 
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-bold">病例工作队列</h3>
-            <div className="text-xs text-muted mt-1">
-              {workQueueStudies.length} / {summary.recentStudies.length} 例
-            </div>
-          </div>
-          {summary.warnings.length > 0 && (
-            <span className="text-xs text-warning">{summary.warnings.join(", ")}</span>
-          )}
-        </div>
-        <QueueFilterBar value={queueFilter} counts={queueCounts} onChange={setQueueFilter} />
-        <div className="mb-3 text-xs text-muted">
-          快捷键: `Alt+↑` / `Alt+↓` 切换，`Alt+Enter` 确认，`Alt+Shift+Enter` 归档
-        </div>
-        {workQueueStudies.length === 0 ? (
-          <p className="text-sm text-muted">暂无甲状腺超声验证病例。</p>
-        ) : (
-          <div className="space-y-2">
-            {workQueueStudies.map((study) => (
-              <StudyRow
-                key={study.id}
-                study={study}
-                selected={selectedStudyId === study.id}
-                onSelect={() => selectStudy(study.id)}
-              />
-            ))}
-          </div>
+        {activePage === "evidence" && (
+          <KnowledgeEvidencePanel
+            query={knowledgeQuery}
+            busy={knowledgeBusy}
+            error={knowledgeError}
+            result={knowledgeResult}
+            onQueryChange={setKnowledgeQuery}
+            onSubmit={searchKnowledgeEvidence}
+          />
+        )}
+
+        {activePage === "validation" && (
+          <FinalValidationReviewPanel
+            runs={validationRuns}
+            reviewQueues={validationReviewQueues}
+            selectedRunId={selectedValidationRunId}
+            results={validationResults}
+            reviewCounts={validationReviewCounts}
+            reviewFilter={validationReviewFilter}
+            busy={validationBusy}
+            error={validationError}
+            reviewingResultId={validationReviewBusyId}
+            onRefresh={loadFinalValidationRuns}
+            onSelectRun={(runId) => void loadFinalValidationResults(runId)}
+            onFilterChange={(next) => void changeValidationReviewFilter(next)}
+            onReview={(result, status, comment) => void reviewValidationResult(result, status, comment)}
+          />
+        )}
+
+        {activePage === "status" && (
+          <SystemStatusPanel summary={summary} gatewayCheck={gatewayCheck} />
         )}
       </section>
+    </div>
+  );
+}
+
+function MedicalPageTabs({ active, onChange }: { active: MedicalPage; onChange(page: MedicalPage): void }) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {MEDICAL_PAGES.map((page) => (
+        <button
+          key={page.id}
+          type="button"
+          onClick={() => onChange(page.id)}
+          title={page.description}
+          className={page.id === active ? "btn-primary" : "btn-secondary"}
+        >
+          {page.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SummaryStrip({ summary }: { summary: MedicalSummary }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+      {COUNT_LABELS.map(([key, label]) => (
+        <div key={key} className="border border-border rounded p-2">
+          <div className="text-[11px] text-muted uppercase">{label}</div>
+          <div className="mt-1 text-xl font-semibold">{summary.counts[key]}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WorkQueuePanel({
+  summary,
+  studies,
+  selectedStudyId,
+  queueFilter,
+  queueCounts,
+  onQueueFilterChange,
+  onSelectStudy,
+}: {
+  summary: MedicalSummary;
+  studies: MedicalRecentStudy[];
+  selectedStudyId: string | null;
+  queueFilter: StudyQueueFilter;
+  queueCounts: Record<StudyQueueFilter, number>;
+  onQueueFilterChange(filter: StudyQueueFilter): void;
+  onSelectStudy(studyId: string): void;
+}) {
+  return (
+    <div className="border border-border rounded p-3">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-bold">病例工作队列</h3>
+          <div className="text-xs text-muted mt-1">
+            {studies.length} / {summary.recentStudies.length} 例
+          </div>
+        </div>
+        {summary.warnings.length > 0 && (
+          <span className="text-xs text-warning">{summary.warnings.join(", ")}</span>
+        )}
+      </div>
+      <QueueFilterBar value={queueFilter} counts={queueCounts} onChange={onQueueFilterChange} />
+      <div className="mb-3 text-xs text-muted">
+        快捷键: `Alt+↑` / `Alt+↓` 切换，`Alt+Enter` 确认，`Alt+Shift+Enter` 归档
+      </div>
+      {studies.length === 0 ? (
+        <p className="text-sm text-muted">暂无甲状腺超声验证病例。</p>
+      ) : (
+        <div className="space-y-2">
+          {studies.map((study) => (
+            <StudyRow
+              key={study.id}
+              study={study}
+              selected={selectedStudyId === study.id}
+              onSelect={() => onSelectStudy(study.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SystemStatusPanel({
+  summary,
+  gatewayCheck,
+}: {
+  summary: MedicalSummary;
+  gatewayCheck: MedicalModelGatewayCheck | null;
+}) {
+  return (
+    <div className="space-y-4">
+      <SummaryStrip summary={summary} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          <ModelGatewayStatus check={gatewayCheck} />
+        </div>
+        <div>
+          <QueueBlock title="模型任务" values={summary.queues.modelJobs} />
+        </div>
+        <div>
+          <QueueBlock title="智能体任务" values={summary.queues.agentTasks} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1238,6 +1342,10 @@ function statusLabel(status: string | null | undefined): string {
     measured: "已测量",
   };
   return labels[status] ?? status;
+}
+
+function medicalPageLabel(page: MedicalPage): string {
+  return MEDICAL_PAGES.find((item) => item.id === page)?.label ?? page;
 }
 
 function sourceTypeLabel(source: string | null | undefined): string {

@@ -1,4 +1,5 @@
 # Optional. The tool works without these packages, but de-identification and DICOM metadata are richer with them.
 pillow>=10.0.0
+numpy>=1.26.0
 pydicom>=2.4.4,<3.0.0; python_version < "3.10"
 pydicom>=3.0.0; python_version >= "3.10"

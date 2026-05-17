@@ -200,8 +200,9 @@ class ThyroidDatasetBuilderTest(unittest.TestCase):
 
             case_rows = read_jsonl(output / "metadata" / "cases.jsonl")
             self.assertEqual(len(case_rows), 1)
-            self.assertTrue(case_rows[0]["case_id"].startswith("st-"))
-            self.assertFalse(case_rows[0]["case_id"].startswith("st-path-"))
+            self.assertTrue(case_rows[0]["case_id"].startswith("case-"))
+            self.assertTrue(case_rows[0]["patient_key"].startswith("pt-"))
+            self.assertTrue(case_rows[0]["study_key"].startswith("st-"))
             self.assertEqual(case_rows[0]["clinical_labels"]["tirads_reported"], "TI-RADS 4C")
             self.assertEqual(case_rows[0]["clinical_labels"]["malignancy_status"], "malignant")
 
@@ -216,6 +217,146 @@ class ThyroidDatasetBuilderTest(unittest.TestCase):
             self.assertEqual(len(unsupported_rows), 1)
             self.assertEqual(unsupported_rows[0]["deidentification_status"], "unsupported_not_materialized")
             self.assertFalse((output / unsupported_rows[0]["relative_path"]).exists())
+
+    def test_default_image_redaction_keeps_bottom_measurement_area(self) -> None:
+        try:
+            from PIL import Image  # type: ignore
+        except Exception:
+            self.skipTest("Pillow is not installed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.png"
+            target = root / "target.png"
+            image = Image.new("RGB", (100, 100), (255, 255, 255))
+            image.putpixel((50, 5), (255, 0, 0))
+            image.putpixel((5, 92), (0, 255, 0))
+            image.save(source)
+
+            builder.deidentify_image_file(source, target, builder.DEFAULT_REDACT_REGIONS.copy())
+
+            redacted = Image.open(target)
+            self.assertEqual(redacted.getpixel((50, 5)), (0, 0, 0))
+            self.assertEqual(redacted.getpixel((5, 92)), (0, 255, 0))
+
+    def test_labelme_manifest_metadata_redacts_image_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            (source / "ann.json").write_text(
+                json.dumps(
+                    {
+                        "imagePath": "张三_US.png",
+                        "imageWidth": 2,
+                        "imageHeight": 2,
+                        "shapes": [
+                            {
+                                "label": "nodule",
+                                "shape_type": "rectangle",
+                                "points": [[0, 0], [2, 2]],
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            output = root / "dataset"
+            options = builder.BuildOptions(
+                source_root=source,
+                output_dir=output,
+                dataset_id="metadata-redaction",
+                case_mode="flat",
+                copy_mode="manifest-only",
+                case_regex=None,
+                overwrite=False,
+                extract_labelme_image_data=False,
+                deidentify="basic",
+                redact_regions=builder.DEFAULT_REDACT_REGIONS.copy(),
+                sensitive_terms=[],
+                linkage_mode="auto",
+                linkage_salt=None,
+                include_source_paths=False,
+            )
+            builder.build_dataset(options)
+
+            annotation_rows = read_jsonl(output / "metadata" / "annotations.jsonl")
+            self.assertEqual(annotation_rows[0]["metadata"]["image_path"], "[redacted]")
+            self.assertNotIn("张三", json.dumps(annotation_rows, ensure_ascii=False))
+
+    def test_rejects_output_parent_that_contains_source_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source" / "caseA"
+            source.mkdir(parents=True)
+            options = builder.BuildOptions(
+                source_root=source,
+                output_dir=root,
+                dataset_id="unsafe",
+                case_mode="auto",
+                copy_mode="manifest-only",
+                case_regex=None,
+                overwrite=True,
+                extract_labelme_image_data=True,
+                deidentify="basic",
+                redact_regions=builder.DEFAULT_REDACT_REGIONS.copy(),
+                sensitive_terms=[],
+                linkage_mode="auto",
+                linkage_salt=None,
+                include_source_paths=False,
+            )
+            with self.assertRaises(ValueError):
+                builder.build_dataset(options)
+
+    def test_dicom_pixel_redaction_redacts_header_and_keeps_bottom_pixels(self) -> None:
+        try:
+            import numpy as np  # type: ignore
+            import pydicom  # type: ignore
+            from pydicom.dataset import FileDataset, FileMetaDataset  # type: ignore
+            from pydicom.uid import ExplicitVRLittleEndian, generate_uid  # type: ignore
+        except Exception:
+            self.skipTest("pydicom/numpy are not installed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.dcm"
+            target = root / "target.dcm"
+            pixels = np.zeros((2, 100, 100), dtype=np.uint8)
+            pixels[:, 5, 50] = 255
+            pixels[:, 92, 5] = 128
+            meta = FileMetaDataset()
+            meta.TransferSyntaxUID = ExplicitVRLittleEndian
+            meta.MediaStorageSOPClassUID = generate_uid()
+            meta.MediaStorageSOPInstanceUID = generate_uid()
+            meta.ImplementationClassUID = generate_uid()
+            ds = FileDataset(str(source), {}, file_meta=meta, preamble=b"\0" * 128)
+            ds.SOPClassUID = meta.MediaStorageSOPClassUID
+            ds.SOPInstanceUID = meta.MediaStorageSOPInstanceUID
+            ds.PatientName = "LIANGGUOXIU"
+            ds.InstitutionName = "SD QianFoShan Hospital"
+            ds.Modality = "US"
+            ds.Rows = 100
+            ds.Columns = 100
+            ds.NumberOfFrames = 2
+            ds.SamplesPerPixel = 1
+            ds.PhotometricInterpretation = "MONOCHROME2"
+            ds.BitsAllocated = 8
+            ds.BitsStored = 8
+            ds.HighBit = 7
+            ds.PixelRepresentation = 0
+            ds.PixelData = pixels.tobytes()
+            ds.save_as(str(source))
+
+            builder.deidentify_dicom_file(source, target, builder.DEFAULT_REDACT_REGIONS.copy())
+
+            redacted = pydicom.dcmread(str(target), force=True)
+            out_pixels = redacted.pixel_array
+            self.assertEqual(int(out_pixels[0, 5, 50]), 0)
+            self.assertEqual(int(out_pixels[1, 92, 5]), 128)
+            self.assertEqual(str(redacted.PatientName), "ANONYMIZED")
+            self.assertEqual(str(redacted.InstitutionName), "ANONYMIZED")
 
 
 def read_jsonl(path: Path) -> list[dict]:

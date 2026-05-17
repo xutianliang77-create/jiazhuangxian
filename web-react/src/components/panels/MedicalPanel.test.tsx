@@ -856,12 +856,15 @@ describe("MedicalPanel", () => {
     expect(screen.getByText("US/thyroid")).toBeInTheDocument();
     expect(screen.getAllByText("运行中").length).toBeGreaterThan(0);
     expect(screen.getByText("草稿")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "病例登记" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "证据检索" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "运行状态" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "运行状态" }));
     expect(screen.getByText("模型任务")).toBeInTheDocument();
     expect(screen.getByText("智能体任务")).toBeInTheDocument();
     expect(screen.getByText("模型网关")).toBeInTheDocument();
     expect(screen.getByText("yolov11")).toBeInTheDocument();
-    expect(screen.getByText("手工登记病例")).toBeInTheDocument();
-    expect(screen.getByText("知识证据")).toBeInTheDocument();
   });
 
   it("filters the case work queue by stage", async () => {
@@ -1491,6 +1494,8 @@ describe("MedicalPanel", () => {
   it("searches approved medical knowledge evidence", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 
+    expect(await screen.findByText("医生工作台")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "证据检索" }));
     expect(await screen.findByText("知识证据")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("知识证据"), { target: { value: "TR4" } });
     fireEvent.click(screen.getByRole("button", { name: "检索" }));
@@ -2152,6 +2157,8 @@ describe("MedicalPanel", () => {
   it("registers a manual patient, study, and image then refreshes", async () => {
     render(<MedicalPanel onError={() => undefined} />);
 
+    expect(await screen.findByText("医生工作台")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "病例登记" }));
     expect(await screen.findByText("手工登记病例")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("患者编号"), { target: { value: "EXT-P2" } });
     fireEvent.change(screen.getByLabelText("检查号"), { target: { value: "ACC-2" } });
@@ -2200,6 +2207,8 @@ describe("MedicalPanel", () => {
 
     render(<MedicalPanel onError={onError} />);
 
+    expect(await screen.findByText("医生工作台")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "病例登记" }));
     expect(await screen.findByText("手工登记病例")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("患者编号"), { target: { value: "EXT-P2" } });
     fireEvent.change(screen.getByLabelText("检查号"), { target: { value: "ACC-2" } });

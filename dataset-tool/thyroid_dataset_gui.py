@@ -161,12 +161,10 @@ class DatasetToolApp:
             raise ValueError("请选择正确的原始资料文件夹。")
         if output_dir.exists() and not output_dir.is_dir():
             raise ValueError("保存位置必须是文件夹，不能是一个文件。")
-        if source_root.resolve() == output_dir.resolve():
-            raise ValueError("保存目录不能和原始资料文件夹相同。请新建或选择另一个目录。")
         dataset_id = builder.safe_id(self.dataset_id_var.get().strip() or output_dir.name or "thyroid-dataset")
         sensitive_terms = [line.strip() for line in self.terms_text.get("1.0", tk.END).splitlines() if line.strip()]
         linkage_salt = get_or_create_linkage_salt() if self.identity_var.get() else None
-        return builder.BuildOptions(
+        options = builder.BuildOptions(
             source_root=source_root.resolve(),
             output_dir=output_dir.resolve(),
             dataset_id=dataset_id,
@@ -182,6 +180,11 @@ class DatasetToolApp:
             linkage_salt=linkage_salt,
             include_source_paths=False,
         )
+        try:
+            builder.validate_output_safety(options)
+        except ValueError as exc:
+            raise ValueError("保存目录不能和原始资料文件夹相同，也不能是原始资料文件夹的上级目录。请新建或选择另一个目录。") from exc
+        return options
 
     def run_build(self, options: builder.BuildOptions) -> None:
         try:
